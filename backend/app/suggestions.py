@@ -41,34 +41,28 @@ _COLOR_ALIASES: dict[str, str] = {
 # Neutrals combine with virtually anything.
 _NEUTRALS = {"zwart", "wit", "grijs", "beige", "bruin", "navy", "denim"}
 
-# Pairs of non-neutral colours that are known to look good together. Stored
-# unordered (frozenset) so lookup is direction-independent.
-_GOOD_PAIRS: set[frozenset[str]] = {
-    frozenset({"blauw", "bruin"}),
-    frozenset({"navy", "beige"}),
-    frozenset({"navy", "bruin"}),
-    frozenset({"denim", "wit"}),
-    frozenset({"rood", "navy"}),
-    frozenset({"roze", "grijs"}),
-    frozenset({"groen", "beige"}),
-    frozenset({"groen", "bruin"}),
-    frozenset({"oranje", "blauw"}),
-    frozenset({"geel", "blauw"}),
-    frozenset({"geel", "navy"}),
-    frozenset({"paars", "geel"}),
-    frozenset({"blauw", "geel"}),
-    frozenset({"rood", "groen"}),
-    frozenset({"roze", "navy"}),
-}
+# Every base colour the engine understands (for the settings colour pickers).
+BASE_COLORS: list[str] = sorted(set(_COLOR_ALIASES.values()))
+NEUTRALS: list[str] = sorted(_NEUTRALS)
 
-# Pairs that tend to clash.
-_BAD_PAIRS: set[frozenset[str]] = {
-    frozenset({"rood", "roze"}),
-    frozenset({"rood", "oranje"}),
-    frozenset({"oranje", "roze"}),
-    frozenset({"groen", "oranje"}),
-    frozenset({"paars", "groen"}),
-}
+# Default pairs of non-neutral colours that are known to look good together,
+# used to seed the editable rules on first run. Stored as (a, b) tuples.
+DEFAULT_GOOD_PAIRS: list[tuple[str, str]] = [
+    ("blauw", "bruin"), ("navy", "beige"), ("navy", "bruin"), ("denim", "wit"),
+    ("rood", "navy"), ("roze", "grijs"), ("groen", "beige"), ("groen", "bruin"),
+    ("oranje", "blauw"), ("geel", "blauw"), ("geel", "navy"), ("paars", "geel"),
+    ("rood", "groen"), ("roze", "navy"),
+]
+
+# Default pairs that tend to clash.
+DEFAULT_BAD_PAIRS: list[tuple[str, str]] = [
+    ("rood", "roze"), ("rood", "oranje"), ("oranje", "roze"),
+    ("groen", "oranje"), ("paars", "groen"),
+]
+
+# Fallbacks used when no DB-backed rules are passed in (e.g. direct calls).
+_GOOD_PAIRS: set[frozenset[str]] = {frozenset(p) for p in DEFAULT_GOOD_PAIRS}
+_BAD_PAIRS: set[frozenset[str]] = {frozenset(p) for p in DEFAULT_BAD_PAIRS}
 
 
 def normalize_color(color: str | None) -> str | None:
@@ -84,12 +78,23 @@ def normalize_color(color: str | None) -> str | None:
     return None
 
 
-def color_score(a: str | None, b: str | None) -> tuple[int, str]:
-    """Return (score, reason) for combining two colours."""
+def color_score(
+    a: str | None,
+    b: str | None,
+    good_pairs: set[frozenset[str]] | None = None,
+    bad_pairs: set[frozenset[str]] | None = None,
+) -> tuple[int, str]:
+    """Return (score, reason) for combining two colours.
+
+    ``good_pairs`` / ``bad_pairs`` come from the (editable) rules; when omitted
+    the built-in defaults are used so direct callers still work.
+    """
+    good_pairs = _GOOD_PAIRS if good_pairs is None else good_pairs
+    bad_pairs = _BAD_PAIRS if bad_pairs is None else bad_pairs
     ca, cb = normalize_color(a), normalize_color(b)
     if ca is None or cb is None:
         return 1, "kleur onbekend"
-    if frozenset({ca, cb}) in _BAD_PAIRS:
+    if frozenset({ca, cb}) in bad_pairs:
         return -3, f"{ca} en {cb} botsen"
     if ca == cb:
         return 2, f"ton-sur-ton {ca}"
@@ -98,7 +103,7 @@ def color_score(a: str | None, b: str | None) -> tuple[int, str]:
         return 3, "neutrale tinten"
     if a_neu or b_neu:
         return 3, f"{ca if not a_neu else cb} op een neutrale basis"
-    if frozenset({ca, cb}) in _GOOD_PAIRS:
+    if frozenset({ca, cb}) in good_pairs:
         return 4, f"{ca} en {cb} passen mooi samen"
     return 0, f"{ca} en {cb}"
 
@@ -125,8 +130,16 @@ def suggest_outfits(
     rejected_pairs: set[frozenset[int]],
     approved_pairs: set[frozenset[int]],
     limit: int = 12,
+    good_pairs: set[frozenset[str]] | None = None,
+    bad_pairs: set[frozenset[str]] | None = None,
 ) -> list[dict]:
     """Build and rank outfit suggestions from the wardrobe."""
+    good_pairs = _GOOD_PAIRS if good_pairs is None else good_pairs
+    bad_pairs = _BAD_PAIRS if bad_pairs is None else bad_pairs
+
+    def cscore(a: str | None, b: str | None) -> tuple[int, str]:
+        return color_score(a, b, good_pairs, bad_pairs)
+
     by_group: dict[str, list[Item]] = {}
     for it in items:
         by_group.setdefault(group_of(it.category), []).append(it)
@@ -157,7 +170,7 @@ def suggest_outfits(
                 continue  # a dress already covers top+bottom
             if not pair_ok(top, bottom):
                 continue
-            s, why = color_score(top.color, bottom.color)
+            s, why = cscore(top.color, bottom.color)
             score += s
             reasons.append(why)
             if frozenset({top.id, bottom.id}) in approved_pairs:
@@ -171,7 +184,7 @@ def suggest_outfits(
         for sh in shoes:
             if any(not pair_ok(sh, b) for b in base):
                 continue
-            ss = sum(color_score(sh.color, b.color)[0] for b in base)
+            ss = sum(cscore(sh.color, b.color)[0] for b in base)
             if ss > best_shoe_score:
                 best_shoe, best_shoe_score = sh, ss
         if best_shoe is not None:
@@ -184,7 +197,7 @@ def suggest_outfits(
         for ow in outer:
             if any(not pair_ok(ow, b) for b in base):
                 continue
-            os_ = sum(color_score(ow.color, b.color)[0] for b in base)
+            os_ = sum(cscore(ow.color, b.color)[0] for b in base)
             if os_ > best_outer_score:
                 best_outer, best_outer_score = ow, os_
         if best_outer is not None and best_outer_score >= len(base):

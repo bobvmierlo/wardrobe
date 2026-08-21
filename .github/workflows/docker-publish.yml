@@ -1,12 +1,15 @@
 name: Build and publish container
 
 # Builds the Docker image and pushes it to the GitHub Container Registry
-# (ghcr.io/<owner>/<repo>) on every push to main and every version tag.
+# (ghcr.io/<owner>/<repo>). Runs ONLY for released versions — a pushed semver
+# tag (v1.2.3) or a published GitHub Release — so plain pushes to main no
+# longer produce a container. Use workflow_dispatch for a manual one-off.
 
 on:
   push:
-    branches: ["main"]
     tags: ["v*"]
+  release:
+    types: [published]
   workflow_dispatch:
 
 env:
@@ -37,15 +40,14 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           # Produce a lowercase-safe image name and useful tags:
-          #  - latest        (only for the default branch)
-          #  - v1.2.3, 1.2   (from a pushed semver tag)
+          #  - v1.2.3, 1.2   (from the released semver tag)
+          #  - latest        (every release points latest at the newest version)
           #  - <short-sha>   (always, for precise pinning)
           tags: |
-            type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,format=short
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -55,6 +57,9 @@ jobs:
         with:
           context: .
           push: true
+          # Bake the released version into the image so the app can show it.
+          build-args: |
+            APP_VERSION=${{ steps.meta.outputs.version || github.ref_name }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

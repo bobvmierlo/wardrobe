@@ -78,6 +78,25 @@ class SizeOption(Base):
     position: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class ColorRule(Base):
+    """An admin-editable colour-combination rule used by the suggestion engine.
+
+    Colours are stored as normalised base names (e.g. "navy", "beige") in a
+    canonical order (color_a <= color_b) so each unordered pair is unique.
+    ``verdict`` is "good" (looks nice) or "bad" (clashes).
+    """
+
+    __tablename__ = "color_rules"
+    __table_args__ = (
+        UniqueConstraint("color_a", "color_b", "verdict", name="uq_color_rule"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    color_a: Mapped[str] = mapped_column(String(20))
+    color_b: Mapped[str] = mapped_column(String(20))
+    verdict: Mapped[str] = mapped_column(String(8))  # "good" | "bad"
+
+
 class Match(Base):
     """A verdict by one user on whether two items combine well.
 

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
-import { SIZE_KIND_LABELS, compareSizes, type Category, type SizeKind, type SizeOption, type User } from "../types";
+import AppFooter from "../components/AppFooter";
+import { SIZE_KIND_LABELS, compareSizes, type Category, type ColorLogic, type SizeKind, type SizeOption, type User } from "../types";
 
 export default function Settings() {
   const { user, logout } = useAuth();
@@ -14,7 +15,13 @@ export default function Settings() {
 
   // users (admin)
   const [users, setUsers] = useState<User[]>([]);
-  const [nu, setNu] = useState({ username: "", display_name: "", password: "" });
+  const [nu, setNu] = useState({ username: "", display_name: "", password: "", is_admin: false });
+
+  // colour-combination logic (admin)
+  const [logic, setLogic] = useState<ColorLogic | null>(null);
+  const [ruleA, setRuleA] = useState("");
+  const [ruleB, setRuleB] = useState("");
+  const [ruleVerdict, setRuleVerdict] = useState<"good" | "bad">("good");
 
   // categories & sizes (admin)
   const [categories, setCategories] = useState<Category[]>([]);
@@ -38,9 +45,17 @@ export default function Settings() {
       /* ignore */
     }
   }
+  async function loadLogic() {
+    try {
+      setLogic(await api.colorLogic());
+    } catch {
+      /* ignore */
+    }
+  }
   useEffect(() => {
     loadUsers();
     loadCatalog();
+    loadLogic();
   }, []);
 
   async function addCategory(e: React.FormEvent) {
@@ -122,12 +137,22 @@ export default function Settings() {
     setErr(null);
     setMsg(null);
     try {
-      await api.createUser({ ...nu, username: nu.username.trim(), is_admin: false });
-      setNu({ username: "", display_name: "", password: "" });
+      await api.createUser({ ...nu, username: nu.username.trim() });
+      setNu({ username: "", display_name: "", password: "", is_admin: false });
       setMsg("Account aangemaakt.");
       loadUsers();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Aanmaken mislukt");
+    }
+  }
+
+  async function toggleAdmin(u: User) {
+    setErr(null);
+    try {
+      await api.updateUser(u.id, { is_admin: !u.is_admin });
+      loadUsers();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Wijzigen mislukt");
     }
   }
 
@@ -136,6 +161,30 @@ export default function Settings() {
     try {
       await api.deleteUser(id);
       loadUsers();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Verwijderen mislukt");
+    }
+  }
+
+  async function addRule(e: React.FormEvent) {
+    e.preventDefault();
+    setErr(null);
+    if (!ruleA || !ruleB) return;
+    try {
+      await api.addColorRule({ color_a: ruleA, color_b: ruleB, verdict: ruleVerdict });
+      setRuleA("");
+      setRuleB("");
+      loadLogic();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Toevoegen mislukt");
+    }
+  }
+
+  async function removeRule(id: number) {
+    setErr(null);
+    try {
+      await api.deleteColorRule(id);
+      loadLogic();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Verwijderen mislukt");
     }
@@ -233,30 +282,102 @@ export default function Settings() {
             <h3 style={{ marginTop: 0 }}>Accounts</h3>
             <div className="stack" style={{ marginBottom: 16 }}>
               {users.map((u) => (
-                <div key={u.id} className="row spread" style={{ borderBottom: "1px solid var(--border)", paddingBottom: 8 }}>
+                <div key={u.id} className="row spread" style={{ borderBottom: "1px solid var(--border)", paddingBottom: 8, gap: 8 }}>
                   <div>
-                    <div>{u.display_name}</div>
-                    <div className="muted" style={{ fontSize: "0.8rem" }}>@{u.username}{u.is_admin ? " · beheerder" : ""}</div>
+                    <div>
+                      {u.display_name}{" "}
+                      <span className={`role-badge ${u.is_admin ? "admin" : ""}`}>
+                        {u.is_admin ? "Beheerder" : "Gebruiker"}
+                      </span>
+                    </div>
+                    <div className="muted" style={{ fontSize: "0.8rem" }}>@{u.username}</div>
                   </div>
-                  {u.id !== user.id && (
-                    <button className="btn-danger" onClick={() => removeUser(u.id)}>
-                      Verwijder
+                  <div className="row" style={{ gap: 6 }}>
+                    <button className="btn-ghost" style={{ padding: "6px 10px", fontSize: "0.82rem" }} onClick={() => toggleAdmin(u)}>
+                      {u.is_admin ? "Maak gebruiker" : "Maak beheerder"}
                     </button>
-                  )}
+                    {u.id !== user.id && (
+                      <button className="btn-danger" style={{ padding: "6px 10px" }} onClick={() => removeUser(u.id)}>
+                        Verwijder
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
+            <p className="muted" style={{ fontSize: "0.8rem", marginTop: 0 }}>
+              Een <strong>beheerder</strong> kan accounts, categorieën, maten en de combinatie-logica beheren.
+              Een gewone <strong>gebruiker</strong> kan kledingstukken toevoegen en bewerken, combineren en outfits bekijken.
+            </p>
             <h4 style={{ margin: "0 0 8px" }}>Nieuw account (bijv. je partner)</h4>
             <form onSubmit={addUser} className="stack">
               <input placeholder="Weergavenaam" value={nu.display_name} onChange={(e) => setNu({ ...nu, display_name: e.target.value })} required />
               <input placeholder="Gebruikersnaam" value={nu.username} onChange={(e) => setNu({ ...nu, username: e.target.value })} autoCapitalize="none" required />
               <input type="password" placeholder="Wachtwoord" value={nu.password} onChange={(e) => setNu({ ...nu, password: e.target.value })} autoComplete="new-password" required />
+              <label className="row" style={{ gap: 10, cursor: "pointer" }}>
+                <input type="checkbox" style={{ width: "auto" }} checked={nu.is_admin} onChange={(e) => setNu({ ...nu, is_admin: e.target.checked })} />
+                <span>Beheerder (mag instellingen beheren)</span>
+              </label>
               <button className="btn-primary">Account aanmaken</button>
             </form>
           </div>
         )}
 
-        <p className="muted center" style={{ fontSize: "0.8rem" }}>Kledingkast · zelf-gehost</p>
+        {user?.is_admin && logic && (
+          <div className="card" style={{ padding: 16 }}>
+            <h3 style={{ marginTop: 0 }}>Combinatie-logica</h3>
+            <p className="muted" style={{ fontSize: "0.82rem", marginTop: 0 }}>
+              Suggesties worden gescoord op kleur en seizoen. Neutrale kleuren
+              (<em>{logic.neutrals.join(", ")}</em>) passen bij vrijwel alles. Daarnaast tellen
+              deze regels: een <strong>goed</strong> paar krijgt pluspunten, een <strong>botst</strong>-paar
+              minpunten. Stukken zonder kleur of afgekeurde paren worden overgeslagen.
+            </p>
+
+            <div style={{ marginBottom: 10 }}>
+              <div className="muted" style={{ fontSize: "0.78rem", marginBottom: 6 }}>👍 Past mooi samen</div>
+              <div className="tag-list">
+                {logic.rules.filter((r) => r.verdict === "good").map((r) => (
+                  <span key={r.id} className="tag good">
+                    {r.color_a} + {r.color_b}
+                    <button type="button" className="tag-x" onClick={() => removeRule(r.id)} aria-label="Verwijder regel">✕</button>
+                  </span>
+                ))}
+                {logic.rules.every((r) => r.verdict !== "good") && <span className="muted" style={{ fontSize: "0.8rem" }}>Geen regels</span>}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <div className="muted" style={{ fontSize: "0.78rem", marginBottom: 6 }}>👎 Botst</div>
+              <div className="tag-list">
+                {logic.rules.filter((r) => r.verdict === "bad").map((r) => (
+                  <span key={r.id} className="tag bad">
+                    {r.color_a} + {r.color_b}
+                    <button type="button" className="tag-x" onClick={() => removeRule(r.id)} aria-label="Verwijder regel">✕</button>
+                  </span>
+                ))}
+                {logic.rules.every((r) => r.verdict !== "bad") && <span className="muted" style={{ fontSize: "0.8rem" }}>Geen regels</span>}
+              </div>
+            </div>
+
+            <form onSubmit={addRule} className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+              <select value={ruleA} onChange={(e) => setRuleA(e.target.value)} style={{ flex: "1 1 28%", width: "auto" }} required>
+                <option value="" disabled>Kleur 1…</option>
+                {logic.colors.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <select value={ruleB} onChange={(e) => setRuleB(e.target.value)} style={{ flex: "1 1 28%", width: "auto" }} required>
+                <option value="" disabled>Kleur 2…</option>
+                {logic.colors.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <select value={ruleVerdict} onChange={(e) => setRuleVerdict(e.target.value as "good" | "bad")} style={{ flex: "1 1 20%", width: "auto" }}>
+                <option value="good">Past</option>
+                <option value="bad">Botst</option>
+              </select>
+              <button className="btn-primary" style={{ flex: "none" }}>Toevoegen</button>
+            </form>
+          </div>
+        )}
+
+        <AppFooter />
       </div>
     </>
   );

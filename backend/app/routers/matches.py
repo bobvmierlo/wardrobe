@@ -5,6 +5,7 @@ from ..database import get_db
 from ..deps import get_current_user
 from ..matching import can_combine, is_cross_group, seasons_compatible
 from ..models import Item, Match, User
+from ..routers.color_rules import load_pairs
 from ..schemas import ItemOut, MatchCreate, OutfitPartner, OutfitSuggestion, PairOut
 from ..suggestions import suggest_outfits
 
@@ -183,7 +184,10 @@ def suggestions(
     # A rejection by anyone wins over an approval.
     approved -= rejected
 
-    outfits = suggest_outfits(items, rejected, approved)
+    good_pairs, bad_pairs = load_pairs(db)
+    outfits = suggest_outfits(
+        items, rejected, approved, limit=30, good_pairs=good_pairs, bad_pairs=bad_pairs
+    )
     return [
         OutfitSuggestion(
             items=[ItemOut.model_validate(it) for it in o["items"]],

@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { api, photoUrl } from "../api";
 import SwipeCard, { type SwipeCardHandle } from "../components/SwipeCard";
-import type { Pair, Stats } from "../types";
+import AppFooter from "../components/AppFooter";
+import SuggestionList from "../components/SuggestionList";
+import type { OutfitSuggestion, Pair, Stats } from "../types";
 
 export default function Combine() {
   const location = useLocation() as { state?: { anchorId?: number } };
@@ -13,6 +15,7 @@ export default function Combine() {
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
+  const [suggestions, setSuggestions] = useState<OutfitSuggestion[]>([]);
   const cardRef = useRef<SwipeCardHandle>(null);
 
   async function refreshStats() {
@@ -47,6 +50,9 @@ export default function Combine() {
   useEffect(() => {
     refreshStats();
     loadNext(initialAnchor);
+    // Load the system's own outfit ideas so they're ready to show alongside
+    // (and after) the manual swiping.
+    api.suggestions().then(setSuggestions).catch(() => setSuggestions([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -136,6 +142,20 @@ export default function Combine() {
             </p>
           </>
         )}
+
+        {suggestions.length > 0 && (
+          <div style={{ width: "100%", marginTop: 28 }}>
+            <div className="row spread" style={{ marginBottom: 10 }}>
+              <h3 style={{ margin: 0 }}>✨ Suggesties van het systeem</h3>
+            </div>
+            <p className="muted" style={{ marginTop: 0, fontSize: "0.82rem" }}>
+              Automatisch samengesteld op kleur en seizoen — een handig startpunt terwijl je beoordeelt.
+            </p>
+            <SuggestionList suggestions={suggestions} />
+          </div>
+        )}
+
+        <AppFooter />
       </div>
     </>
   );

@@ -1,5 +1,7 @@
 import type {
   Category,
+  ColorLogic,
+  ColorRule,
   Item,
   OutfitPartner,
   OutfitSuggestion,
@@ -78,7 +80,23 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     }),
+  updateUser: (id: number, data: { is_admin: boolean }) =>
+    request<User>(`/api/users/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
   deleteUser: (id: number) => request<void>(`/api/users/${id}`, { method: "DELETE" }),
+
+  // ---- colour-combination rules (editable suggestion logic) ----
+  colorLogic: () => request<ColorLogic>("/api/color-rules"),
+  addColorRule: (data: { color_a: string; color_b: string; verdict: "good" | "bad" }) =>
+    request<ColorRule>("/api/color-rules", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+  deleteColorRule: (id: number) => request<void>(`/api/color-rules/${id}`, { method: "DELETE" }),
 
   // ---- items ----
   listItems: (params: { category?: string; q?: string; favorites?: boolean } = {}) => {

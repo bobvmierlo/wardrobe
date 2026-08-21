@@ -7,9 +7,10 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .database import Base, SessionLocal, engine
-from .models import Category, SizeOption, User
-from .routers import auth, catalog, imports, items, matches, users
+from .models import Category, ColorRule, SizeOption, User
+from .routers import auth, catalog, color_rules, imports, items, matches, users
 from .security import hash_password
+from .suggestions import DEFAULT_BAD_PAIRS, DEFAULT_GOOD_PAIRS
 
 DEFAULT_CATEGORIES = [
     "Polo", "T-shirt", "Overhemd", "Blouse", "Trui", "Vest", "Hoodie",
@@ -130,10 +131,30 @@ def seed_catalog() -> None:
         db.close()
 
 
+def seed_color_rules() -> None:
+    """Seed the editable colour-combination rules from the built-in defaults on
+    first run, so admins have a sensible starting point to tweak."""
+    db = SessionLocal()
+    try:
+        if db.query(ColorRule).count() == 0:
+            seen: set[tuple[str, str, str]] = set()
+            for verdict, pairs in (("good", DEFAULT_GOOD_PAIRS), ("bad", DEFAULT_BAD_PAIRS)):
+                for a, b in pairs:
+                    lo, hi = sorted((a, b))
+                    if (lo, hi, verdict) in seen:
+                        continue  # guard against accidental duplicate defaults
+                    seen.add((lo, hi, verdict))
+                    db.add(ColorRule(color_a=lo, color_b=hi, verdict=verdict))
+            db.commit()
+    finally:
+        db.close()
+
+
 seed_admin()
 migrate_sizes()
 migrate_size_uniqueness()
 seed_catalog()
+seed_color_rules()
 
 app.include_router(auth.router)
 app.include_router(users.router)
@@ -141,6 +162,7 @@ app.include_router(items.router)
 app.include_router(matches.router)
 app.include_router(catalog.categories_router)
 app.include_router(catalog.sizes_router)
+app.include_router(color_rules.router)
 app.include_router(imports.router)
 
 # Uploaded photos.

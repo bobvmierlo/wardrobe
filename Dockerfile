@@ -1,6 +1,10 @@
 # ---- Stage 1: build the frontend ----
 FROM node:20-alpine AS frontend
 WORKDIR /build
+# Released version (e.g. v1.2.3), injected by CI and inlined into the bundle
+# so the app footer can show which version is running.
+ARG APP_VERSION=dev
+ENV VITE_APP_VERSION=$APP_VERSION
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm install
 COPY frontend/ ./
