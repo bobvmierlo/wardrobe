@@ -1,12 +1,32 @@
-// Version baked in at build time by CI (see Dockerfile). Falls back to "dev"
-// for local builds where no release version is set.
-export const APP_VERSION = import.meta.env.VITE_APP_VERSION || "dev";
+import { useEffect, useState } from "react";
+import { api } from "../api";
 
-/** Small muted footer with the running app version, shown on every page. */
+// Cache the version across the many AppFooter instances (one per page) so we
+// only hit the backend once per session.
+let cachedVersion: string | null = null;
+
+/** Small muted footer with the running app version, shown on every page.
+ * The version comes from the backend (backend/app/_version.py). */
 export default function AppFooter() {
+  const [version, setVersion] = useState<string | null>(cachedVersion);
+
+  useEffect(() => {
+    if (cachedVersion !== null) return;
+    api
+      .version()
+      .then((v) => {
+        cachedVersion = v.version;
+        setVersion(v.version);
+      })
+      .catch(() => {
+        cachedVersion = "";
+        setVersion("");
+      });
+  }, []);
+
   return (
     <p className="app-footer">
-      Kledingkast · {APP_VERSION}
+      Kledingkast{version ? ` · v${version}` : ""}
     </p>
   );
 }

@@ -152,6 +152,9 @@ export const api = {
 
   // ---- webshop import ----
   scrape: (url: string) => request<ScrapeResult>(`/api/import/scrape?url=${encodeURIComponent(url)}`),
+
+  // ---- app version (from backend/app/_version.py) ----
+  version: () => request<{ version: string }>("/api/version"),
 };
 
 export function photoUrl(item: Item, thumb = false): string | null {

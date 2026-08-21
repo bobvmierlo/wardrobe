@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from ._version import __version__
 from .config import settings
 from .database import Base, SessionLocal, engine
 from .models import Category, ColorRule, SizeOption, User
@@ -26,7 +27,7 @@ DEFAULT_SIZES: list[tuple[str, str]] = [
     ("One-size", "accessory"),
 ]
 
-app = FastAPI(title="Kledingkast", version="1.0.0")
+app = FastAPI(title="Kledingkast", version=__version__)
 
 # Bearer tokens (not cookies) are used, so a permissive CORS policy is safe
 # and keeps a separate-origin dev frontend working.
@@ -172,6 +173,11 @@ app.mount("/uploads", StaticFiles(directory=str(settings.uploads_dir)), name="up
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/api/version")
+def version():
+    return {"version": __version__}
 
 
 # Serve the built frontend (single-page app) when present. In the Docker image

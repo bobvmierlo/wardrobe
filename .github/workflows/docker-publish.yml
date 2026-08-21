@@ -1,14 +1,16 @@
 name: Build and publish container
 
-# Builds the Docker image and pushes it to the GitHub Container Registry
-# (ghcr.io/<owner>/<repo>). Runs ONLY on a version tag (e.g. v1.2.3). Publishing
-# a GitHub Release creates that tag, so a release builds exactly once. We do NOT
-# also listen to the `release` event, because that would build the same version
-# twice. Plain pushes to main no longer produce a container.
+# Runs when a GitHub Release is published. In one job it stamps the release
+# version into backend/app/_version.py (the single source of truth), commits it
+# back to main with [skip ci], then builds the Docker image from that working
+# tree and pushes it to the GitHub Container Registry (ghcr.io/<owner>/<repo>).
+#
+# Triggers on `release` only (not the tag push), so a release builds exactly
+# once. Plain pushes to main do not produce a container.
 
 on:
-  push:
-    tags: ["v*"]
+  release:
+    types: [published]
   workflow_dispatch:
 
 env:
@@ -16,15 +18,39 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-push:
+  release:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
-
     steps:
-      - name: Checkout
+      - name: Checkout main
         uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Stamp version into _version.py
+        id: stamp
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            VERSION=$(python3 scripts/bump_version.py "${{ github.event.release.tag_name }}")
+          else
+            VERSION=$(python3 scripts/bump_version.py --get)
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION"
+
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add backend/app/_version.py
+          if git diff --cached --quiet; then
+            echo "No version change to commit"
+          else
+            git commit -m "chore: release v${{ steps.stamp.outputs.version }} [skip ci]"
+            git push origin HEAD:main
+          fi
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -38,15 +64,15 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          # Produce a lowercase-safe image name and useful tags:
-          #  - the tag name  (always, e.g. "v0.1" or "v1.2.3" — works for any tag)
-          #  - 1.2.3, 1.2    (extra tags only when the tag is full semver)
-          #  - latest        (every release points latest at the newest version)
-          #  - <short-sha>   (always, for precise pinning)
+          # Tags:
+          #  - <version>          the release version (e.g. "0.1.0")
+          #  - <major>.<minor>, <major>   when the version is full semver
+          #  - latest             newest published release
+          #  - <short-sha>        precise pinning
           tags: |
-            type=ref,event=tag
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ steps.stamp.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.stamp.outputs.version }}
+            type=semver,pattern={{major}},value=${{ steps.stamp.outputs.version }}
             type=sha,format=short
             type=raw,value=latest
 
@@ -58,9 +84,6 @@ jobs:
         with:
           context: .
           push: true
-          # Bake the released version into the image so the app can show it.
-          build-args: |
-            APP_VERSION=${{ steps.meta.outputs.version || github.ref_name }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
