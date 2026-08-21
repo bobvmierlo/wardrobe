@@ -93,6 +93,13 @@ label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0 0 6px
   padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 24px);
 }
 
+.app-footer {
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin: 28px 0 0;
+}
+
 /* ---- bottom nav ---- */
 .bottomnav {
   position: fixed;
@@ -339,20 +346,60 @@ label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0 0 6px
 .filters select { width: auto; flex: 1 1 30%; min-width: 120px; padding: 9px 12px; }
 .filters .btn-ghost { flex: 1 1 100%; }
 
+/* ---- item picker strip (Outfits · per stuk) ---- */
+.pick-strip {
+  display: flex; gap: 10px; overflow-x: auto; padding: 2px 2px 10px;
+  margin-bottom: 16px; scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch; scrollbar-width: thin;
+}
+.pick-strip::-webkit-scrollbar { height: 6px; }
+.pick-strip::-webkit-scrollbar-thumb { background: var(--surface-2); border-radius: 999px; }
+.pick-thumb {
+  flex: none; width: 72px; height: 72px; padding: 0; border-radius: 14px;
+  overflow: hidden; border: 2px solid var(--border); background: var(--surface-2);
+  scroll-snap-align: start; transition: border-color 0.15s, transform 0.15s;
+}
+.pick-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pick-thumb .noimg-ico { display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; font-size: 1.7rem; }
+.pick-thumb.active { border-color: var(--primary); transform: translateY(-2px); box-shadow: 0 6px 16px rgba(56,189,248,0.25); }
+
+/* ---- call-to-action link button ---- */
+.cta-link {
+  display: inline-flex; align-items: center; gap: 8px;
+  margin-top: 12px; padding: 12px 22px; border-radius: 999px;
+  font-size: 0.95rem; box-shadow: 0 6px 18px rgba(56,189,248,0.28);
+}
+
 /* ---- suggestion cards ---- */
-.suggest-row { display: flex; gap: 10px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-.suggest-item { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 84px; flex: none; color: var(--text); }
+.suggest-card { padding: 14px; }
+.suggest-row {
+  display: flex; gap: 12px; overflow-x: auto; padding-bottom: 6px;
+  scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch;
+}
+.suggest-item { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 104px; flex: none; color: var(--text); scroll-snap-align: start; }
 .suggest-item img, .suggest-item .noimg-sm {
-  width: 84px; height: 84px; border-radius: 10px; object-fit: cover;
-  background: var(--surface-2); display: flex; align-items: center; justify-content: center; font-size: 1.6rem;
+  width: 104px; height: 104px; border-radius: 12px; object-fit: cover;
+  background: var(--surface-2); display: flex; align-items: center; justify-content: center; font-size: 2rem;
 }
 .suggest-item span {
-  font-size: 0.72rem; color: var(--muted); text-align: center; line-height: 1.1;
-  max-width: 84px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 0.78rem; color: var(--muted); text-align: center; line-height: 1.15;
+  max-width: 104px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.suggest-reason { font-size: 0.85rem; color: var(--muted); margin-top: 10px; }
+
+/* ---- role badge ---- */
+.role-badge {
+  display: inline-block; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.02em;
+  text-transform: uppercase; padding: 2px 8px; border-radius: 999px;
+  background: var(--surface-2); color: var(--muted); border: 1px solid var(--border);
+  vertical-align: middle;
+}
+.role-badge.admin { background: color-mix(in srgb, var(--primary) 22%, transparent); color: var(--primary); border-color: transparent; }
 
 /* ---- admin tag lists ---- */
 .tag-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.tag.good { border-color: color-mix(in srgb, var(--yes) 55%, var(--border)); }
+.tag.bad { border-color: color-mix(in srgb, var(--no) 55%, var(--border)); }
 .tag {
   display: inline-flex; align-items: center; gap: 6px;
   background: var(--surface-2); border: 1px solid var(--border);

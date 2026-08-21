@@ -90,6 +90,19 @@ export interface ScrapeResult {
   images: string[];
 }
 
+export interface ColorRule {
+  id: number;
+  color_a: string;
+  color_b: string;
+  verdict: "good" | "bad";
+}
+
+export interface ColorLogic {
+  rules: ColorRule[];
+  neutrals: string[];
+  colors: string[];
+}
+
 export interface OutfitSuggestion {
   items: Item[];
   score: number;

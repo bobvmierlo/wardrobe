@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, photoUrl } from "../api";
 import ItemForm from "../components/ItemForm";
+import AppFooter from "../components/AppFooter";
 import type { Item, OutfitPartner } from "../types";
 
 export default function ItemDetail() {
@@ -169,6 +170,7 @@ export default function ItemDetail() {
             </button>
           </div>
         )}
+        <AppFooter />
       </div>
     </div>
   );

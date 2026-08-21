@@ -19,6 +19,10 @@ class UserCreate(BaseModel):
     is_admin: bool = False
 
 
+class UserUpdate(BaseModel):
+    is_admin: bool
+
+
 class PasswordChange(BaseModel):
     new_password: str = Field(min_length=4, max_length=128)
 
@@ -96,6 +100,28 @@ class OutfitSuggestion(BaseModel):
     items: list[ItemOut]
     score: int
     reason: str
+
+
+# ---- Colour-combination rules (editable suggestion logic) ----
+class ColorRuleOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    color_a: str
+    color_b: str
+    verdict: str
+
+
+class ColorRuleIn(BaseModel):
+    color_a: str = Field(min_length=1, max_length=20)
+    color_b: str = Field(min_length=1, max_length=20)
+    verdict: str = Field(pattern="^(good|bad)$")
+
+
+class ColorLogic(BaseModel):
+    """Everything the settings screen needs to explain and edit the logic."""
+    rules: list[ColorRuleOut]
+    neutrals: list[str]
+    colors: list[str]
 
 
 # ---- Matches ----

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, photoUrl } from "../api";
+import AppFooter from "../components/AppFooter";
 import type { Item } from "../types";
 
 export default function Wardrobe() {
@@ -113,6 +114,7 @@ export default function Wardrobe() {
             })}
           </div>
         )}
+        <AppFooter />
       </div>
 
       <button className="fab" onClick={() => navigate("/add")} aria-label="Kledingstuk toevoegen">

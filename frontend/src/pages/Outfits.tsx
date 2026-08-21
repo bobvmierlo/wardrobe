@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, photoUrl } from "../api";
+import AppFooter from "../components/AppFooter";
+import SuggestionList from "../components/SuggestionList";
 import { SEASONS, type Item, type OutfitPartner, type OutfitSuggestion } from "../types";
 
 type Tab = "browse" | "suggest";
@@ -148,7 +150,7 @@ export default function Outfits() {
               </div>
             ) : (
               <>
-                <div className="chips" style={{ marginBottom: 18 }}>
+                <div className="pick-strip">
                   {visibleItems.map((it) => {
                     const s = photoUrl(it, true);
                     const active = selected?.id === it.id;
@@ -156,14 +158,13 @@ export default function Outfits() {
                       <button
                         key={it.id}
                         onClick={() => setSelected(it)}
-                        className="chip"
-                        style={{ padding: 4, borderColor: active ? "var(--primary)" : "var(--border)", borderWidth: 2 }}
+                        className={`pick-thumb ${active ? "active" : ""}`}
                         title={it.name}
                       >
                         {s ? (
-                          <img src={s} alt={it.name} style={{ width: 46, height: 46, borderRadius: 8, objectFit: "cover", display: "block" }} />
+                          <img src={s} alt={it.name} />
                         ) : (
-                          <span style={{ display: "inline-flex", width: 46, height: 46, alignItems: "center", justifyContent: "center" }}>👕</span>
+                          <span className="noimg-ico">👕</span>
                         )}
                       </button>
                     );
@@ -192,8 +193,8 @@ export default function Outfits() {
                 ) : partners.length === 0 ? (
                   <div className="empty">
                     <p className="muted">Nog geen goedgekeurde combinaties voor dit stuk.</p>
-                    <Link to="/combine" state={{ anchorId: selected?.id }} className="btn-primary" style={{ display: "inline-block", marginTop: 8 }}>
-                      Ga combineren →
+                    <Link to="/combine" state={{ anchorId: selected?.id }} className="btn-primary cta-link">
+                      💞 Ga combineren
                     </Link>
                   </div>
                 ) : (
@@ -216,6 +217,7 @@ export default function Outfits() {
             )}
           </>
         )}
+        <AppFooter />
       </div>
     </>
   );
@@ -237,24 +239,7 @@ function SuggestTab({ loading, suggestions }: { loading: boolean; suggestions: O
       <p className="muted" style={{ marginTop: 0 }}>
         Automatische combinaties op basis van kleur en seizoen. Afgekeurde paren worden nooit voorgesteld.
       </p>
-      <div className="stack">
-        {suggestions.map((s, idx) => (
-          <div key={idx} className="card" style={{ padding: 12 }}>
-            <div className="suggest-row">
-              {s.items.map((it) => {
-                const src = photoUrl(it, true);
-                return (
-                  <Link to={`/item/${it.id}`} key={it.id} className="suggest-item" title={it.name}>
-                    {src ? <img src={src} alt={it.name} /> : <div className="noimg-sm">👕</div>}
-                    <span>{it.name}</span>
-                  </Link>
-                );
-              })}
-            </div>
-            <div className="muted" style={{ fontSize: "0.82rem", marginTop: 8 }}>💡 {s.reason}</div>
-          </div>
-        ))}
-      </div>
+      <SuggestionList suggestions={suggestions} />
     </>
   );
 }

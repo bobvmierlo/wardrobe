@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import ItemForm from "../components/ItemForm";
+import AppFooter from "../components/AppFooter";
 
 export default function AddItem() {
   const navigate = useNavigate();
@@ -22,6 +23,7 @@ export default function AddItem() {
             navigate(`/item/${item.id}`, { replace: true });
           }}
         />
+        <AppFooter />
       </div>
     </div>
   );
