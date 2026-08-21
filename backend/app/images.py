@@ -1,4 +1,5 @@
 import io
+import shutil
 import uuid
 from urllib.request import Request, urlopen
 
@@ -65,6 +66,26 @@ def save_upload_from_url(url: str) -> tuple[str, str]:
     if len(raw) > limit:
         raise HTTPException(status_code=413, detail=f"Foto is te groot (max {settings.max_upload_mb} MB)")
     return _store_bytes(raw)
+
+
+def copy_photo(
+    photo_filename: str | None, thumb_filename: str | None
+) -> tuple[str | None, str | None]:
+    """Copy a stored photo + thumbnail to fresh filenames (for duplicating an
+    item), so the copy owns its own files and deleting one never affects the
+    other. Returns (None, None) when there is nothing to copy or it fails."""
+    if not photo_filename:
+        return None, None
+    stem = uuid.uuid4().hex
+    new_photo = f"{stem}.jpg"
+    new_thumb = f"{stem}_thumb.jpg" if thumb_filename else None
+    try:
+        shutil.copyfile(settings.uploads_dir / photo_filename, settings.uploads_dir / new_photo)
+        if thumb_filename and new_thumb:
+            shutil.copyfile(settings.uploads_dir / thumb_filename, settings.uploads_dir / new_thumb)
+    except OSError:
+        return None, None
+    return new_photo, new_thumb
 
 
 def delete_files(*filenames: str | None) -> None:

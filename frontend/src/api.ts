@@ -93,6 +93,7 @@ export const api = {
   createItem: (form: FormData) => request<Item>("/api/items", { method: "POST", body: form }),
   updateItem: (id: number, form: FormData) =>
     request<Item>(`/api/items/${id}`, { method: "PATCH", body: form }),
+  duplicateItem: (id: number) => request<Item>(`/api/items/${id}/duplicate`, { method: "POST" }),
   deleteItem: (id: number) => request<void>(`/api/items/${id}`, { method: "DELETE" }),
 
   // ---- matches ----

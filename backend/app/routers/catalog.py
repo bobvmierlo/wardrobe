@@ -77,7 +77,7 @@ def create_size(
     db: Session = Depends(get_db),
 ):
     label = body.label.strip()
-    if db.query(SizeOption).filter(SizeOption.label == label).first():
+    if db.query(SizeOption).filter(SizeOption.label == label, SizeOption.kind == body.kind).first():
         raise HTTPException(status_code=409, detail="Maat bestaat al")
     last = db.query(SizeOption).order_by(SizeOption.position.desc()).first()
     size = SizeOption(

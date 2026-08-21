@@ -68,9 +68,12 @@ class SizeOption(Base):
     """
 
     __tablename__ = "sizes"
+    # Unique per kind, not globally: a clothing size "40" (EU pants) and a shoe
+    # size "40" are different labels that must be able to coexist.
+    __table_args__ = (UniqueConstraint("label", "kind", name="uq_sizes_label_kind"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    label: Mapped[str] = mapped_column(String(40), unique=True)
+    label: Mapped[str] = mapped_column(String(40))
     kind: Mapped[str] = mapped_column(String(20), default="clothing")
     position: Mapped[int] = mapped_column(Integer, default=0)
 

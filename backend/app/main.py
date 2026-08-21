@@ -69,6 +69,47 @@ def migrate_sizes() -> None:
             )
 
 
+def migrate_size_uniqueness() -> None:
+    """Rebuild the sizes table so labels are unique per kind instead of globally.
+
+    Early builds made ``label`` globally unique, which blocked adding a clothing
+    size like "40"/"42" when the same number already existed as a shoe size.
+    SQLite can't drop a constraint in place, so detect the old single-column
+    unique index and rebuild the table with a composite (label, kind) unique.
+    """
+    with engine.begin() as conn:
+        tables = conn.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='sizes'"
+        ).fetchall()
+        if not tables:
+            return  # fresh install: create_all already made the correct schema
+        needs_rebuild = False
+        for idx in conn.exec_driver_sql("PRAGMA index_list(sizes)").fetchall():
+            name, unique = idx[1], idx[2]
+            if not unique:
+                continue
+            cols = [c[2] for c in conn.exec_driver_sql(f"PRAGMA index_info('{name}')").fetchall()]
+            if cols == ["label"]:  # the old global-unique index
+                needs_rebuild = True
+                break
+        if not needs_rebuild:
+            return
+        conn.exec_driver_sql(
+            "CREATE TABLE sizes_new ("
+            " id INTEGER PRIMARY KEY,"
+            " label VARCHAR(40) NOT NULL,"
+            " kind VARCHAR(20) DEFAULT 'clothing',"
+            " position INTEGER DEFAULT 0,"
+            " CONSTRAINT uq_sizes_label_kind UNIQUE (label, kind))"
+        )
+        conn.exec_driver_sql(
+            "INSERT INTO sizes_new (id, label, kind, position)"
+            " SELECT id, label, kind, position FROM sizes"
+        )
+        conn.exec_driver_sql("DROP TABLE sizes")
+        conn.exec_driver_sql("ALTER TABLE sizes_new RENAME TO sizes")
+
+
 def seed_catalog() -> None:
     """Populate the category and size lists on first run, and top up any newly
     introduced default sizes (e.g. shoe sizes, One-size) on existing installs."""
@@ -79,10 +120,10 @@ def seed_catalog() -> None:
                 Category(name=name, position=i)
                 for i, name in enumerate(DEFAULT_CATEGORIES)
             )
-        existing = {s.label for s in db.query(SizeOption).all()}
+        existing = {(s.label, s.kind) for s in db.query(SizeOption).all()}
         base = db.query(SizeOption).count()
         for i, (label, kind) in enumerate(DEFAULT_SIZES):
-            if label not in existing:
+            if (label, kind) not in existing:
                 db.add(SizeOption(label=label, kind=kind, position=base + i))
         db.commit()
     finally:
@@ -91,6 +132,7 @@ def seed_catalog() -> None:
 
 seed_admin()
 migrate_sizes()
+migrate_size_uniqueness()
 seed_catalog()
 
 app.include_router(auth.router)

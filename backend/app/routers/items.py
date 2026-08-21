@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..deps import get_current_user
-from ..images import delete_files, save_upload, save_upload_from_url
+from ..images import copy_photo, delete_files, save_upload, save_upload_from_url
 from ..models import Item, User
 from ..schemas import ItemOut
 
@@ -81,6 +81,37 @@ def create_item(
         season=_clean(season),
         notes=_clean(notes),
         is_favorite=is_favorite,
+        photo_filename=photo_name,
+        thumb_filename=thumb_name,
+        created_by_id=user.id,
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@router.post("/{item_id}/duplicate", response_model=ItemOut, status_code=201)
+def duplicate_item(
+    item_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Create a copy of an item, including its own copy of the photo."""
+    src = db.get(Item, item_id)
+    if not src:
+        raise HTTPException(status_code=404, detail="Kledingstuk niet gevonden")
+
+    photo_name, thumb_name = copy_photo(src.photo_filename, src.thumb_filename)
+    item = Item(
+        name=f"{src.name} (kopie)",
+        category=src.category,
+        brand=src.brand,
+        color=src.color,
+        size=src.size,
+        season=src.season,
+        notes=src.notes,
+        is_favorite=src.is_favorite,
         photo_filename=photo_name,
         thumb_filename=thumb_name,
         created_by_id=user.id,

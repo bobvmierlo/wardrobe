@@ -3,6 +3,7 @@ import { api, photoUrl } from "../api";
 import {
   SEASONS,
   SIZE_KIND_LABELS,
+  compareSizes,
   sizeKindForCategory,
   type Category,
   type Item,
@@ -37,6 +38,7 @@ export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormPro
   const [categories, setCategories] = useState<Category[]>([]);
   const [sizes, setSizes] = useState<SizeOption[]>([]);
   const [brands, setBrands] = useState<string[]>([]);
+  const [brandOpen, setBrandOpen] = useState(false);
   const [editorSrc, setEditorSrc] = useState<string | null>(null);
   const [showImport, setShowImport] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,16 +72,28 @@ export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormPro
   // Group sizes by kind, with the group most relevant to the chosen category
   // first, so shoes show EU numbers and hats show One-size up top.
   const sizeGroups = useMemo(() => {
-    const preferred = category ? sizeKindForCategory(category) : "clothing";
+    // Once a category is chosen, only show the sizes for its kind (shoes show
+    // EU numbers, accessories show One-size); with no category yet, show all.
+    const preferred = category ? sizeKindForCategory(category) : null;
     const order: SizeKind[] = ["clothing", "shoes", "accessory"];
-    order.sort((a, b) => (a === preferred ? -1 : b === preferred ? 1 : 0));
     const groups = order
-      .map((kind) => ({ kind, items: sizes.filter((s) => s.kind === kind) }))
+      .filter((kind) => preferred === null || kind === preferred)
+      .map((kind) => ({ kind, items: sizes.filter((s) => s.kind === kind).sort(compareSizes) }))
       .filter((g) => g.items.length > 0);
     // Keep a legacy free-text value selectable even if it's no longer in the list.
     const known = sizes.some((s) => s.label === size);
     return { groups, legacy: size && !known ? size : null };
   }, [sizes, size, category]);
+
+  // Brand suggestions filtered by what's typed. A plain <datalist> is
+  // unreliable on mobile browsers, so we render our own dropdown instead.
+  const brandMatches = useMemo(() => {
+    const q = brand.trim().toLowerCase();
+    const list = q
+      ? brands.filter((b) => b.toLowerCase().includes(q) && b.toLowerCase() !== q)
+      : brands;
+    return list.slice(0, 8);
+  }, [brand, brands]);
 
   // A preview is croppable when it's a fresh file or a same-origin stored photo.
   const canEditPhoto = !!preview && (file != null || preview.startsWith("/") || preview.startsWith("blob:"));
@@ -215,20 +229,33 @@ export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormPro
       </div>
 
       <div className="row" style={{ gap: 10 }}>
-        <div className="field" style={{ flex: 1, marginBottom: 0 }}>
+        <div className="field" style={{ flex: 1, marginBottom: 0, position: "relative" }}>
           <label>Merk</label>
           <input
             value={brand}
-            onChange={(e) => setBrand(e.target.value)}
+            onChange={(e) => { setBrand(e.target.value); setBrandOpen(true); }}
+            onFocus={() => setBrandOpen(true)}
+            onBlur={() => setTimeout(() => setBrandOpen(false), 150)}
             placeholder="bijv. Ralph Lauren"
-            list="brand-suggestions"
             autoComplete="off"
           />
-          <datalist id="brand-suggestions">
-            {brands.map((b) => (
-              <option key={b} value={b} />
-            ))}
-          </datalist>
+          {brandOpen && brandMatches.length > 0 && (
+            <div className="autocomplete">
+              {brandMatches.map((b) => (
+                <button
+                  type="button"
+                  key={b}
+                  className="autocomplete-item"
+                  // mousedown fires before blur, so prevent the blur that would
+                  // close the list before onClick runs.
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => { setBrand(b); setBrandOpen(false); }}
+                >
+                  {b}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div className="field" style={{ flex: 1, marginBottom: 0 }}>
           <label>Kleur</label>

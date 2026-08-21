@@ -54,6 +54,33 @@ export function sizeKindForCategory(category: string): SizeKind {
   return "clothing";
 }
 
+// Standard letter-size order, plus common numeric aliases (2XL = XXL, ...).
+const LETTER_RANK: Record<string, number> = {};
+["XXXS", "XXS", "XS", "S", "M", "L", "XL", "XXL", "XXXL", "XXXXL"].forEach((s, i) => {
+  LETTER_RANK[s] = i;
+});
+LETTER_RANK["2XL"] = LETTER_RANK["XXL"];
+LETTER_RANK["3XL"] = LETTER_RANK["XXXL"];
+LETTER_RANK["4XL"] = LETTER_RANK["XXXXL"];
+
+// Sort key that puts letter sizes first (in their standard order), then
+// numeric sizes ascending, then anything else alphabetically.
+function sizeSortKey(label: string): [number, number, string] {
+  const l = label.trim().toUpperCase();
+  if (l in LETTER_RANK) return [0, LETTER_RANK[l], l];
+  if (/^\d+([.,]\d+)?$/.test(l)) return [1, parseFloat(l.replace(",", ".")), l];
+  return [2, 0, l];
+}
+
+/** Compare two sizes so a dropdown lists them in a logical order. */
+export function compareSizes(a: SizeOption, b: SizeOption): number {
+  const ka = sizeSortKey(a.label);
+  const kb = sizeSortKey(b.label);
+  if (ka[0] !== kb[0]) return ka[0] - kb[0];
+  if (ka[1] !== kb[1]) return ka[1] - kb[1];
+  return ka[2].localeCompare(kb[2], "nl", { numeric: true });
+}
+
 export interface ScrapeResult {
   name: string | null;
   brand: string | null;
