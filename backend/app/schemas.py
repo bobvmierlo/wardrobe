@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 
 # ---- Users / auth ----
@@ -48,6 +48,52 @@ class ItemOut(ItemBase):
     thumb_filename: str | None
     created_by_id: int
     created_at: datetime
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def seasons(self) -> list[str]:
+        """Season stored comma-separated, surfaced as a clean list."""
+        if not self.season:
+            return []
+        return [s.strip() for s in self.season.split(",") if s.strip()]
+
+
+# ---- Categories & sizes (admin-managed lists) ----
+class CategoryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    name: str
+
+
+class NameIn(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+
+
+class SizeOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    label: str
+
+
+class LabelIn(BaseModel):
+    label: str = Field(min_length=1, max_length=40)
+
+
+# ---- Webshop import ----
+class ScrapeResult(BaseModel):
+    name: str | None = None
+    brand: str | None = None
+    color: str | None = None
+    price: str | None = None
+    description: str | None = None
+    images: list[str] = []
+
+
+# ---- Outfit suggestions ----
+class OutfitSuggestion(BaseModel):
+    items: list[ItemOut]
+    score: int
+    reason: str
 
 
 # ---- Matches ----

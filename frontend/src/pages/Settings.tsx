@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
-import type { User } from "../types";
+import type { Category, SizeOption, User } from "../types";
 
 export default function Settings() {
   const { user, logout } = useAuth();
@@ -16,6 +16,12 @@ export default function Settings() {
   const [users, setUsers] = useState<User[]>([]);
   const [nu, setNu] = useState({ username: "", display_name: "", password: "" });
 
+  // categories & sizes (admin)
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [sizes, setSizes] = useState<SizeOption[]>([]);
+  const [newCat, setNewCat] = useState("");
+  const [newSize, setNewSize] = useState("");
+
   async function loadUsers() {
     try {
       setUsers(await api.listUsers());
@@ -23,9 +29,63 @@ export default function Settings() {
       /* ignore */
     }
   }
+  async function loadCatalog() {
+    try {
+      setCategories(await api.listCategories());
+      setSizes(await api.listSizes());
+    } catch {
+      /* ignore */
+    }
+  }
   useEffect(() => {
     loadUsers();
+    loadCatalog();
   }, []);
+
+  async function addCategory(e: React.FormEvent) {
+    e.preventDefault();
+    setErr(null);
+    setMsg(null);
+    if (!newCat.trim()) return;
+    try {
+      await api.createCategory(newCat.trim());
+      setNewCat("");
+      loadCatalog();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Toevoegen mislukt");
+    }
+  }
+  async function removeCategory(id: number) {
+    setErr(null);
+    try {
+      await api.deleteCategory(id);
+      loadCatalog();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Verwijderen mislukt");
+    }
+  }
+  async function addSize(e: React.FormEvent) {
+    e.preventDefault();
+    setErr(null);
+    setMsg(null);
+    if (!newSize.trim()) return;
+    try {
+      await api.createSize(newSize.trim());
+      setNewSize("");
+      loadCatalog();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Toevoegen mislukt");
+    }
+  }
+  async function removeSize(id: number) {
+    setErr(null);
+    try {
+      await api.deleteSize(id);
+      loadCatalog();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Verwijderen mislukt");
+    }
+  }
 
   async function changePw(e: React.FormEvent) {
     e.preventDefault();
@@ -99,6 +159,46 @@ export default function Settings() {
             <button className="btn-primary">Opslaan</button>
           </form>
         </div>
+
+        {user?.is_admin && (
+          <div className="card" style={{ padding: 16 }}>
+            <h3 style={{ marginTop: 0 }}>Categorieën</h3>
+            <div className="tag-list">
+              {categories.map((c) => (
+                <span key={c.id} className="tag">
+                  {c.name}
+                  <button type="button" className="tag-x" onClick={() => removeCategory(c.id)} aria-label={`Verwijder ${c.name}`}>
+                    ✕
+                  </button>
+                </span>
+              ))}
+            </div>
+            <form onSubmit={addCategory} className="row" style={{ gap: 8, marginTop: 12 }}>
+              <input placeholder="Nieuwe categorie" value={newCat} onChange={(e) => setNewCat(e.target.value)} />
+              <button className="btn-primary" style={{ flex: "none" }}>Toevoegen</button>
+            </form>
+          </div>
+        )}
+
+        {user?.is_admin && (
+          <div className="card" style={{ padding: 16 }}>
+            <h3 style={{ marginTop: 0 }}>Maten</h3>
+            <div className="tag-list">
+              {sizes.map((s) => (
+                <span key={s.id} className="tag">
+                  {s.label}
+                  <button type="button" className="tag-x" onClick={() => removeSize(s.id)} aria-label={`Verwijder ${s.label}`}>
+                    ✕
+                  </button>
+                </span>
+              ))}
+            </div>
+            <form onSubmit={addSize} className="row" style={{ gap: 8, marginTop: 12 }}>
+              <input placeholder="Nieuwe maat" value={newSize} onChange={(e) => setNewSize(e.target.value)} />
+              <button className="btn-primary" style={{ flex: "none" }}>Toevoegen</button>
+            </form>
+          </div>
+        )}
 
         {user?.is_admin && (
           <div className="card" style={{ padding: 16 }}>

@@ -7,9 +7,17 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .database import Base, SessionLocal, engine
-from .models import User
-from .routers import auth, items, matches, users
+from .models import Category, SizeOption, User
+from .routers import auth, catalog, imports, items, matches, users
 from .security import hash_password
+
+DEFAULT_CATEGORIES = [
+    "Polo", "T-shirt", "Overhemd", "Blouse", "Trui", "Vest", "Hoodie",
+    "Sweater", "Broek", "Jeans", "Chino", "Shorts", "Rok", "Jurk", "Jas",
+    "Blazer", "Bodywarmer", "Schoenen", "Sneakers", "Laarzen", "Riem",
+    "Sjaal", "Muts", "Pet", "Das", "Tas",
+]
+DEFAULT_SIZES = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"]
 
 app = FastAPI(title="Kledingkast", version="1.0.0")
 
@@ -45,12 +53,35 @@ def seed_admin() -> None:
         db.close()
 
 
+def seed_catalog() -> None:
+    """Populate the category and size lists on first run (empty tables only)."""
+    db = SessionLocal()
+    try:
+        if db.query(Category).count() == 0:
+            db.add_all(
+                Category(name=name, position=i)
+                for i, name in enumerate(DEFAULT_CATEGORIES)
+            )
+        if db.query(SizeOption).count() == 0:
+            db.add_all(
+                SizeOption(label=label, position=i)
+                for i, label in enumerate(DEFAULT_SIZES)
+            )
+        db.commit()
+    finally:
+        db.close()
+
+
 seed_admin()
+seed_catalog()
 
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(items.router)
 app.include_router(matches.router)
+app.include_router(catalog.categories_router)
+app.include_router(catalog.sizes_router)
+app.include_router(imports.router)
 
 # Uploaded photos.
 app.mount("/uploads", StaticFiles(directory=str(settings.uploads_dir)), name="uploads")

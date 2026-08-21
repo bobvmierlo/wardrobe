@@ -13,12 +13,38 @@ export interface Item {
   color: string | null;
   size: string | null;
   season: string | null;
+  seasons: string[];
   notes: string | null;
   is_favorite: boolean;
   photo_filename: string | null;
   thumb_filename: string | null;
   created_by_id: number;
   created_at: string;
+}
+
+export interface Category {
+  id: number;
+  name: string;
+}
+
+export interface SizeOption {
+  id: number;
+  label: string;
+}
+
+export interface ScrapeResult {
+  name: string | null;
+  brand: string | null;
+  color: string | null;
+  price: string | null;
+  description: string | null;
+  images: string[];
+}
+
+export interface OutfitSuggestion {
+  items: Item[];
+  score: number;
+  reason: string;
 }
 
 export interface Pair {
@@ -38,34 +64,5 @@ export interface Stats {
   remaining_for_me: number;
 }
 
-// Suggested categories; the form also allows free text.
-export const CATEGORIES = [
-  "Polo",
-  "T-shirt",
-  "Overhemd",
-  "Blouse",
-  "Trui",
-  "Vest",
-  "Hoodie",
-  "Sweater",
-  "Broek",
-  "Jeans",
-  "Chino",
-  "Shorts",
-  "Rok",
-  "Jurk",
-  "Jas",
-  "Blazer",
-  "Bodywarmer",
-  "Schoenen",
-  "Sneakers",
-  "Laarzen",
-  "Riem",
-  "Sjaal",
-  "Muts",
-  "Pet",
-  "Das",
-  "Tas",
-];
-
+// The seasons are a fixed set; multiple can apply to one garment.
 export const SEASONS = ["Lente", "Zomer", "Herfst", "Winter", "Alle seizoenen"];

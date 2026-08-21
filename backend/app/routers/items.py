@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..deps import get_current_user
-from ..images import delete_files, save_upload
+from ..images import delete_files, save_upload, save_upload_from_url
 from ..models import Item, User
 from ..schemas import ItemOut
 
@@ -62,12 +62,15 @@ def create_item(
     notes: str | None = Form(None),
     is_favorite: bool = Form(False),
     photo: UploadFile | None = File(None),
+    photo_url: str | None = Form(None),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     photo_name = thumb_name = None
     if photo is not None and photo.filename:
         photo_name, thumb_name = save_upload(photo)
+    elif _clean(photo_url):
+        photo_name, thumb_name = save_upload_from_url(photo_url.strip())
 
     item = Item(
         name=name.strip(),
@@ -100,6 +103,7 @@ def update_item(
     notes: str | None = Form(None),
     is_favorite: bool | None = Form(None),
     photo: UploadFile | None = File(None),
+    photo_url: str | None = Form(None),
     _: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -127,6 +131,10 @@ def update_item(
     if photo is not None and photo.filename:
         old = (item.photo_filename, item.thumb_filename)
         item.photo_filename, item.thumb_filename = save_upload(photo)
+        delete_files(*old)
+    elif _clean(photo_url):
+        old = (item.photo_filename, item.thumb_filename)
+        item.photo_filename, item.thumb_filename = save_upload_from_url(photo_url.strip())
         delete_files(*old)
 
     db.commit()

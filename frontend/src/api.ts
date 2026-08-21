@@ -1,4 +1,14 @@
-import type { Item, OutfitPartner, Pair, Stats, User } from "./types";
+import type {
+  Category,
+  Item,
+  OutfitPartner,
+  OutfitSuggestion,
+  Pair,
+  ScrapeResult,
+  SizeOption,
+  Stats,
+  User,
+} from "./types";
 
 const TOKEN_KEY = "kledingkast_token";
 
@@ -97,7 +107,31 @@ export const api = {
   resetPair: (a: number, b: number) =>
     request<void>(`/api/matches/${a}/${b}`, { method: "DELETE" }),
   outfitsFor: (itemId: number) => request<OutfitPartner[]>(`/api/matches/outfits/${itemId}`),
+  suggestions: () => request<OutfitSuggestion[]>("/api/matches/suggestions"),
   stats: () => request<Stats>("/api/matches/stats"),
+
+  // ---- categories (admin-managed) ----
+  listCategories: () => request<Category[]>("/api/categories"),
+  createCategory: (name: string) =>
+    request<Category>("/api/categories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }),
+  deleteCategory: (id: number) => request<void>(`/api/categories/${id}`, { method: "DELETE" }),
+
+  // ---- sizes (admin-managed) ----
+  listSizes: () => request<SizeOption[]>("/api/sizes"),
+  createSize: (label: string) =>
+    request<SizeOption>("/api/sizes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label }),
+    }),
+  deleteSize: (id: number) => request<void>(`/api/sizes/${id}`, { method: "DELETE" }),
+
+  // ---- webshop import ----
+  scrape: (url: string) => request<ScrapeResult>(`/api/import/scrape?url=${encodeURIComponent(url)}`),
 };
 
 export function photoUrl(item: Item, thumb = false): string | null {

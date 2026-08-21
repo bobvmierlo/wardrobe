@@ -314,9 +314,77 @@ label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0 0 6px
   right: max(16px, env(safe-area-inset-right));
   bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 16px);
   width: 56px; height: 56px; border-radius: 50%;
+  padding: 0;
   background: var(--primary); color: var(--primary-ink);
-  font-size: 1.8rem; display: flex; align-items: center; justify-content: center;
+  display: flex; align-items: center; justify-content: center;
   box-shadow: 0 8px 20px rgba(56,189,248,0.4);
   z-index: 15;
 }
+.fab svg { display: block; }
 .app-wide-fab { max-width: var(--maxw); margin: 0 auto; }
+
+/* ---- segmented tabs ---- */
+.seg {
+  display: flex; gap: 4px; background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 12px; padding: 4px; margin-bottom: 16px;
+}
+.seg-btn {
+  flex: 1; background: transparent; color: var(--muted);
+  padding: 9px 8px; border-radius: 9px; font-size: 0.9rem; font-weight: 600;
+}
+.seg-btn.active { background: var(--primary); color: var(--primary-ink); }
+
+/* ---- outfit filters ---- */
+.filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.filters select { width: auto; flex: 1 1 30%; min-width: 120px; padding: 9px 12px; }
+.filters .btn-ghost { flex: 1 1 100%; }
+
+/* ---- suggestion cards ---- */
+.suggest-row { display: flex; gap: 10px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.suggest-item { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 84px; flex: none; color: var(--text); }
+.suggest-item img, .suggest-item .noimg-sm {
+  width: 84px; height: 84px; border-radius: 10px; object-fit: cover;
+  background: var(--surface-2); display: flex; align-items: center; justify-content: center; font-size: 1.6rem;
+}
+.suggest-item span {
+  font-size: 0.72rem; color: var(--muted); text-align: center; line-height: 1.1;
+  max-width: 84px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ---- admin tag lists ---- */
+.tag-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.tag {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 999px; padding: 6px 8px 6px 12px; font-size: 0.85rem;
+}
+.tag-x {
+  background: transparent; padding: 0; width: 20px; height: 20px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--muted); font-size: 0.8rem;
+}
+.tag-x:hover { color: var(--no); }
+
+/* ---- photo editor & import dialog ---- */
+.editor-backdrop {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+}
+.editor-panel {
+  width: 100%; max-width: 460px; max-height: 90vh; overflow-y: auto;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 18px; padding: 18px;
+}
+.editor-stage { touch-action: none; user-select: none; }
+.crop-box {
+  position: absolute; box-sizing: border-box;
+  border: 2px solid var(--primary);
+  box-shadow: 0 0 0 100vmax rgba(0,0,0,0.45);
+  cursor: move;
+}
+
+.import-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.import-thumb { padding: 0; border: 2px solid var(--border); border-radius: 10px; overflow: hidden; aspect-ratio: 1/1; background: var(--surface-2); }
+.import-thumb.sel { border-color: var(--primary); }
+.import-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }

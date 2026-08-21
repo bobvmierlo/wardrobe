@@ -3,9 +3,10 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..deps import get_current_user
-from ..matching import is_cross_group
+from ..matching import is_cross_group, seasons_compatible
 from ..models import Item, Match, User
-from ..schemas import ItemOut, MatchCreate, OutfitPartner, PairOut
+from ..schemas import ItemOut, MatchCreate, OutfitPartner, OutfitSuggestion, PairOut
+from ..suggestions import suggest_outfits
 
 router = APIRouter(prefix="/api/matches", tags=["matches"])
 
@@ -39,7 +40,9 @@ def next_pair(
     def candidates_for(anchor: Item) -> list[Item]:
         cands = [
             it for it in items
-            if it.id != anchor.id and frozenset((anchor.id, it.id)) not in judged
+            if it.id != anchor.id
+            and frozenset((anchor.id, it.id)) not in judged
+            and seasons_compatible(anchor.season, it.season)
         ]
         # Cross-group pairs first, then most-recently-added.
         cands.sort(key=lambda it: (not is_cross_group(anchor.category, it.category), -it.id))
@@ -154,13 +157,56 @@ def outfits_for(
     return result
 
 
+@router.get("/suggestions", response_model=list[OutfitSuggestion])
+def suggestions(
+    _: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Suggest whole outfits from the wardrobe using the colour knowledge base.
+
+    Pairs that any household member rejected are never suggested; pairs that
+    were already approved are boosted.
+    """
+    items = db.query(Item).all()
+    if len(items) < 2:
+        return []
+
+    rejected: set[frozenset[int]] = set()
+    approved: set[frozenset[int]] = set()
+    for m in db.query(Match).all():
+        pair = frozenset((m.item_a_id, m.item_b_id))
+        if m.verdict == "no":
+            rejected.add(pair)
+        elif m.verdict == "yes":
+            approved.add(pair)
+    # A rejection by anyone wins over an approval.
+    approved -= rejected
+
+    outfits = suggest_outfits(items, rejected, approved)
+    return [
+        OutfitSuggestion(
+            items=[ItemOut.model_validate(it) for it in o["items"]],
+            score=o["score"],
+            reason=o["reason"],
+        )
+        for o in outfits
+    ]
+
+
 @router.get("/stats")
 def stats(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    n = db.query(Item).count()
-    total_pairs = n * (n - 1) // 2
+    items = db.query(Item).all()
+    n = len(items)
+    # Only count pairs that can share a season; the rest are never shown, so
+    # including them would make the progress bar unable to reach 100%.
+    total_pairs = 0
+    for i in range(n):
+        for j in range(i + 1, n):
+            if seasons_compatible(items[i].season, items[j].season):
+                total_pairs += 1
     judged_by_me = db.query(Match).filter(Match.user_id == user.id).count()
     return {
         "item_count": n,
