@@ -30,21 +30,21 @@ def is_cross_group(cat_a: str, cat_b: str) -> bool:
     return group_of(cat_a) != group_of(cat_b)
 
 
-# Groups where you only ever wear one item at a time, so combining two of them
-# makes no sense (e.g. trousers with shorts). The swipe screen skips such pairs.
-_EXCLUSIVE_GROUPS: set[str] = {"bottom"}
+# Upper-body garments ("bovenkleding") that pair with a bottom on the swipe.
+_UPPER_GROUPS: set[str] = {"top", "outerwear"}
 
 
 def can_combine(cat_a: str, cat_b: str) -> bool:
-    """Whether two garments could sensibly be worn together.
+    """Whether two garments may be offered as a pair on the swipe screen.
 
-    Two items from the same single-slot group (a bottom with another bottom)
-    never combine, so they are never offered as a pair to judge.
+    The swipe judges outfits, and an outfit is always an upper-body garment
+    (bovenkleding: a top, or a jacket/blazer) with a bottom (broek/rok). So a
+    pair is only shown when exactly one item is a bottom and the other is upper
+    wear. This rules out polo-with-polo, broek-with-broek, jacket-with-top and
+    everything else (shoes, accessories, ...).
     """
-    group = group_of(cat_a)
-    if group in _EXCLUSIVE_GROUPS and group == group_of(cat_b):
-        return False
-    return True
+    ga, gb = group_of(cat_a), group_of(cat_b)
+    return (ga in _UPPER_GROUPS and gb == "bottom") or (gb in _UPPER_GROUPS and ga == "bottom")
 
 
 _ALL_SEASONS = "alle seizoenen"
