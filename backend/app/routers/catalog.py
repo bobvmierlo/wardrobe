@@ -94,11 +94,20 @@ def create_size(
 @sizes_router.delete("/{size_id}", status_code=204)
 def delete_size(
     size_id: int,
+    force: bool = False,
     _: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     size = db.get(SizeOption, size_id)
     if not size:
         raise HTTPException(status_code=404, detail="Maat niet gevonden")
+    # Warn (but allow, once confirmed) when the size is still assigned to items.
+    # The items keep their size label as free text, so this is not destructive.
+    in_use = db.query(Item).filter(Item.size == size.label).count()
+    if in_use and not force:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Maat '{size.label}' is nog in gebruik door {in_use} kledingstuk(ken)",
+        )
     db.delete(size)
     db.commit()

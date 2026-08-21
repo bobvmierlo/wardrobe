@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 from html import unescape
 from html.parser import HTMLParser
+from urllib.error import HTTPError
 from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 
@@ -24,6 +25,18 @@ from ..schemas import ScrapeResult
 router = APIRouter(prefix="/api/import", tags=["import"])
 
 _MAX_HTML = 3 * 1024 * 1024  # 3 MB of HTML is plenty for a product page
+
+# A realistic browser fingerprint: many webshops (e.g. State of Art) reject
+# requests from unknown clients with a 403, which is why the import used to
+# fail. These headers make the request look like an ordinary browser visit.
+_BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/122.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "nl-NL,nl;q=0.9,en;q=0.8",
+}
 
 
 class _ProductParser(HTMLParser):
@@ -125,11 +138,21 @@ def scrape(
     if not url.lower().startswith(("http://", "https://")):
         raise HTTPException(status_code=400, detail="Voer een geldige http(s)-URL in")
     try:
-        req = Request(url, headers={"User-Agent": "Mozilla/5.0 (Kledingkast)"})
+        req = Request(url, headers=_BROWSER_HEADERS)
         with urlopen(req, timeout=15) as resp:  # noqa: S310 (user-provided URL)
             charset = resp.headers.get_content_charset() or "utf-8"
             html = resp.read(_MAX_HTML).decode(charset, errors="replace")
             final_url = resp.geturl()
+    except HTTPError as exc:
+        # The shop answered but refused us (403 bot-block, 404 dead link, ...).
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                f"De webshop weigerde het verzoek (foutcode {exc.code}). "
+                "Deze winkel blokkeert mogelijk automatisch importeren; "
+                "vul de gegevens handmatig in."
+            ),
+        )
     except Exception:
         raise HTTPException(
             status_code=502,

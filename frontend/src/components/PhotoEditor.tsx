@@ -13,6 +13,26 @@ type Handle = "move" | "nw" | "ne" | "sw" | "se";
 const HANDLE = 22; // touch target size in px
 const MIN = 40; // minimum crop size in display px
 
+/** Selectable crop ratios. `null` means free-form. Value is width / height. */
+const RATIOS: { label: string; value: number | null }[] = [
+  { label: "Vrij", value: null },
+  { label: "1:1", value: 1 },
+  { label: "4:3", value: 4 / 3 },
+  { label: "3:4", value: 3 / 4 },
+];
+
+/** Largest rect of the given ratio that fits `w`×`h`, centred. */
+function defaultCrop(w: number, h: number, ratio: number | null): Rect {
+  if (!ratio) return { x: 0, y: 0, w, h };
+  let cw = w;
+  let ch = w / ratio;
+  if (ch > h) {
+    ch = h;
+    cw = h * ratio;
+  }
+  return { x: (w - cw) / 2, y: (h - ch) / 2, w: cw, h: ch };
+}
+
 /**
  * A small, dependency-free crop & rotate editor. The full image is kept on an
  * offscreen canvas at native resolution; rotation re-bakes that canvas, and the
@@ -25,7 +45,14 @@ export default function PhotoEditor({ src, onCancel, onApply }: PhotoEditorProps
   const [ready, setReady] = useState(false);
   const [dispSize, setDispSize] = useState({ w: 0, h: 0, scale: 1 });
   const [crop, setCrop] = useState<Rect>({ x: 0, y: 0, w: 0, h: 0 });
+  const [ratio, setRatio] = useState<number | null>(null);
+  const ratioRef = useRef<number | null>(null);
+  const dispRef = useRef({ w: 0, h: 0 });
   const drag = useRef<{ handle: Handle; startX: number; startY: number; start: Rect } | null>(null);
+
+  useEffect(() => {
+    ratioRef.current = ratio;
+  }, [ratio]);
 
   // Draw the base canvas onto the visible preview.
   const paint = useCallback(() => {
@@ -38,7 +65,10 @@ export default function PhotoEditor({ src, onCancel, onApply }: PhotoEditorProps
     ctx.drawImage(base, 0, 0, prev.width, prev.height);
   }, []);
 
-  const layout = useCallback(() => {
+  // Recompute the display size. `reset` forces a fresh full-ratio selection
+  // (image load / rotate); otherwise the existing crop is rescaled so a plain
+  // window resize doesn't wipe the user's selection.
+  const layout = useCallback((reset: boolean) => {
     const base = baseRef.current;
     const stage = stageRef.current;
     if (!base || !stage) return;
@@ -47,11 +77,16 @@ export default function PhotoEditor({ src, onCancel, onApply }: PhotoEditorProps
     const scale = Math.min(maxW / base.width, maxH / base.height, 1);
     const w = Math.round(base.width * scale);
     const h = Math.round(base.height * scale);
+    const prev = dispRef.current;
+    dispRef.current = { w, h };
     setDispSize({ w, h, scale });
     setCrop((c) => {
-      // Keep full-frame selection when uninitialised or after a rotate.
-      if (c.w === 0) return { x: 0, y: 0, w, h };
-      return { x: 0, y: 0, w, h };
+      if (reset || c.w === 0 || prev.w === 0 || prev.h === 0) {
+        return defaultCrop(w, h, ratioRef.current);
+      }
+      const fx = w / prev.w;
+      const fy = h / prev.h;
+      return { x: c.x * fx, y: c.y * fy, w: c.w * fx, h: c.h * fy };
     });
   }, []);
 
@@ -65,7 +100,7 @@ export default function PhotoEditor({ src, onCancel, onApply }: PhotoEditorProps
       cv.getContext("2d")!.drawImage(img, 0, 0);
       baseRef.current = cv;
       setReady(true);
-      layout();
+      layout(true);
     };
     img.src = src;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -76,7 +111,7 @@ export default function PhotoEditor({ src, onCancel, onApply }: PhotoEditorProps
   }, [ready, dispSize, paint]);
 
   useEffect(() => {
-    const onResize = () => layout();
+    const onResize = () => layout(false);
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, [layout]);
@@ -92,7 +127,13 @@ export default function PhotoEditor({ src, onCancel, onApply }: PhotoEditorProps
     ctx.rotate((dir * Math.PI) / 2);
     ctx.drawImage(base, -base.width / 2, -base.height / 2);
     baseRef.current = cv;
-    layout();
+    layout(true);
+  }
+
+  function chooseRatio(value: number | null) {
+    setRatio(value);
+    ratioRef.current = value;
+    setCrop(defaultCrop(dispSize.w, dispSize.h, value));
   }
 
   function clampRect(r: Rect): Rect {
@@ -120,17 +161,44 @@ export default function PhotoEditor({ src, onCancel, onApply }: PhotoEditorProps
     drag.current = { handle, startX: px, startY: py, start: crop };
   }
 
+  // Resize a corner while keeping the opposite corner fixed and honouring the
+  // locked aspect ratio; the rect is shrunk to stay inside the frame.
+  function resizeRatio(handle: Exclude<Handle, "move">, s: Rect, dx: number, dy: number, r: number): Rect {
+    const dirX = handle === "ne" || handle === "se" ? 1 : -1;
+    const dirY = handle === "sw" || handle === "se" ? 1 : -1;
+    const ax = dirX > 0 ? s.x : s.x + s.w; // fixed (anchor) corner
+    const ay = dirY > 0 ? s.y : s.y + s.h;
+    const desiredW = dirX > 0 ? s.w + dx : s.w - dx;
+    const desiredH = dirY > 0 ? s.h + dy : s.h - dy;
+    const maxW = dirX > 0 ? dispSize.w - ax : ax;
+    const maxH = dirY > 0 ? dispSize.h - ay : ay;
+    let w = Math.max(desiredW, desiredH * r, MIN, MIN * r);
+    w = Math.min(w, maxW, maxH * r);
+    const h = w / r;
+    const x = dirX > 0 ? ax : ax - w;
+    const y = dirY > 0 ? ay : ay - h;
+    return { x, y, w, h };
+  }
+
   function onMove(e: React.PointerEvent) {
     if (!drag.current) return;
     const { px, py } = pointer(e);
     const dx = px - drag.current.startX;
     const dy = py - drag.current.startY;
     const s = drag.current.start;
+    const handle = drag.current.handle;
+
+    if (handle === "move") {
+      setCrop(clampRect({ ...s, x: s.x + dx, y: s.y + dy }));
+      return;
+    }
+    if (ratio) {
+      setCrop(resizeRatio(handle, s, dx, dy, ratio));
+      return;
+    }
+
     let r: Rect = { ...s };
-    switch (drag.current.handle) {
-      case "move":
-        r = { ...s, x: s.x + dx, y: s.y + dy };
-        break;
+    switch (handle) {
       case "nw":
         r = { x: s.x + dx, y: s.y + dy, w: s.w - dx, h: s.h - dy };
         break;
@@ -145,8 +213,8 @@ export default function PhotoEditor({ src, onCancel, onApply }: PhotoEditorProps
         break;
     }
     // Prevent inverting when a corner crosses the opposite edge.
-    if (r.w < MIN) { r.w = MIN; if (drag.current.handle.includes("w")) r.x = s.x + s.w - MIN; }
-    if (r.h < MIN) { r.h = MIN; if (drag.current.handle.startsWith("n")) r.y = s.y + s.h - MIN; }
+    if (r.w < MIN) { r.w = MIN; if (handle.includes("w")) r.x = s.x + s.w - MIN; }
+    if (r.h < MIN) { r.h = MIN; if (handle.startsWith("n")) r.y = s.y + s.h - MIN; }
     setCrop(clampRect(r));
   }
 
@@ -218,10 +286,23 @@ export default function PhotoEditor({ src, onCancel, onApply }: PhotoEditorProps
           )}
         </div>
 
-        <div className="row" style={{ gap: 10, justifyContent: "center", marginTop: 14 }}>
+        <div className="chips" style={{ justifyContent: "center", overflowX: "visible", flexWrap: "wrap", marginTop: 14, marginBottom: 0 }}>
+          {RATIOS.map((r) => (
+            <button
+              type="button"
+              key={r.label}
+              className={`chip ${ratio === r.value ? "active" : ""}`}
+              onClick={() => chooseRatio(r.value)}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="row" style={{ gap: 10, justifyContent: "center", marginTop: 12 }}>
           <button type="button" className="btn-ghost" onClick={() => rotate(-1)} aria-label="Draai linksom">↺ Links</button>
           <button type="button" className="btn-ghost" onClick={() => rotate(1)} aria-label="Draai rechtsom">↻ Rechts</button>
-          <button type="button" className="btn-ghost" onClick={() => setCrop({ x: 0, y: 0, w: dispSize.w, h: dispSize.h })}>Reset</button>
+          <button type="button" className="btn-ghost" onClick={() => setCrop(defaultCrop(dispSize.w, dispSize.h, ratio))}>Reset</button>
         </div>
 
         <button type="button" className="btn-primary btn-block" style={{ marginTop: 14 }} onClick={apply}>

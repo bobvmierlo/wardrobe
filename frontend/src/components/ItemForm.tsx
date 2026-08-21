@@ -36,6 +36,7 @@ export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormPro
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [sizes, setSizes] = useState<SizeOption[]>([]);
+  const [brands, setBrands] = useState<string[]>([]);
   const [editorSrc, setEditorSrc] = useState<string | null>(null);
   const [showImport, setShowImport] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,6 +46,19 @@ export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormPro
   useEffect(() => {
     api.listCategories().then(setCategories).catch(() => setCategories([]));
     api.listSizes().then(setSizes).catch(() => setSizes([]));
+    // Collect the brands already in the wardrobe so the Merk field can suggest
+    // them — avoids duplicates and near-duplicate spellings of the same brand.
+    api
+      .listItems()
+      .then((items) => {
+        const seen = new Map<string, string>();
+        for (const it of items) {
+          const b = (it.brand ?? "").trim();
+          if (b && !seen.has(b.toLowerCase())) seen.set(b.toLowerCase(), b);
+        }
+        setBrands([...seen.values()].sort((a, b) => a.localeCompare(b, "nl", { sensitivity: "base" })));
+      })
+      .catch(() => setBrands([]));
   }, []);
 
   // Include a legacy free-text value so an existing item stays selectable.
@@ -150,7 +164,7 @@ export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormPro
         onClick={() => fileRef.current?.click()}
       >
         {preview ? (
-          <img src={preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          <img src={preview} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
         ) : (
           <div className="center muted">
             <div style={{ fontSize: "2.6rem" }}>📷</div>
@@ -202,7 +216,18 @@ export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormPro
       <div className="row" style={{ gap: 10 }}>
         <div className="field" style={{ flex: 1, marginBottom: 0 }}>
           <label>Merk</label>
-          <input value={brand} onChange={(e) => setBrand(e.target.value)} placeholder="bijv. Ralph Lauren" />
+          <input
+            value={brand}
+            onChange={(e) => setBrand(e.target.value)}
+            placeholder="bijv. Ralph Lauren"
+            list="brand-suggestions"
+            autoComplete="off"
+          />
+          <datalist id="brand-suggestions">
+            {brands.map((b) => (
+              <option key={b} value={b} />
+            ))}
+          </datalist>
         </div>
         <div className="field" style={{ flex: 1, marginBottom: 0 }}>
           <label>Kleur</label>
