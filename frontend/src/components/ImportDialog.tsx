@@ -33,10 +33,13 @@ export default function ImportDialog({ onCancel, onImport }: ImportDialogProps) 
     setError(null);
     try {
       const res = await api.scrape(url.trim());
-      setData(res);
       setChosen(res.images[0] ?? null);
-      if (!res.name && res.images.length === 0) {
-        setError("Geen productgegevens gevonden op deze pagina.");
+      if (!res.name && !res.brand && res.images.length === 0) {
+        // Fetched fine, but the page exposed nothing we could use.
+        setData(null);
+        setError("Geen productgegevens gevonden op deze pagina. Vul de gegevens handmatig in.");
+      } else {
+        setData(res);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ophalen mislukt");
@@ -89,7 +92,7 @@ export default function ImportDialog({ onCancel, onImport }: ImportDialogProps) 
               </div>
             )}
 
-            {data.images.length > 0 && (
+            {data.images.length > 0 ? (
               <>
                 <label>Kies een foto</label>
                 <div className="import-grid">
@@ -105,6 +108,10 @@ export default function ImportDialog({ onCancel, onImport }: ImportDialogProps) 
                   ))}
                 </div>
               </>
+            ) : (
+              <p className="muted" style={{ fontSize: "0.85rem" }}>
+                Geen foto gevonden op deze pagina — je kunt er na het overnemen zelf één toevoegen.
+              </p>
             )}
 
             <button type="button" className="btn-primary btn-block" onClick={confirm}>

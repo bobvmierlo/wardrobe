@@ -84,7 +84,20 @@ export default function Settings() {
       await api.deleteSize(id);
       loadCatalog();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Verwijderen mislukt");
+      // When the size is still assigned to items the API refuses (409); warn the
+      // admin and let them confirm before deleting it anyway.
+      const status = (e as { status?: number }).status;
+      const detail = e instanceof Error ? e.message : "Verwijderen mislukt";
+      if (status === 409 && confirm(`${detail}.\n\nToch verwijderen? De kledingstukken behouden hun huidige maat.`)) {
+        try {
+          await api.deleteSize(id, true);
+          loadCatalog();
+        } catch (e2) {
+          setErr(e2 instanceof Error ? e2.message : "Verwijderen mislukt");
+        }
+        return;
+      }
+      if (status !== 409) setErr(detail);
     }
   }
 

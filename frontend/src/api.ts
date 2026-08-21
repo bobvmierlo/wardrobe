@@ -128,7 +128,8 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ label, kind }),
     }),
-  deleteSize: (id: number) => request<void>(`/api/sizes/${id}`, { method: "DELETE" }),
+  deleteSize: (id: number, force = false) =>
+    request<void>(`/api/sizes/${id}${force ? "?force=true" : ""}`, { method: "DELETE" }),
 
   // ---- webshop import ----
   scrape: (url: string) => request<ScrapeResult>(`/api/import/scrape?url=${encodeURIComponent(url)}`),
