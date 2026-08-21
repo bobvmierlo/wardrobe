@@ -1,11 +1,11 @@
 name: Build and publish container
 
-# Runs when a GitHub Release is published. First it stamps the release version
-# into backend/app/_version.py (the single source of truth) and commits it back
-# to main with [skip ci], then it builds the Docker image from that exact commit
-# and pushes it to the GitHub Container Registry (ghcr.io/<owner>/<repo>).
+# Runs when a GitHub Release is published. In one job it stamps the release
+# version into backend/app/_version.py (the single source of truth), commits it
+# back to main with [skip ci], then builds the Docker image from that working
+# tree and pushes it to the GitHub Container Registry (ghcr.io/<owner>/<repo>).
 #
-# We trigger on `release` only (not on the tag push) so a release builds exactly
+# Triggers on `release` only (not the tag push), so a release builds exactly
 # once. Plain pushes to main do not produce a container.
 
 on:
@@ -18,13 +18,11 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  version:
+  release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    outputs:
-      version: ${{ steps.stamp.outputs.version }}
-      sha: ${{ steps.commit.outputs.sha }}
+      packages: write
     steps:
       - name: Checkout main
         uses: actions/checkout@v4
@@ -43,7 +41,6 @@ jobs:
           echo "Version: $VERSION"
 
       - name: Commit version bump
-        id: commit
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -54,19 +51,6 @@ jobs:
             git commit -m "chore: release v${{ steps.stamp.outputs.version }} [skip ci]"
             git push origin HEAD:main
           fi
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-
-  build-and-push:
-    needs: version
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - name: Checkout the stamped commit
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.version.outputs.sha }}
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -81,14 +65,14 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           # Tags:
-          #  - <version>     the release version (e.g. "0.1.0")
+          #  - <version>          the release version (e.g. "0.1.0")
           #  - <major>.<minor>, <major>   when the version is full semver
-          #  - latest        newest published release
-          #  - <short-sha>   precise pinning
+          #  - latest             newest published release
+          #  - <short-sha>        precise pinning
           tags: |
-            type=raw,value=${{ needs.version.outputs.version }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ needs.version.outputs.version }}
-            type=semver,pattern={{major}},value=${{ needs.version.outputs.version }}
+            type=raw,value=${{ steps.stamp.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.stamp.outputs.version }}
+            type=semver,pattern={{major}},value=${{ steps.stamp.outputs.version }}
             type=sha,format=short
             type=raw,value=latest
 
