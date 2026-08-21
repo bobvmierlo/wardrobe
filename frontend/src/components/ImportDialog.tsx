@@ -28,6 +28,7 @@ export default function ImportDialog({ onCancel, onImport }: ImportDialogProps) 
 
   async function fetchData(e: React.FormEvent) {
     e.preventDefault();
+    e.stopPropagation();
     if (!url.trim()) return;
     setBusy(true);
     setError(null);
