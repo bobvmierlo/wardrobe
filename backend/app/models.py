@@ -38,7 +38,8 @@ class Item(Base):
     brand: Mapped[str | None] = mapped_column(String(120), nullable=True)
     color: Mapped[str | None] = mapped_column(String(60), nullable=True)
     size: Mapped[str | None] = mapped_column(String(40), nullable=True)
-    season: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # One or more seasons, stored comma-separated (e.g. "Lente,Zomer").
+    season: Mapped[str | None] = mapped_column(String(120), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     photo_filename: Mapped[str | None] = mapped_column(String(200), nullable=True)
     thumb_filename: Mapped[str | None] = mapped_column(String(200), nullable=True)
@@ -47,6 +48,31 @@ class Item(Base):
     created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     created_by: Mapped[User] = relationship()
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class Category(Base):
+    """A clothing category, managed by admins in the settings panel."""
+
+    __tablename__ = "categories"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(60), unique=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class SizeOption(Base):
+    """A selectable size label, managed by admins in the settings panel.
+
+    ``kind`` groups sizes so the form can offer the right ones per category:
+    "clothing" (XS-XXXL), "shoes" (EU numbers) or "accessory" (One-size).
+    """
+
+    __tablename__ = "sizes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    label: Mapped[str] = mapped_column(String(40), unique=True)
+    kind: Mapped[str] = mapped_column(String(20), default="clothing")
+    position: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class Match(Base):

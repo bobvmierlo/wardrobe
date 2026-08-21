@@ -26,12 +26,25 @@ cp .env.example .env
 # genereer een geheime sleutel en zet 'm in .env (WARDROBE_SECRET_KEY):
 openssl rand -hex 32
 nano .env            # sleutel + admin-wachtwoord invullen
-docker compose up -d --build
+docker compose up -d
+```
+
+`docker compose` haalt de kant-en-klare image op van de GitHub Container
+Registry (`ghcr.io/bobvmierlo/wardrobe`), gebouwd door de GitHub Actions-
+workflow. Bijwerken naar een nieuwe versie doe je met:
+
+```bash
+docker compose pull && docker compose up -d
 ```
 
 De app draait nu op `http://127.0.0.1:8000` (alleen lokaal). Zet je bestaande
 nginx ervoor met [`deploy/nginx.conf.example`](deploy/nginx.conf.example) en
 regel HTTPS met certbot.
+
+> Zelf bouwen in plaats van de gepubliceerde image gebruiken? Draai
+> `docker compose -f docker-compose.yml build` niet — voeg een `build: .`
+> toe of gebruik `docker build -t kledingkast .` en pas de `image:` in
+> `docker-compose.yml` aan.
 
 > Wil je 'm direct op je LAN i.p.v. achter nginx? Zet in `docker-compose.yml`
 > de poort op `"8000:8000"`.

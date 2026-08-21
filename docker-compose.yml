@@ -1,7 +1,9 @@
 services:
   kledingkast:
-    build: .
-    image: kledingkast:latest
+    # Pull the pre-built image from GitHub Container Registry (published by the
+    # GitHub Actions workflow). Pin a specific version by replacing ":latest",
+    # e.g. ":v1.2.0". Update with `docker compose pull && docker compose up -d`.
+    image: ghcr.io/bobvmierlo/wardrobe:latest
     container_name: kledingkast
     restart: unless-stopped
     # Bind to localhost only; put your existing nginx in front as a reverse

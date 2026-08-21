@@ -28,3 +28,27 @@ def group_of(category: str) -> str:
 
 def is_cross_group(cat_a: str, cat_b: str) -> bool:
     return group_of(cat_a) != group_of(cat_b)
+
+
+_ALL_SEASONS = "alle seizoenen"
+
+
+def _season_set(season: str | None) -> set[str]:
+    if not season:
+        return set()
+    return {s.strip().lower() for s in season.split(",") if s.strip()}
+
+
+def seasons_compatible(season_a: str | None, season_b: str | None) -> bool:
+    """Whether two garments can be worn in a shared season.
+
+    Items with no season set, or tagged "Alle seizoenen", match anything.
+    Otherwise the two must share at least one season, so a pure winter item
+    is never suggested next to a pure summer one.
+    """
+    sa, sb = _season_set(season_a), _season_set(season_b)
+    if not sa or not sb:
+        return True
+    if _ALL_SEASONS in sa or _ALL_SEASONS in sb:
+        return True
+    return bool(sa & sb)

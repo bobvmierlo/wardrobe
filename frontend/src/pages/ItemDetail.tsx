@@ -110,10 +110,10 @@ export default function ItemDetail() {
                   <span>{item.size}</span>
                 </div>
               )}
-              {item.season && (
+              {item.seasons.length > 0 && (
                 <div className="kv">
                   <span className="k">Seizoen</span>
-                  <span>{item.season}</span>
+                  <span>{item.seasons.join(", ")}</span>
                 </div>
               )}
               {item.notes && (

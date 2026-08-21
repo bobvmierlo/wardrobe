@@ -1,6 +1,18 @@
-import { useRef, useState } from "react";
-import { photoUrl } from "../api";
-import { CATEGORIES, SEASONS, type Item } from "../types";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { api, photoUrl } from "../api";
+import {
+  SEASONS,
+  SIZE_KIND_LABELS,
+  sizeKindForCategory,
+  type Category,
+  type Item,
+  type SizeKind,
+  type SizeOption,
+} from "../types";
+import PhotoEditor from "./PhotoEditor";
+import ImportDialog, { type ImportResult } from "./ImportDialog";
+
+const ALL_SEASONS = "Alle seizoenen";
 
 export interface ItemFormProps {
   initial?: Item;
@@ -14,18 +26,87 @@ export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormPro
   const [brand, setBrand] = useState(initial?.brand ?? "");
   const [color, setColor] = useState(initial?.color ?? "");
   const [size, setSize] = useState(initial?.size ?? "");
-  const [season, setSeason] = useState(initial?.season ?? "");
+  const [seasons, setSeasons] = useState<string[]>(initial?.seasons ?? []);
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [favorite, setFavorite] = useState(initial?.is_favorite ?? false);
+
   const [file, setFile] = useState<File | null>(null);
+  const [photoRemoteUrl, setPhotoRemoteUrl] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(initial ? photoUrl(initial) : null);
+
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [sizes, setSizes] = useState<SizeOption[]>([]);
+  const [editorSrc, setEditorSrc] = useState<string | null>(null);
+  const [showImport, setShowImport] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    api.listCategories().then(setCategories).catch(() => setCategories([]));
+    api.listSizes().then(setSizes).catch(() => setSizes([]));
+  }, []);
+
+  // Include a legacy free-text value so an existing item stays selectable.
+  const categoryOptions = useMemo(() => {
+    const names = categories.map((c) => c.name);
+    if (category && !names.includes(category)) return [category, ...names];
+    return names;
+  }, [categories, category]);
+  // Group sizes by kind, with the group most relevant to the chosen category
+  // first, so shoes show EU numbers and hats show One-size up top.
+  const sizeGroups = useMemo(() => {
+    const preferred = category ? sizeKindForCategory(category) : "clothing";
+    const order: SizeKind[] = ["clothing", "shoes", "accessory"];
+    order.sort((a, b) => (a === preferred ? -1 : b === preferred ? 1 : 0));
+    const groups = order
+      .map((kind) => ({ kind, items: sizes.filter((s) => s.kind === kind) }))
+      .filter((g) => g.items.length > 0);
+    // Keep a legacy free-text value selectable even if it's no longer in the list.
+    const known = sizes.some((s) => s.label === size);
+    return { groups, legacy: size && !known ? size : null };
+  }, [sizes, size, category]);
+
+  // A preview is croppable when it's a fresh file or a same-origin stored photo.
+  const canEditPhoto = !!preview && (file != null || preview.startsWith("/") || preview.startsWith("blob:"));
+
   function pickFile(f: File | null) {
+    if (!f) return;
+    const url = URL.createObjectURL(f);
     setFile(f);
-    if (f) setPreview(URL.createObjectURL(f));
+    setPhotoRemoteUrl(null);
+    setPreview(url);
+    setEditorSrc(url); // jump straight into crop/rotate
+  }
+
+  function applyCrop(blob: Blob) {
+    const cropped = new File([blob], "photo.jpg", { type: "image/jpeg" });
+    const url = URL.createObjectURL(cropped);
+    setFile(cropped);
+    setPhotoRemoteUrl(null);
+    setPreview(url);
+    setEditorSrc(null);
+  }
+
+  function applyImport(res: ImportResult) {
+    if (res.name) setName(res.name);
+    if (res.brand) setBrand(res.brand);
+    if (res.color) setColor(res.color);
+    if (res.notes) setNotes((n) => (n ? n : res.notes!));
+    if (res.imageUrl) {
+      setFile(null);
+      setPhotoRemoteUrl(res.imageUrl);
+      setPreview(res.imageUrl);
+    }
+    setShowImport(false);
+  }
+
+  function toggleSeason(s: string) {
+    setSeasons((cur) => {
+      if (s === ALL_SEASONS) return cur.includes(s) ? [] : [ALL_SEASONS];
+      const next = cur.filter((x) => x !== ALL_SEASONS);
+      return next.includes(s) ? next.filter((x) => x !== s) : [...next, s];
+    });
   }
 
   async function submit(e: React.FormEvent) {
@@ -42,10 +123,11 @@ export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormPro
     form.set("brand", brand);
     form.set("color", color);
     form.set("size", size);
-    form.set("season", season);
+    form.set("season", seasons.join(","));
     form.set("notes", notes);
     form.set("is_favorite", favorite ? "true" : "false");
     if (file) form.set("photo", file);
+    else if (photoRemoteUrl) form.set("photo_url", photoRemoteUrl);
     try {
       await onSubmit(form);
     } catch (err) {
@@ -57,6 +139,10 @@ export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormPro
   return (
     <form onSubmit={submit} className="stack">
       {error && <div className="error">{error}</div>}
+
+      <button type="button" className="btn-ghost" onClick={() => setShowImport(true)}>
+        🔗 Importeren uit webshop
+      </button>
 
       <div
         className="card"
@@ -81,9 +167,21 @@ export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormPro
         onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
       />
       {preview && (
-        <button type="button" className="btn-ghost" onClick={() => fileRef.current?.click()}>
-          Andere foto kiezen
-        </button>
+        <div className="row" style={{ gap: 10 }}>
+          <button type="button" className="btn-ghost" style={{ flex: 1 }} onClick={() => fileRef.current?.click()}>
+            Andere foto
+          </button>
+          <button
+            type="button"
+            className="btn-ghost"
+            style={{ flex: 1 }}
+            disabled={!canEditPhoto}
+            title={canEditPhoto ? "" : "Bijsnijden kan alleen voor een eigen foto"}
+            onClick={() => preview && setEditorSrc(preview)}
+          >
+            ✂️ Bijsnijden / draaien
+          </button>
+        </div>
       )}
 
       <div className="field">
@@ -93,18 +191,12 @@ export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormPro
 
       <div className="field">
         <label>Categorie *</label>
-        <input
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          placeholder="Kies of typ…"
-          list="category-list"
-          required
-        />
-        <datalist id="category-list">
-          {CATEGORIES.map((c) => (
-            <option key={c} value={c} />
+        <select value={category} onChange={(e) => setCategory(e.target.value)} required>
+          <option value="" disabled>Kies een categorie…</option>
+          {categoryOptions.map((c) => (
+            <option key={c} value={c}>{c}</option>
           ))}
-        </datalist>
+        </select>
       </div>
 
       <div className="row" style={{ gap: 10 }}>
@@ -118,21 +210,34 @@ export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormPro
         </div>
       </div>
 
-      <div className="row" style={{ gap: 10 }}>
-        <div className="field" style={{ flex: 1, marginBottom: 0 }}>
-          <label>Maat</label>
-          <input value={size} onChange={(e) => setSize(e.target.value)} placeholder="bijv. L" />
-        </div>
-        <div className="field" style={{ flex: 1, marginBottom: 0 }}>
-          <label>Seizoen</label>
-          <select value={season} onChange={(e) => setSeason(e.target.value)}>
-            <option value="">—</option>
-            {SEASONS.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+      <div className="field">
+        <label>Maat</label>
+        <select value={size} onChange={(e) => setSize(e.target.value)}>
+          <option value="">—</option>
+          {sizeGroups.legacy && <option value={sizeGroups.legacy}>{sizeGroups.legacy}</option>}
+          {sizeGroups.groups.map((g) => (
+            <optgroup key={g.kind} label={SIZE_KIND_LABELS[g.kind]}>
+              {g.items.map((s) => (
+                <option key={s.id} value={s.label}>{s.label}</option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+      </div>
+
+      <div className="field">
+        <label>Seizoen (meerdere mogelijk)</label>
+        <div className="chips" style={{ overflowX: "visible", flexWrap: "wrap", marginBottom: 0 }}>
+          {SEASONS.map((s) => (
+            <button
+              type="button"
+              key={s}
+              className={`chip ${seasons.includes(s) ? "active" : ""}`}
+              onClick={() => toggleSeason(s)}
+            >
+              {s}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -149,6 +254,13 @@ export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormPro
       <button className="btn-primary btn-block" disabled={busy}>
         {busy ? "Bezig…" : submitLabel}
       </button>
+
+      {editorSrc && (
+        <PhotoEditor src={editorSrc} onCancel={() => setEditorSrc(null)} onApply={applyCrop} />
+      )}
+      {showImport && (
+        <ImportDialog onCancel={() => setShowImport(false)} onImport={applyImport} />
+      )}
     </form>
   );
 }
