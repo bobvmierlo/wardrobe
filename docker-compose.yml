@@ -1,0 +1,24 @@
+services:
+  kledingkast:
+    build: .
+    image: kledingkast:latest
+    container_name: kledingkast
+    restart: unless-stopped
+    # Bind to localhost only; put your existing nginx in front as a reverse
+    # proxy (see deploy/nginx.conf.example). Change to "8000:8000" to expose
+    # directly on the LAN instead.
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - kledingkast-data:/data
+    environment:
+      # CHANGE THIS to a long random string (e.g. `openssl rand -hex 32`).
+      WARDROBE_SECRET_KEY: "${WARDROBE_SECRET_KEY:?set WARDROBE_SECRET_KEY in .env}"
+      # Bootstrap admin, created only on first run when the database is empty.
+      WARDROBE_ADMIN_USERNAME: "${WARDROBE_ADMIN_USERNAME:-admin}"
+      WARDROBE_ADMIN_PASSWORD: "${WARDROBE_ADMIN_PASSWORD:-changeme}"
+      WARDROBE_ADMIN_DISPLAY_NAME: "${WARDROBE_ADMIN_DISPLAY_NAME:-Beheerder}"
+      WARDROBE_MAX_UPLOAD_MB: "${WARDROBE_MAX_UPLOAD_MB:-15}"
+
+volumes:
+  kledingkast-data:

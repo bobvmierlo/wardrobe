@@ -1,0 +1,12 @@
+**/node_modules
+**/.venv
+**/dist
+**/__pycache__
+**/*.pyc
+backend/data
+backend/static
+data
+.git
+.env
+*.md
+!backend/requirements.txt
