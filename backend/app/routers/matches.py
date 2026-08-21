@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..deps import get_current_user
-from ..matching import is_cross_group, seasons_compatible
+from ..matching import can_combine, is_cross_group, seasons_compatible
 from ..models import Item, Match, User
 from ..schemas import ItemOut, MatchCreate, OutfitPartner, OutfitSuggestion, PairOut
 from ..suggestions import suggest_outfits
@@ -43,6 +43,7 @@ def next_pair(
             if it.id != anchor.id
             and frozenset((anchor.id, it.id)) not in judged
             and seasons_compatible(anchor.season, it.season)
+            and can_combine(anchor.category, it.category)
         ]
         # Cross-group pairs first, then most-recently-added.
         cands.sort(key=lambda it: (not is_cross_group(anchor.category, it.category), -it.id))
@@ -205,7 +206,9 @@ def stats(
     total_pairs = 0
     for i in range(n):
         for j in range(i + 1, n):
-            if seasons_compatible(items[i].season, items[j].season):
+            if seasons_compatible(items[i].season, items[j].season) and can_combine(
+                items[i].category, items[j].category
+            ):
                 total_pairs += 1
     judged_by_me = db.query(Match).filter(Match.user_id == user.id).count()
     return {
