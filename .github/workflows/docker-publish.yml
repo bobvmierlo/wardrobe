@@ -1,15 +1,14 @@
 name: Build and publish container
 
 # Builds the Docker image and pushes it to the GitHub Container Registry
-# (ghcr.io/<owner>/<repo>). Runs ONLY for released versions — a pushed semver
-# tag (v1.2.3) or a published GitHub Release — so plain pushes to main no
-# longer produce a container. Use workflow_dispatch for a manual one-off.
+# (ghcr.io/<owner>/<repo>). Runs ONLY on a version tag (e.g. v1.2.3). Publishing
+# a GitHub Release creates that tag, so a release builds exactly once. We do NOT
+# also listen to the `release` event, because that would build the same version
+# twice. Plain pushes to main no longer produce a container.
 
 on:
   push:
     tags: ["v*"]
-  release:
-    types: [published]
   workflow_dispatch:
 
 env:
@@ -40,10 +39,12 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           # Produce a lowercase-safe image name and useful tags:
-          #  - v1.2.3, 1.2   (from the released semver tag)
+          #  - the tag name  (always, e.g. "v0.1" or "v1.2.3" — works for any tag)
+          #  - 1.2.3, 1.2    (extra tags only when the tag is full semver)
           #  - latest        (every release points latest at the newest version)
           #  - <short-sha>   (always, for precise pinning)
           tags: |
+            type=ref,event=tag
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,format=short
