@@ -4,6 +4,7 @@ import { api, photoUrl } from "../api";
 import SwipeCard, { type SwipeCardHandle } from "../components/SwipeCard";
 import AppFooter from "../components/AppFooter";
 import SuggestionList from "../components/SuggestionList";
+import ImageModal from "../components/ImageModal";
 import type { OutfitSuggestion, Pair, Stats } from "../types";
 
 export default function Combine() {
@@ -16,6 +17,7 @@ export default function Combine() {
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [suggestions, setSuggestions] = useState<OutfitSuggestion[]>([]);
+  const [zoom, setZoom] = useState<string | null>(null);
   const cardRef = useRef<SwipeCardHandle>(null);
 
   async function refreshStats() {
@@ -114,7 +116,15 @@ export default function Combine() {
           <>
             <div className="anchor-band">
               {anchorSrc ? (
-                <img src={anchorSrc} alt={anchor!.name} />
+                <button
+                  type="button"
+                  className="anchor-thumb"
+                  onClick={() => setZoom(photoUrl(anchor!) || anchorSrc)}
+                  aria-label={`Vergroot foto van ${anchor!.name}`}
+                >
+                  <img src={anchorSrc} alt={anchor!.name} />
+                  <span className="zoom-badge" aria-hidden="true">⤢</span>
+                </button>
               ) : (
                 <div className="noimg-sm">👕</div>
               )}
@@ -157,6 +167,8 @@ export default function Combine() {
 
         <AppFooter />
       </div>
+
+      {zoom && <ImageModal src={zoom} alt="Kledingstuk" onClose={() => setZoom(null)} />}
     </>
   );
 }
