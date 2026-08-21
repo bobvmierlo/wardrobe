@@ -151,6 +151,7 @@ export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormPro
   }
 
   return (
+    <>
     <form onSubmit={submit} className="stack">
       {error && <div className="error">{error}</div>}
 
@@ -279,13 +280,17 @@ export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormPro
       <button className="btn-primary btn-block" disabled={busy}>
         {busy ? "Bezig…" : submitLabel}
       </button>
-
-      {editorSrc && (
-        <PhotoEditor src={editorSrc} onCancel={() => setEditorSrc(null)} onApply={applyCrop} />
-      )}
-      {showImport && (
-        <ImportDialog onCancel={() => setShowImport(false)} onImport={applyImport} />
-      )}
     </form>
+
+    {/* Modals live OUTSIDE the form: an <ImportDialog> renders its own <form>,
+        and a nested form makes the browser submit the outer one (navigating to
+        /add?) instead of running the click handler. */}
+    {editorSrc && (
+      <PhotoEditor src={editorSrc} onCancel={() => setEditorSrc(null)} onApply={applyCrop} />
+    )}
+    {showImport && (
+      <ImportDialog onCancel={() => setShowImport(false)} onImport={applyImport} />
+    )}
+    </>
   );
 }
