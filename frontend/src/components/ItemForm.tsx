@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, photoUrl } from "../api";
-import { SEASONS, type Category, type Item, type SizeOption } from "../types";
+import {
+  SEASONS,
+  SIZE_KIND_LABELS,
+  sizeKindForCategory,
+  type Category,
+  type Item,
+  type SizeKind,
+  type SizeOption,
+} from "../types";
 import PhotoEditor from "./PhotoEditor";
 import ImportDialog, { type ImportResult } from "./ImportDialog";
 
@@ -45,11 +53,19 @@ export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormPro
     if (category && !names.includes(category)) return [category, ...names];
     return names;
   }, [categories, category]);
-  const sizeOptions = useMemo(() => {
-    const labels = sizes.map((s) => s.label);
-    if (size && !labels.includes(size)) return [size, ...labels];
-    return labels;
-  }, [sizes, size]);
+  // Group sizes by kind, with the group most relevant to the chosen category
+  // first, so shoes show EU numbers and hats show One-size up top.
+  const sizeGroups = useMemo(() => {
+    const preferred = category ? sizeKindForCategory(category) : "clothing";
+    const order: SizeKind[] = ["clothing", "shoes", "accessory"];
+    order.sort((a, b) => (a === preferred ? -1 : b === preferred ? 1 : 0));
+    const groups = order
+      .map((kind) => ({ kind, items: sizes.filter((s) => s.kind === kind) }))
+      .filter((g) => g.items.length > 0);
+    // Keep a legacy free-text value selectable even if it's no longer in the list.
+    const known = sizes.some((s) => s.label === size);
+    return { groups, legacy: size && !known ? size : null };
+  }, [sizes, size, category]);
 
   // A preview is croppable when it's a fresh file or a same-origin stored photo.
   const canEditPhoto = !!preview && (file != null || preview.startsWith("/") || preview.startsWith("blob:"));
@@ -198,8 +214,13 @@ export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormPro
         <label>Maat</label>
         <select value={size} onChange={(e) => setSize(e.target.value)}>
           <option value="">—</option>
-          {sizeOptions.map((s) => (
-            <option key={s} value={s}>{s}</option>
+          {sizeGroups.legacy && <option value={sizeGroups.legacy}>{sizeGroups.legacy}</option>}
+          {sizeGroups.groups.map((g) => (
+            <optgroup key={g.kind} label={SIZE_KIND_LABELS[g.kind]}>
+              {g.items.map((s) => (
+                <option key={s.id} value={s.label}>{s.label}</option>
+              ))}
+            </optgroup>
           ))}
         </select>
       </div>

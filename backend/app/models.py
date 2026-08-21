@@ -61,12 +61,17 @@ class Category(Base):
 
 
 class SizeOption(Base):
-    """A selectable size label, managed by admins in the settings panel."""
+    """A selectable size label, managed by admins in the settings panel.
+
+    ``kind`` groups sizes so the form can offer the right ones per category:
+    "clothing" (XS-XXXL), "shoes" (EU numbers) or "accessory" (One-size).
+    """
 
     __tablename__ = "sizes"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     label: Mapped[str] = mapped_column(String(40), unique=True)
+    kind: Mapped[str] = mapped_column(String(20), default="clothing")
     position: Mapped[int] = mapped_column(Integer, default=0)
 
 

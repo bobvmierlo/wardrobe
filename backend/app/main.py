@@ -17,7 +17,13 @@ DEFAULT_CATEGORIES = [
     "Blazer", "Bodywarmer", "Schoenen", "Sneakers", "Laarzen", "Riem",
     "Sjaal", "Muts", "Pet", "Das", "Tas",
 ]
-DEFAULT_SIZES = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"]
+# (label, kind) pairs. "clothing" = confectiematen, "shoes" = EU-schoenmaten,
+# "accessory" = one-size voor mutsen/sjaals e.d.
+DEFAULT_SIZES: list[tuple[str, str]] = [
+    *[(s, "clothing") for s in ["XS", "S", "M", "L", "XL", "XXL", "XXXL"]],
+    *[(str(n), "shoes") for n in range(36, 48)],
+    ("One-size", "accessory"),
+]
 
 app = FastAPI(title="Kledingkast", version="1.0.0")
 
@@ -53,8 +59,19 @@ def seed_admin() -> None:
         db.close()
 
 
+def migrate_sizes() -> None:
+    """Add the sizes.kind column if an earlier build created the table without it."""
+    with engine.begin() as conn:
+        rows = conn.exec_driver_sql("PRAGMA table_info(sizes)").fetchall()
+        if rows and not any(r[1] == "kind" for r in rows):
+            conn.exec_driver_sql(
+                "ALTER TABLE sizes ADD COLUMN kind VARCHAR(20) DEFAULT 'clothing'"
+            )
+
+
 def seed_catalog() -> None:
-    """Populate the category and size lists on first run (empty tables only)."""
+    """Populate the category and size lists on first run, and top up any newly
+    introduced default sizes (e.g. shoe sizes, One-size) on existing installs."""
     db = SessionLocal()
     try:
         if db.query(Category).count() == 0:
@@ -62,17 +79,18 @@ def seed_catalog() -> None:
                 Category(name=name, position=i)
                 for i, name in enumerate(DEFAULT_CATEGORIES)
             )
-        if db.query(SizeOption).count() == 0:
-            db.add_all(
-                SizeOption(label=label, position=i)
-                for i, label in enumerate(DEFAULT_SIZES)
-            )
+        existing = {s.label for s in db.query(SizeOption).all()}
+        base = db.query(SizeOption).count()
+        for i, (label, kind) in enumerate(DEFAULT_SIZES):
+            if label not in existing:
+                db.add(SizeOption(label=label, kind=kind, position=base + i))
         db.commit()
     finally:
         db.close()
 
 
 seed_admin()
+migrate_sizes()
 seed_catalog()
 
 app.include_router(auth.router)

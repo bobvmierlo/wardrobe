@@ -122,11 +122,11 @@ export const api = {
 
   // ---- sizes (admin-managed) ----
   listSizes: () => request<SizeOption[]>("/api/sizes"),
-  createSize: (label: string) =>
+  createSize: (label: string, kind: SizeOption["kind"] = "clothing") =>
     request<SizeOption>("/api/sizes", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ label }),
+      body: JSON.stringify({ label, kind }),
     }),
   deleteSize: (id: number) => request<void>(`/api/sizes/${id}`, { method: "DELETE" }),
 

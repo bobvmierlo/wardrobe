@@ -80,7 +80,11 @@ def create_size(
     if db.query(SizeOption).filter(SizeOption.label == label).first():
         raise HTTPException(status_code=409, detail="Maat bestaat al")
     last = db.query(SizeOption).order_by(SizeOption.position.desc()).first()
-    size = SizeOption(label=label, position=(last.position + 1) if last else 0)
+    size = SizeOption(
+        label=label,
+        kind=body.kind,
+        position=(last.position + 1) if last else 0,
+    )
     db.add(size)
     db.commit()
     db.refresh(size)

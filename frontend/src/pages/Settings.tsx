@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
-import type { Category, SizeOption, User } from "../types";
+import { SIZE_KIND_LABELS, type Category, type SizeKind, type SizeOption, type User } from "../types";
 
 export default function Settings() {
   const { user, logout } = useAuth();
@@ -21,6 +21,7 @@ export default function Settings() {
   const [sizes, setSizes] = useState<SizeOption[]>([]);
   const [newCat, setNewCat] = useState("");
   const [newSize, setNewSize] = useState("");
+  const [newSizeKind, setNewSizeKind] = useState<SizeKind>("clothing");
 
   async function loadUsers() {
     try {
@@ -70,7 +71,7 @@ export default function Settings() {
     setMsg(null);
     if (!newSize.trim()) return;
     try {
-      await api.createSize(newSize.trim());
+      await api.createSize(newSize.trim(), newSizeKind);
       setNewSize("");
       loadCatalog();
     } catch (e) {
@@ -183,18 +184,32 @@ export default function Settings() {
         {user?.is_admin && (
           <div className="card" style={{ padding: 16 }}>
             <h3 style={{ marginTop: 0 }}>Maten</h3>
-            <div className="tag-list">
-              {sizes.map((s) => (
-                <span key={s.id} className="tag">
-                  {s.label}
-                  <button type="button" className="tag-x" onClick={() => removeSize(s.id)} aria-label={`Verwijder ${s.label}`}>
-                    ✕
-                  </button>
-                </span>
-              ))}
-            </div>
-            <form onSubmit={addSize} className="row" style={{ gap: 8, marginTop: 12 }}>
-              <input placeholder="Nieuwe maat" value={newSize} onChange={(e) => setNewSize(e.target.value)} />
+            {(["clothing", "shoes", "accessory"] as SizeKind[]).map((kind) => {
+              const group = sizes.filter((s) => s.kind === kind);
+              if (group.length === 0) return null;
+              return (
+                <div key={kind} style={{ marginBottom: 12 }}>
+                  <div className="muted" style={{ fontSize: "0.78rem", marginBottom: 6 }}>{SIZE_KIND_LABELS[kind]}</div>
+                  <div className="tag-list">
+                    {group.map((s) => (
+                      <span key={s.id} className="tag">
+                        {s.label}
+                        <button type="button" className="tag-x" onClick={() => removeSize(s.id)} aria-label={`Verwijder ${s.label}`}>
+                          ✕
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+            <form onSubmit={addSize} className="row" style={{ gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+              <input placeholder="Nieuwe maat" value={newSize} onChange={(e) => setNewSize(e.target.value)} style={{ flex: "1 1 40%" }} />
+              <select value={newSizeKind} onChange={(e) => setNewSizeKind(e.target.value as SizeKind)} style={{ flex: "1 1 30%", width: "auto" }}>
+                <option value="clothing">Kleding</option>
+                <option value="shoes">Schoenen</option>
+                <option value="accessory">One-size</option>
+              </select>
               <button className="btn-primary" style={{ flex: "none" }}>Toevoegen</button>
             </form>
           </div>

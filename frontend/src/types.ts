@@ -27,9 +27,31 @@ export interface Category {
   name: string;
 }
 
+export type SizeKind = "clothing" | "shoes" | "accessory";
+
 export interface SizeOption {
   id: number;
   label: string;
+  kind: SizeKind;
+}
+
+export const SIZE_KIND_LABELS: Record<SizeKind, string> = {
+  clothing: "Kleding",
+  shoes: "Schoenen",
+  accessory: "One-size / accessoires",
+};
+
+// Best-effort mapping from a (free-text) category name to the most relevant
+// size kind, mirroring the backend category groups. Used to surface the right
+// sizes first in the form.
+const SHOE_WORDS = ["schoen", "sneaker", "laars", "boot", "sanda", "pump", "hak"];
+const ACCESSORY_WORDS = ["muts", "pet", "sjaal", "das", "hoed", "cap", "tas", "sok", "handschoen"];
+
+export function sizeKindForCategory(category: string): SizeKind {
+  const c = category.toLowerCase();
+  if (SHOE_WORDS.some((w) => c.includes(w))) return "shoes";
+  if (ACCESSORY_WORDS.some((w) => c.includes(w))) return "accessory";
+  return "clothing";
 }
 
 export interface ScrapeResult {

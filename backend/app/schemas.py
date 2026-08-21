@@ -73,10 +73,12 @@ class SizeOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     label: str
+    kind: str
 
 
 class LabelIn(BaseModel):
     label: str = Field(min_length=1, max_length=40)
+    kind: str = Field(default="clothing", pattern="^(clothing|shoes|accessory)$")
 
 
 # ---- Webshop import ----
