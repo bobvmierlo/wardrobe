@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
-import { SIZE_KIND_LABELS, type Category, type SizeKind, type SizeOption, type User } from "../types";
+import { SIZE_KIND_LABELS, compareSizes, type Category, type SizeKind, type SizeOption, type User } from "../types";
 
 export default function Settings() {
   const { user, logout } = useAuth();
@@ -198,7 +198,7 @@ export default function Settings() {
           <div className="card" style={{ padding: 16 }}>
             <h3 style={{ marginTop: 0 }}>Maten</h3>
             {(["clothing", "shoes", "accessory"] as SizeKind[]).map((kind) => {
-              const group = sizes.filter((s) => s.kind === kind);
+              const group = sizes.filter((s) => s.kind === kind).sort(compareSizes);
               if (group.length === 0) return null;
               return (
                 <div key={kind} style={{ marginBottom: 12 }}>

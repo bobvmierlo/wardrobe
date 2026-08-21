@@ -38,6 +38,15 @@ export default function ItemDetail() {
     navigate("/", { replace: true });
   }
 
+  async function duplicate() {
+    try {
+      const copy = await api.duplicateItem(itemId);
+      navigate(`/item/${copy.id}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Dupliceren mislukt");
+    }
+  }
+
   const src = item ? photoUrl(item) : null;
 
   return (
@@ -150,6 +159,10 @@ export default function ItemDetail() {
                 </div>
               )}
             </div>
+
+            <button className="btn-ghost btn-block" onClick={duplicate}>
+              ⧉ Dupliceren
+            </button>
 
             <button className="btn-danger btn-block" onClick={remove}>
               Verwijderen
