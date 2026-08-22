@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from ..access import require_edit, require_view
+from ..access import accessible_wardrobe_ids, require_edit, require_view
 from ..database import get_db
 from ..deps import get_current_user
 from ..images import copy_photo, delete_files, save_upload, save_upload_from_url
@@ -10,6 +10,9 @@ from ..models import Item, User
 from ..schemas import ItemOut
 
 router = APIRouter(prefix="/api/items", tags=["items"])
+# Brands are free text on garments rather than an admin-managed catalog, so
+# every user can introduce a new one just by naming it on an item.
+brands_router = APIRouter(prefix="/api/brands", tags=["brands"])
 
 
 def _clean(value: str | None) -> str | None:
@@ -196,3 +199,30 @@ def delete_item(
     delete_files(item.photo_filename, item.thumb_filename)
     db.delete(item)
     db.commit()
+
+
+@brands_router.get("", response_model=list[str])
+def list_brands(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Brand names already in use, across every wardrobe the user can open.
+
+    Feeds the brand picker on the item form so a brand is normally chosen from
+    a list instead of retyped (and spelled differently every time).
+    """
+    rows = (
+        db.query(Item.brand)
+        .filter(
+            Item.wardrobe_id.in_(accessible_wardrobe_ids(db, user)),
+            Item.brand.isnot(None),
+        )
+        .all()
+    )
+    # Collapse case/whitespace variants, keeping the first spelling seen.
+    seen: dict[str, str] = {}
+    for (brand,) in rows:
+        name = (brand or "").strip()
+        if name:
+            seen.setdefault(name.lower(), name)
+    return sorted(seen.values(), key=str.casefold)

@@ -479,20 +479,6 @@ label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0 0 6px
   cursor: move;
 }
 
-/* ---- brand autocomplete ---- */
-.autocomplete {
-  position: absolute; top: 100%; left: 0; right: 0; z-index: 30;
-  margin-top: 4px; max-height: 220px; overflow-y: auto;
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 10px; box-shadow: 0 10px 28px rgba(0,0,0,0.45);
-}
-.autocomplete-item {
-  display: block; width: 100%; text-align: left;
-  padding: 10px 12px; background: none; border: none;
-  color: var(--text); cursor: pointer; font-size: 0.95rem;
-}
-.autocomplete-item:hover, .autocomplete-item:focus { background: var(--surface-2); }
-
 .import-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .import-thumb { padding: 0; border: 2px solid var(--border); border-radius: 10px; overflow: hidden; aspect-ratio: 1/1; background: var(--surface-2); }
 .import-thumb.sel { border-color: var(--primary); }

@@ -133,6 +133,9 @@ export const api = {
     return request<Item[]>(`/api/items?${sp.toString()}`);
   },
   getItem: (id: number) => request<Item>(`/api/items/${id}`),
+  // Brands already in use, for the item form's brand picker. Free text on
+  // items, so any user can introduce a new one — no admin needed.
+  listBrands: () => request<string[]>("/api/brands"),
   createItem: (wardrobeId: number, form: FormData) => {
     form.set("wardrobe_id", String(wardrobeId));
     return request<Item>("/api/items", { method: "POST", body: form });

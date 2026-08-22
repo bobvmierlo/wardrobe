@@ -12,9 +12,10 @@ import {
 } from "../types";
 import PhotoEditor from "./PhotoEditor";
 import ImportDialog, { type ImportResult } from "./ImportDialog";
-import { useWardrobe } from "../wardrobe";
 
 const ALL_SEASONS = "Alle seizoenen";
+// Sentinel option that switches the brand picker to free-text entry.
+const NEW_BRAND = "__new__";
 
 export interface ItemFormProps {
   initial?: Item;
@@ -23,7 +24,6 @@ export interface ItemFormProps {
 }
 
 export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormProps) {
-  const { current } = useWardrobe();
   const [name, setName] = useState(initial?.name ?? "");
   const [category, setCategory] = useState(initial?.category ?? "");
   const [brand, setBrand] = useState(initial?.brand ?? "");
@@ -40,7 +40,8 @@ export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormPro
   const [categories, setCategories] = useState<Category[]>([]);
   const [sizes, setSizes] = useState<SizeOption[]>([]);
   const [brands, setBrands] = useState<string[]>([]);
-  const [brandOpen, setBrandOpen] = useState(false);
+  // Typing a brand by hand instead of picking an existing one.
+  const [brandNew, setBrandNew] = useState(false);
   const [editorSrc, setEditorSrc] = useState<string | null>(null);
   const [showImport, setShowImport] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,21 +51,10 @@ export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormPro
   useEffect(() => {
     api.listCategories().then(setCategories).catch(() => setCategories([]));
     api.listSizes().then(setSizes).catch(() => setSizes([]));
-    // Collect the brands already in this wardrobe so the Merk field can suggest
-    // them — avoids duplicates and near-duplicate spellings of the same brand.
-    if (!current) return;
-    api
-      .listItems(current.id)
-      .then((items) => {
-        const seen = new Map<string, string>();
-        for (const it of items) {
-          const b = (it.brand ?? "").trim();
-          if (b && !seen.has(b.toLowerCase())) seen.set(b.toLowerCase(), b);
-        }
-        setBrands([...seen.values()].sort((a, b) => a.localeCompare(b, "nl", { sensitivity: "base" })));
-      })
-      .catch(() => setBrands([]));
-  }, [current?.id]);
+    // Brands already in use, so Merk is normally a pick from a list instead of
+    // retyping (and misspelling) the same brand on every garment.
+    api.listBrands().then(setBrands).catch(() => setBrands([]));
+  }, []);
 
   // Include a legacy free-text value so an existing item stays selectable.
   const categoryOptions = useMemo(() => {
@@ -88,14 +78,14 @@ export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormPro
     return { groups, legacy: size && !known ? size : null };
   }, [sizes, size, category]);
 
-  // Brand suggestions filtered by what's typed. A plain <datalist> is
-  // unreliable on mobile browsers, so we render our own dropdown instead.
-  const brandMatches = useMemo(() => {
-    const q = brand.trim().toLowerCase();
-    const list = q
-      ? brands.filter((b) => b.toLowerCase().includes(q) && b.toLowerCase() !== q)
-      : brands;
-    return list.slice(0, 8);
+  // Brands to pick from, including the current value when it isn't a known
+  // brand yet (an existing item's brand, or one filled in by the webshop
+  // import), so the picker can always show what is selected.
+  const brandOptions = useMemo(() => {
+    const chosen = brand.trim();
+    const known = brands.some((b) => b.toLowerCase() === chosen.toLowerCase());
+    const list = chosen && !known ? [...brands, chosen] : [...brands];
+    return list.sort((a, b) => a.localeCompare(b, "nl", { sensitivity: "base" }));
   }, [brand, brands]);
 
   // A preview is croppable when it's a fresh file or a same-origin stored photo.
@@ -232,32 +222,49 @@ export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormPro
       </div>
 
       <div className="row" style={{ gap: 10 }}>
-        <div className="field" style={{ flex: 1, marginBottom: 0, position: "relative" }}>
+        <div className="field" style={{ flex: 1, marginBottom: 0 }}>
           <label>Merk</label>
-          <input
-            value={brand}
-            onChange={(e) => { setBrand(e.target.value); setBrandOpen(true); }}
-            onFocus={() => setBrandOpen(true)}
-            onBlur={() => setTimeout(() => setBrandOpen(false), 150)}
-            placeholder="bijv. Ralph Lauren"
-            autoComplete="off"
-          />
-          {brandOpen && brandMatches.length > 0 && (
-            <div className="autocomplete">
-              {brandMatches.map((b) => (
+          {/* Pick from the brands already in use — a native <select> gives a
+              proper picker on mobile. Anyone (not just an admin) can add a
+              brand by choosing "Nieuw merk" and typing it. */}
+          {brandNew || brandOptions.length === 0 ? (
+            <>
+              <input
+                value={brand}
+                onChange={(e) => setBrand(e.target.value)}
+                placeholder="bijv. Ralph Lauren"
+                autoComplete="off"
+                autoFocus={brandNew}
+              />
+              {brandOptions.length > 0 && (
                 <button
                   type="button"
-                  key={b}
-                  className="autocomplete-item"
-                  // mousedown fires before blur, so prevent the blur that would
-                  // close the list before onClick runs.
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => { setBrand(b); setBrandOpen(false); }}
+                  className="btn-ghost"
+                  style={{ marginTop: 8, padding: "8px 12px", fontSize: "0.82rem" }}
+                  onClick={() => { setBrand(""); setBrandNew(false); }}
                 >
-                  {b}
+                  ← Kies uit de lijst
                 </button>
+              )}
+            </>
+          ) : (
+            <select
+              value={brand}
+              onChange={(e) => {
+                if (e.target.value === NEW_BRAND) {
+                  setBrand("");
+                  setBrandNew(true);
+                } else {
+                  setBrand(e.target.value);
+                }
+              }}
+            >
+              <option value="">—</option>
+              {brandOptions.map((b) => (
+                <option key={b} value={b}>{b}</option>
               ))}
-            </div>
+              <option value={NEW_BRAND}>➕ Nieuw merk…</option>
+            </select>
           )}
         </div>
         <div className="field" style={{ flex: 1, marginBottom: 0 }}>

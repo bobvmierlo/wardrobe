@@ -152,3 +152,39 @@ def test_cannot_invite_unknown_user(client):
         json={"username": "doesnotexist", "role": "viewer"},
     )
     assert r.status_code == 404
+
+
+def test_brands_cover_accessible_wardrobes_only(client):
+    admin = login(client, ADMIN_USER, ADMIN_PASS)
+    _, ou, op = make_user(client, admin, "Emma")
+    _, xu, xp = make_user(client, admin, "Frank")
+    owner_t = login(client, ou, op)
+    outsider_t = login(client, xu, xp)
+    owner_w, _ = own_wardrobe(client, owner_t)
+
+    tag = uuid.uuid4().hex[:8]
+    secret_brand = f"Merk{tag}"
+    # Same brand in two spellings: the list should collapse them into one.
+    add_item(client, owner_t, owner_w["id"], "Trui", "Trui", brand=secret_brand)
+    add_item(client, owner_t, owner_w["id"], "Broek", "Broek", brand=secret_brand.upper())
+
+    brands = client.get("/api/brands", headers=h(owner_t)).json()
+    assert brands.count(secret_brand) == 1
+    assert secret_brand.upper() not in brands
+    # Sorted case-insensitively.
+    assert brands == sorted(brands, key=str.casefold)
+
+    # Someone without access to that kast never sees its brands...
+    assert secret_brand not in client.get("/api/brands", headers=h(outsider_t)).json()
+
+    # ...until they're invited, even as a read-only viewer.
+    r = client.post(
+        f"/api/wardrobes/{owner_w['id']}/members",
+        headers=h(owner_t),
+        json={"username": xu, "role": "viewer"},
+    )
+    assert r.status_code == 201, r.text
+    assert secret_brand in client.get("/api/brands", headers=h(outsider_t)).json()
+
+    # An admin reaches every kast, so the brand shows up there too.
+    assert secret_brand in client.get("/api/brands", headers=h(admin)).json()
