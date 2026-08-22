@@ -257,6 +257,13 @@ export default function Settings() {
     }
   }
 
+  // Users that can still be invited to my kast: everyone except me (the owner)
+  // and anyone the kast is already shared with.
+  const sharedIds = new Set(members.map((m) => m.user.id));
+  const invitable = users
+    .filter((u) => u.id !== user?.id && !sharedIds.has(u.id))
+    .sort((a, b) => a.display_name.localeCompare(b.display_name, "nl", { sensitivity: "base" }));
+
   return (
     <>
       <div className="topbar">
@@ -329,20 +336,34 @@ export default function Settings() {
             )}
           </div>
 
-          <form onSubmit={invite} className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-            <input
-              placeholder="Gebruikersnaam"
-              value={inviteName}
-              onChange={(e) => setInviteName(e.target.value)}
-              autoCapitalize="none"
-              style={{ flex: "1 1 45%" }}
-            />
-            <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value as MemberRole)} style={{ flex: "1 1 25%", width: "auto" }}>
-              <option value="viewer">{ROLE_LABELS.viewer}</option>
-              <option value="editor">{ROLE_LABELS.editor}</option>
-            </select>
-            <button className="btn-primary" style={{ flex: "none" }}>Uitnodigen</button>
-          </form>
+          {invitable.length === 0 ? (
+            <p className="muted" style={{ fontSize: "0.85rem", margin: 0 }}>
+              {users.length <= 1
+                ? "Er zijn nog geen andere gebruikers om uit te nodigen."
+                : "Alle gebruikers hebben al toegang tot deze kast."}
+            </p>
+          ) : (
+            <form onSubmit={invite} className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+              <select
+                value={inviteName}
+                onChange={(e) => setInviteName(e.target.value)}
+                style={{ flex: "1 1 45%", width: "auto" }}
+                required
+              >
+                <option value="" disabled>Kies een gebruiker…</option>
+                {invitable.map((u) => (
+                  <option key={u.id} value={u.username}>
+                    {u.display_name} (@{u.username})
+                  </option>
+                ))}
+              </select>
+              <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value as MemberRole)} style={{ flex: "1 1 25%", width: "auto" }}>
+                <option value="viewer">{ROLE_LABELS.viewer}</option>
+                <option value="editor">{ROLE_LABELS.editor}</option>
+              </select>
+              <button className="btn-primary" style={{ flex: "none" }}>Uitnodigen</button>
+            </form>
+          )}
         </div>
 
         {user?.is_admin && (
