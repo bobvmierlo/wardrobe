@@ -9,9 +9,23 @@ from fastapi.staticfiles import StaticFiles
 
 from ._version import __version__
 from .config import settings
+from .accounts import purge_wardrobe
+from .images import delete_files
 from .database import Base, SessionLocal, engine
 from .logging_setup import configure_logging, get_logger
-from .models import Category, ColorRule, Item, SizeOption, User, Wardrobe
+from .models import (
+    AuditLog,
+    Category,
+    ColorRule,
+    Invitation,
+    Item,
+    Match,
+    MatchSkip,
+    SizeOption,
+    User,
+    Wardrobe,
+    WardrobeMember,
+)
 from .routers import (
     admin_log,
     auth,
@@ -276,6 +290,124 @@ def migrate_brands() -> None:
             )
 
 
+def migrate_orphans() -> None:
+    """Clean up rows left behind by a deletion that never finished.
+
+    Until this release, deleting a user removed one row and left their kast,
+    garments, verdicts and invitations pointing at an account that no longer
+    existed. That is bad on its own, and actively dangerous in SQLite: a freed
+    row id gets handed to the next account created, which then inherits the
+    departed person's wardrobe.
+
+    So sweep the wreckage once, on startup. Anything still referencing a row
+    that is gone is either re-homed (garments keep their kast, authorship moves
+    to an admin) or removed (a kast whose owner no longer exists, and verdicts
+    about garments that no longer exist).
+    """
+    db = SessionLocal()
+    try:
+        user_ids = {u.id for u in db.query(User).all()}
+        if not user_ids:
+            return  # nothing to anchor to; seed_admin runs before this
+        admin = (
+            db.query(User)
+            .filter(User.is_admin.is_(True))
+            .order_by(User.id)
+            .first()
+        )
+        removed: dict[str, int] = {}
+
+        # A kast whose owner is gone: nobody can reach it, and the next account
+        # to be given that id would silently inherit it.
+        stray = [w for w in db.query(Wardrobe).all() if w.owner_id not in user_ids]
+        if stray:
+            items = 0
+            for wardrobe in stray:
+                items += purge_wardrobe(db, wardrobe)
+            db.commit()
+            removed["kasten"] = len(stray)
+            removed["kledingstukken"] = items
+            user_ids = {u.id for u in db.query(User).all()}
+
+        wardrobe_ids = {w.id for w in db.query(Wardrobe).all()}
+        item_ids = {i.id for i in db.query(Item).all()}
+
+        # Garments filed under a kast that no longer exists.
+        lost_items = [
+            i for i in db.query(Item).all()
+            if i.wardrobe_id is not None and i.wardrobe_id not in wardrobe_ids
+        ]
+        for item in lost_items:
+            delete_files(item.photo_filename, item.thumb_filename)
+            db.delete(item)
+        if lost_items:
+            db.commit()
+            removed["losse kledingstukken"] = len(lost_items)
+            item_ids = {i.id for i in db.query(Item).all()}
+
+        # Verdicts and postponements about garments or people that are gone.
+        for model, label in ((Match, "beoordelingen"), (MatchSkip, "overslagen")):
+            gone = [
+                row for row in db.query(model).all()
+                if row.user_id not in user_ids
+                or row.item_a_id not in item_ids
+                or row.item_b_id not in item_ids
+            ]
+            for row in gone:
+                db.delete(row)
+            if gone:
+                removed[label] = len(gone)
+
+        # Access grants and links pointing at somebody who left.
+        dangling_members = [
+            m for m in db.query(WardrobeMember).all()
+            if m.user_id not in user_ids or m.wardrobe_id not in wardrobe_ids
+        ]
+        for member in dangling_members:
+            db.delete(member)
+        if dangling_members:
+            removed["gedeelde toegangen"] = len(dangling_members)
+
+        dangling_invites = [
+            inv for inv in db.query(Invitation).all()
+            if inv.wardrobe_id not in wardrobe_ids or inv.created_by_id not in user_ids
+        ]
+        for invitation in dangling_invites:
+            db.delete(invitation)
+        if dangling_invites:
+            removed["uitnodigingen"] = len(dangling_invites)
+        db.commit()
+
+        # Keep the garment, move the authorship: an item added to a shared kast
+        # outlives the person who added it.
+        if admin is not None:
+            reassigned = (
+                db.query(Item)
+                .filter(Item.created_by_id.notin_(user_ids))
+                .update({Item.created_by_id: admin.id}, synchronize_session=False)
+            )
+            if reassigned:
+                removed["kledingstukken opnieuw toegewezen"] = reassigned
+
+        # The audit trail keeps the name it recorded and loses the broken link.
+        for column, valid in (
+            (AuditLog.user_id, user_ids),
+            (AuditLog.wardrobe_id, {w.id for w in db.query(Wardrobe).all()}),
+        ):
+            db.query(AuditLog).filter(
+                column.isnot(None), column.notin_(valid)
+            ).update({column: None}, synchronize_session=False)
+        db.commit()
+
+        if removed:
+            log.warning(
+                "Resten van eerder verwijderde accounts opgeruimd: %s",
+                ", ".join(f"{n} {label}" for label, n in removed.items()),
+            )
+    finally:
+        db.close()
+
+
 def seed_catalog() -> None:
     """Populate the category and size lists on first run, and top up any newly
     introduced default sizes (e.g. shoe sizes, One-size) on existing installs."""
@@ -323,6 +455,7 @@ migrate_sizes()
 migrate_size_uniqueness()
 migrate_wardrobes()
 migrate_brands()
+migrate_orphans()
 seed_catalog()
 seed_color_rules()
 log.info("Migraties en seeds afgerond; app is klaar")

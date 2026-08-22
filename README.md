@@ -174,6 +174,24 @@ tussen je eigen kast en kasten die met je gedeeld zijn.
 Een **beheerder** kan bij élke kast (ook zonder uitnodiging) en heeft daarnaast
 gewoon een eigen kast als elke andere gebruiker.
 
+### Een account verwijderen
+
+Verwijderen onder **Instellingen → Accounts** haalt het hele account weg, niet
+alleen de inlog: de eigen kast van die persoon verdwijnt mét de kledingstukken
+en foto's erin, en met al hun oordelen over combinaties. De gebruikersnaam is
+daarna meteen weer vrij.
+
+Wat blijft staan:
+
+- **Kledingstukken die ze aan een gedeelde kast toevoegden.** Die horen bij die
+  andere kast, dus ze blijven; het beheer ervan gaat naar de beheerder die het
+  account verwijderde.
+- **Het logboek.** Auditregels houden de naam die erin stond, zodat "wie heeft
+  dit gedaan?" ook achteraf te beantwoorden is.
+
+Dit kan niet ongedaan gemaakt worden — maak eerst een [back-up](#back-up) als
+je twijfelt.
+
 ### Iemand uitnodigen die nog geen account heeft
 
 Registratie staat standaard dicht: niemand kan zichzelf zomaar aanmelden. Wél kun
