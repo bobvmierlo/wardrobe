@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./auth";
 import BottomNav from "./components/BottomNav";
@@ -9,7 +10,7 @@ import Combine from "./pages/Combine";
 import Outfits from "./pages/Outfits";
 import Settings from "./pages/Settings";
 
-function Protected({ children }: { children: JSX.Element }) {
+function Protected({ children }: { children: ReactElement }) {
   const { user, loading } = useAuth();
   const location = useLocation();
   if (loading) return <div className="spinner" />;
@@ -17,7 +18,7 @@ function Protected({ children }: { children: JSX.Element }) {
   return children;
 }
 
-function Shell({ children }: { children: JSX.Element }) {
+function Shell({ children }: { children: ReactElement }) {
   return (
     <div className="app">
       {children}
