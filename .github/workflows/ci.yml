@@ -16,7 +16,7 @@ jobs:
         working-directory: frontend
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "20"
           cache: npm
@@ -32,7 +32,7 @@ jobs:
         working-directory: backend
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -41,3 +41,13 @@ jobs:
             backend/requirements-dev.txt
       - run: pip install -r requirements.txt -r requirements-dev.txt
       - run: pytest -q
+
+  docker:
+    name: Docker image build
+    runs-on: ubuntu-latest
+    # Builds the full multi-stage image (frontend on the node base, runtime on
+    # the python base) without pushing, so Dockerfile base-image bumps get
+    # validated on the PR instead of only failing at release time.
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build -t wardrobe:ci .
