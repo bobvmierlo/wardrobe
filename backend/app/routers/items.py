@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -21,6 +21,22 @@ def _clean(value: str | None) -> str | None:
         return None
     value = value.strip()
     return value or None
+
+
+async def submitted_fields(request: Request) -> set[str]:
+    """Names of the form fields this request actually contained.
+
+    FastAPI substitutes a parameter's default for an *empty* form value, so
+    ``Form(None)`` turns "" into ``None`` — making "cleared by the user" look
+    exactly like "not submitted at all". Reading the raw form tells them apart:
+    a field that is present but parsed as ``None`` was deliberately emptied.
+
+    Async so Starlette can parse the body, but the endpoint itself stays sync
+    (and keeps running in the threadpool) rather than blocking the event loop
+    on its database calls.
+    """
+    form = await request.form()
+    return set(form.keys())
 
 
 def _brand(db: Session, name: str | None) -> Brand | None:
@@ -174,6 +190,7 @@ def update_item(
     is_favorite: bool | None = Form(None),
     photo: UploadFile | None = File(None),
     photo_url: str | None = Form(None),
+    submitted: set[str] = Depends(submitted_fields),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -182,22 +199,24 @@ def update_item(
         raise HTTPException(status_code=404, detail="Kledingstuk niet gevonden")
     require_edit(db, item.wardrobe_id, user)
 
-    if name is not None:
+    # Only touch fields the request actually sent; sending one empty clears it.
+    # Name and category are required, so an empty value for those is ignored.
+    if name is not None and name.strip():
         item.name = name.strip()
-    if category is not None:
+    if category is not None and category.strip():
         item.category = category.strip()
-    if brand is not None:
+    if "brand" in submitted:
         item.brand_ref = _brand(db, brand)
-    if color is not None:
+    if "color" in submitted:
         item.color = _clean(color)
-    if size is not None:
+    if "size" in submitted:
         item.size = _clean(size)
-    if season is not None:
+    if "season" in submitted:
         item.season = _clean(season)
-    if notes is not None:
+    if "notes" in submitted:
         item.notes = _clean(notes)
-    if is_favorite is not None:
-        item.is_favorite = is_favorite
+    if "is_favorite" in submitted:
+        item.is_favorite = bool(is_favorite)
 
     if photo is not None and photo.filename:
         old = (item.photo_filename, item.thumb_filename)

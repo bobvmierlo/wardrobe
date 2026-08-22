@@ -204,3 +204,40 @@ def test_items_are_searchable_by_brand(client):
 
     found = client.get(f"/api/items?wardrobe_id={w['id']}&q=Zoekmerk{tag}", headers=h(t)).json()
     assert [it["name"] for it in found] == ["Blauwe trui"]
+
+
+def test_optional_fields_can_be_cleared(client):
+    """Sending a field empty clears it; leaving it out keeps the stored value."""
+    admin = login(client, ADMIN_USER, ADMIN_PASS)
+    _, hu, hp = make_user(client, admin, "Hanna")
+    t = login(client, hu, hp)
+    w, _ = own_wardrobe(client, t)
+
+    created = add_item(
+        client, t, w["id"], "Vest", "Vest",
+        brand="Leegmaakmerk", color="blauw", size="M", notes="iets", season="Zomer",
+    ).json()
+    assert created["brand"] == "Leegmaakmerk" and created["color"] == "blauw"
+
+    # Sending only some fields leaves the rest untouched.
+    partial = client.patch(
+        f"/api/items/{created['id']}", headers=h(t), data={"color": "rood"}
+    ).json()
+    assert partial["color"] == "rood"
+    assert partial["brand"] == "Leegmaakmerk" and partial["notes"] == "iets"
+
+    # Sending them empty actually clears them.
+    cleared = client.patch(
+        f"/api/items/{created['id']}",
+        headers=h(t),
+        data={"brand": "", "color": "", "size": "", "notes": "", "season": ""},
+    )
+    assert cleared.status_code == 200, cleared.text
+    body = cleared.json()
+    assert body["brand"] is None
+    assert body["color"] is None
+    assert body["size"] is None
+    assert body["notes"] is None
+    assert body["seasons"] == []
+    # Required fields survive an empty submission.
+    assert body["name"] == "Vest" and body["category"] == "Vest"
