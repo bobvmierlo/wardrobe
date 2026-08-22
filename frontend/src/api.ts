@@ -127,6 +127,8 @@ export const api = {
     request<void>(`/api/matches/${a}/${b}`, { method: "DELETE" }),
   outfitsFor: (itemId: number) => request<OutfitPartner[]>(`/api/matches/outfits/${itemId}`),
   suggestions: () => request<OutfitSuggestion[]>("/api/matches/suggestions"),
+  suggestionsFor: (itemId: number) =>
+    request<OutfitSuggestion[]>(`/api/matches/suggestions/${itemId}`),
   stats: () => request<Stats>("/api/matches/stats"),
 
   // ---- categories (admin-managed) ----

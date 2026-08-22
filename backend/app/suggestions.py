@@ -132,8 +132,13 @@ def suggest_outfits(
     limit: int = 12,
     good_pairs: set[frozenset[str]] | None = None,
     bad_pairs: set[frozenset[str]] | None = None,
+    must_include: int | None = None,
 ) -> list[dict]:
-    """Build and rank outfit suggestions from the wardrobe."""
+    """Build and rank outfit suggestions from the wardrobe.
+
+    When ``must_include`` is given, only outfits containing that item id are
+    returned — used to show suggestions on a single item's page.
+    """
     good_pairs = _GOOD_PAIRS if good_pairs is None else good_pairs
     bad_pairs = _BAD_PAIRS if bad_pairs is None else bad_pairs
 
@@ -217,6 +222,8 @@ def suggest_outfits(
     seen: set[frozenset[int]] = set()
     unique: list[dict] = []
     for r in results:
+        if must_include is not None and not any(it.id == must_include for it in r["items"]):
+            continue
         key = frozenset(it.id for it in r["items"])
         if key in seen:
             continue
