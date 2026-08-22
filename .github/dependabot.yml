@@ -1,5 +1,10 @@
 # Dependabot version updates for this repo's dependency sources.
 # Docs: https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+#
+# Related packages are grouped into a single PR per ecosystem. This keeps
+# interdependent bumps together (e.g. react + react-dom, or vite +
+# @vitejs/plugin-react) so the lockfile still resolves — separate PRs for those
+# fail `npm ci` on a peer-dependency conflict.
 
 version: 2
 updates:
@@ -9,6 +14,9 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    groups:
+      backend:
+        patterns: ["*"]
 
   # React/Vite frontend — frontend/package.json + package-lock.json
   - package-ecosystem: "npm"
@@ -16,8 +24,13 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    groups:
+      frontend:
+        patterns: ["*"]
 
-  # Docker base image — Dockerfile in the repo root
+  # Docker base images — Dockerfile in the repo root. Left ungrouped: the two
+  # base images (node, python) are independent and their major bumps deserve
+  # individual review.
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
@@ -28,3 +41,6 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      actions:
+        patterns: ["*"]
