@@ -404,6 +404,16 @@ def migrate_orphans() -> None:
                 "Resten van eerder verwijderde accounts opgeruimd: %s",
                 ", ".join(f"{n} {label}" for label, n in removed.items()),
             )
+        else:
+            # Say so out loud. Silence here is ambiguous — it reads exactly the
+            # same as "this version does not have the sweep yet" — and that
+            # ambiguity has already cost someone an evening.
+            log.info(
+                "Databasecontrole: geen resten van verwijderde accounts gevonden"
+                " (%d account(s), %d kast(en))",
+                len(user_ids),
+                db.query(Wardrobe).count(),
+            )
     finally:
         db.close()
 
