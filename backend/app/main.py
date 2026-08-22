@@ -113,6 +113,29 @@ def migrate_size_uniqueness() -> None:
         conn.exec_driver_sql("ALTER TABLE sizes_new RENAME TO sizes")
 
 
+def migrate_schema() -> None:
+    """Create new tables and add columns an older database is missing.
+
+    Must run before any migration that uses the ORM. A mapped column that does
+    not exist yet makes *every* ORM query on that table fail — which is exactly
+    what broke startup when items gained ``brand_id`` while migrate_wardrobes()
+    still ran first: ``create_all`` adds missing tables, never missing columns.
+    """
+    Base.metadata.create_all(bind=engine)
+    with engine.begin() as conn:
+        cols = [c[1] for c in conn.exec_driver_sql("PRAGMA table_info(items)").fetchall()]
+        if not cols:
+            return  # fresh install: create_all already made the full schema
+        if "wardrobe_id" not in cols:
+            conn.exec_driver_sql(
+                "ALTER TABLE items ADD COLUMN wardrobe_id INTEGER REFERENCES wardrobes(id)"
+            )
+        if "brand_id" not in cols:
+            conn.exec_driver_sql(
+                "ALTER TABLE items ADD COLUMN brand_id INTEGER REFERENCES brands(id)"
+            )
+
+
 def migrate_wardrobes() -> None:
     """Give every user a wardrobe and move existing garments into one.
 
@@ -121,14 +144,6 @@ def migrate_wardrobes() -> None:
     column, so add it, create one wardrobe per user, and file each garment
     under its creator's wardrobe (falling back to the first admin's).
     """
-    Base.metadata.create_all(bind=engine)  # create wardrobes / members tables
-    with engine.begin() as conn:
-        cols = conn.exec_driver_sql("PRAGMA table_info(items)").fetchall()
-        if cols and not any(c[1] == "wardrobe_id" for c in cols):
-            conn.exec_driver_sql(
-                "ALTER TABLE items ADD COLUMN wardrobe_id INTEGER REFERENCES wardrobes(id)"
-            )
-
     db = SessionLocal()
     try:
         existing = {w.owner_id for w in db.query(Wardrobe).all()}
@@ -159,17 +174,10 @@ def migrate_brands() -> None:
     spelling of the oldest garment that used it. The old column is left in
     place (SQLite cannot drop one) but is no longer read.
     """
-    Base.metadata.create_all(bind=engine)
     with engine.begin() as conn:
         cols = [c[1] for c in conn.exec_driver_sql("PRAGMA table_info(items)").fetchall()]
-        if not cols:
-            return  # fresh install: create_all already made the right schema
-        if "brand_id" not in cols:
-            conn.exec_driver_sql(
-                "ALTER TABLE items ADD COLUMN brand_id INTEGER REFERENCES brands(id)"
-            )
         if "brand" not in cols:
-            return  # nothing to migrate from
+            return  # fresh install, or already past the free-text brand column
 
         seen: dict[str, int] = {
             name.strip().lower(): brand_id
@@ -236,6 +244,8 @@ def seed_color_rules() -> None:
         db.close()
 
 
+# Schema changes first, then data backfills that rely on the ORM.
+migrate_schema()
 seed_admin()
 migrate_sizes()
 migrate_size_uniqueness()
