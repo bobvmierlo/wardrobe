@@ -58,7 +58,10 @@ regel HTTPS met certbot.
 1. Ga naar de app en log in met `WARDROBE_ADMIN_USERNAME` / `WARDROBE_ADMIN_PASSWORD` uit je `.env`.
 2. Ga naar **Instellingen → Wachtwoord wijzigen** en kies een eigen wachtwoord.
 3. Maak onder **Instellingen → Accounts** een account voor je partner aan.
-   Zij logt daarna op haar eigen telefoon in en kan meteen meeswipen.
+4. **Deel je kast:** tik rechtsboven op je eigen kast op **🔗 Delen** (of ga naar
+   **Instellingen → Mijn kast delen**), kies die persoon uit de lijst en geef ze
+   de rol **bewerker** of **kijker**. Daarna ziet die persoon jouw kast en kan
+   meteen meeswipen.
 
 ---
 
@@ -123,14 +126,16 @@ Standaard-admin bij eerste start: `admin` / `changeme`.
 ```
 backend/            FastAPI-app (Python)
   app/
-    main.py         app + seed-admin + serveert de gebouwde frontend
-    models.py       User, Item, Match (SQLAlchemy)
-    routers/        auth, users, items, matches
+    main.py         app + seed-admin + migraties + serveert de gebouwde frontend
+    models.py       User, Wardrobe, WardrobeMember, Item, Match (SQLAlchemy)
+    access.py       kast-toegang & rollen (eigenaar/beheerder/bewerker/kijker)
+    routers/        auth, users, wardrobes, items, matches, catalog, color_rules, imports
     images.py       foto-verwerking (Pillow)
     matching.py     categorie-groepen voor slimme combinatie-suggesties
 frontend/           React + Vite (TypeScript)
   src/pages/        Login, Wardrobe, AddItem, ItemDetail, Combine, Outfits, Settings
-  src/components/   SwipeCard, ItemForm, BottomNav
+  src/wardrobe.tsx  kast-context (welke kast is actief + je rol)
+  src/components/   SwipeCard, ItemForm, BottomNav, WardrobeSwitcher
 Dockerfile          multi-stage build (frontend → python runtime)
 docker-compose.yml  container + datavolume
 deploy/             nginx-voorbeeldconfig
@@ -138,12 +143,33 @@ deploy/             nginx-voorbeeldconfig
 
 ---
 
+## Kasten & delen
+
+Elke gebruiker heeft z'n **eigen kast**. Kledingstukken en je oordelen over
+combinaties horen bij één kast — ze zijn niet globaal gedeeld.
+
+Een kast deel je vanaf je eigen kast via **🔗 Delen** (of **Instellingen →
+Mijn kast delen**). Kies een bestaande gebruiker uit de lijst en een rol:
+
+- **Bewerker** – mag kledingstukken toevoegen, bewerken en verwijderen, én
+  meestemmen op combinaties.
+- **Kijker** – mag alleen kijken, maar wél meestemmen op combinaties.
+
+Bovenin de kast-, combineer- en outfits-schermen wissel je met de kast-kiezer
+tussen je eigen kast en kasten die met je gedeeld zijn.
+
+Een **beheerder** kan bij élke kast (ook zonder uitnodiging) en heeft daarnaast
+gewoon een eigen kast als elke andere gebruiker.
+
+---
+
 ## Hoe "past bij elkaar" werkt
 
-- Elke swipe slaat jouw oordeel op voor dát paar (ja/nee), per gebruiker.
+- Elke swipe slaat jouw oordeel op voor dát paar (ja/nee), per gebruiker en
+  binnen de kast waarin de stukken zitten.
 - Bij **Outfits** geldt een combinatie als goedgekeurd wanneer minstens één
-  huisgenoot **ja** zei én niemand **nee**. Zo blokkeert een "nee" van je
-  partner een combinatie die jij goedkeurde (handig — zij heeft vaak gelijk 😉).
+  lid van de kast **ja** zei én niemand **nee**. Zo blokkeert een "nee" van een
+  ander een combinatie die jij goedkeurde (handig — vaak heeft de ander gelijk 😉).
 - De swipe toont eerst **cross-categorie**-paren (bv. polo × broek) omdat die
   het nuttigst zijn; twee stukken uit dezelfde groep komen later.
 
