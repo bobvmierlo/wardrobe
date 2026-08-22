@@ -154,7 +154,8 @@ def test_cannot_invite_unknown_user(client):
     assert r.status_code == 404
 
 
-def test_brands_cover_accessible_wardrobes_only(client):
+def test_brands_are_global_and_never_duplicated(client):
+    """Brands live in one shared table, so the list can't hold the same brand twice."""
     admin = login(client, ADMIN_USER, ADMIN_PASS)
     _, ou, op = make_user(client, admin, "Emma")
     _, xu, xp = make_user(client, admin, "Frank")
@@ -163,28 +164,43 @@ def test_brands_cover_accessible_wardrobes_only(client):
     owner_w, _ = own_wardrobe(client, owner_t)
 
     tag = uuid.uuid4().hex[:8]
-    secret_brand = f"Merk{tag}"
-    # Same brand in two spellings: the list should collapse them into one.
-    add_item(client, owner_t, owner_w["id"], "Trui", "Trui", brand=secret_brand)
-    add_item(client, owner_t, owner_w["id"], "Broek", "Broek", brand=secret_brand.upper())
+    brand = f"Merk{tag}"
+    # The same brand typed three ways, plus a genuinely different one.
+    add_item(client, owner_t, owner_w["id"], "Trui", "Trui", brand=brand)
+    add_item(client, owner_t, owner_w["id"], "Broek", "Broek", brand=brand.upper())
+    r = add_item(client, owner_t, owner_w["id"], "Jas", "Jas", brand=f"  {brand.lower()}  ")
 
     brands = client.get("/api/brands", headers=h(owner_t)).json()
-    assert brands.count(secret_brand) == 1
-    assert secret_brand.upper() not in brands
-    # Sorted case-insensitively.
+    assert brands.count(brand) == 1
+    assert brand.upper() not in brands and brand.lower() not in brands
     assert brands == sorted(brands, key=str.casefold)
 
-    # Someone without access to that kast never sees its brands...
-    assert secret_brand not in client.get("/api/brands", headers=h(outsider_t)).json()
+    # Variants collapse onto the first spelling, on the garment itself too.
+    assert r.json()["brand"] == brand
 
-    # ...until they're invited, even as a read-only viewer.
-    r = client.post(
-        f"/api/wardrobes/{owner_w['id']}/members",
-        headers=h(owner_t),
-        json={"username": xu, "role": "viewer"},
+    # Brands are shared app-wide: a user with no kast of their own shared with
+    # them still gets the full list to pick from.
+    assert brand in client.get("/api/brands", headers=h(outsider_t)).json()
+    assert brand in client.get("/api/brands", headers=h(admin)).json()
+
+    # Switching a garment to another brand reuses/creates exactly one row.
+    moved = client.patch(
+        f"/api/items/{r.json()['id']}", headers=h(owner_t), data={"brand": brand.upper()}
     )
-    assert r.status_code == 201, r.text
-    assert secret_brand in client.get("/api/brands", headers=h(outsider_t)).json()
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["brand"] == brand
+    assert client.get("/api/brands", headers=h(owner_t)).json().count(brand) == 1
 
-    # An admin reaches every kast, so the brand shows up there too.
-    assert secret_brand in client.get("/api/brands", headers=h(admin)).json()
+
+def test_items_are_searchable_by_brand(client):
+    admin = login(client, ADMIN_USER, ADMIN_PASS)
+    _, gu, gp = make_user(client, admin, "Gerda")
+    t = login(client, gu, gp)
+    w, _ = own_wardrobe(client, t)
+
+    tag = uuid.uuid4().hex[:8]
+    add_item(client, t, w["id"], "Blauwe trui", "Trui", brand=f"Zoekmerk{tag}")
+    add_item(client, t, w["id"], "Rode broek", "Broek")
+
+    found = client.get(f"/api/items?wardrobe_id={w['id']}&q=Zoekmerk{tag}", headers=h(t)).json()
+    assert [it["name"] for it in found] == ["Blauwe trui"]

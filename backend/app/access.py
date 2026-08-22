@@ -33,24 +33,6 @@ def ensure_wardrobe(db: Session, user: User) -> Wardrobe:
     return wardrobe
 
 
-def accessible_wardrobe_ids(db: Session, user: User) -> list[int]:
-    """Ids of every wardrobe the user may open: their own, any shared with them,
-    and — for an admin — all of them."""
-    if user.is_admin:
-        return [w_id for (w_id,) in db.query(Wardrobe.id).all()]
-    ids = {
-        w_id
-        for (w_id,) in db.query(Wardrobe.id).filter(Wardrobe.owner_id == user.id).all()
-    }
-    ids.update(
-        w_id
-        for (w_id,) in db.query(WardrobeMember.wardrobe_id)
-        .filter(WardrobeMember.user_id == user.id)
-        .all()
-    )
-    return sorted(ids)
-
-
 def role_for(db: Session, wardrobe: Wardrobe, user: User) -> str | None:
     """The user's effective role on ``wardrobe``, or ``None`` for no access."""
     if wardrobe.owner_id == user.id:
@@ -124,7 +106,6 @@ __all__ = [
     "ROLE_EDITOR",
     "ROLE_VIEWER",
     "ensure_wardrobe",
-    "accessible_wardrobe_ids",
     "role_for",
     "can_edit",
     "can_manage",

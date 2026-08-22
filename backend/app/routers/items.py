@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..access import accessible_wardrobe_ids, require_edit, require_view
+from ..access import require_edit, require_view
 from ..database import get_db
 from ..deps import get_current_user
 from ..images import copy_photo, delete_files, save_upload, save_upload_from_url
-from ..models import Item, User
+from ..models import Brand, Item, User
 from ..schemas import ItemOut
 
 router = APIRouter(prefix="/api/items", tags=["items"])
@@ -20,6 +21,32 @@ def _clean(value: str | None) -> str | None:
         return None
     value = value.strip()
     return value or None
+
+
+def _brand(db: Session, name: str | None) -> Brand | None:
+    """Resolve a typed brand name to its row, creating the brand on first use.
+
+    The lookup and the unique constraint are both case-insensitive, so typing
+    "NIKE" reuses an existing "Nike" instead of adding a second entry. Returns
+    ``None`` for a blank name, which clears the garment's brand.
+
+    Assign the result to ``Item.brand_ref`` rather than setting ``brand_id``:
+    with the relationship loaded, SQLAlchemy reconciles from it on flush and
+    would write the previous brand straight back.
+    """
+    clean = _clean(name)
+    if clean is None:
+        return None
+    brand = db.query(Brand).filter(Brand.name == clean).first()
+    if brand is None:
+        try:
+            # A savepoint keeps a lost race from rolling back the whole request.
+            with db.begin_nested():
+                brand = Brand(name=clean)
+                db.add(brand)
+        except IntegrityError:
+            brand = db.query(Brand).filter(Brand.name == clean).first()
+    return brand
 
 
 @router.get("", response_model=list[ItemOut])
@@ -39,8 +66,8 @@ def list_items(
         query = query.filter(Item.is_favorite.is_(True))
     if q:
         like = f"%{q.strip()}%"
-        query = query.filter(
-            or_(Item.name.ilike(like), Item.brand.ilike(like), Item.color.ilike(like))
+        query = query.outerjoin(Brand, Item.brand_id == Brand.id).filter(
+            or_(Item.name.ilike(like), Brand.name.ilike(like), Item.color.ilike(like))
         )
     return query.order_by(Item.created_at.desc()).all()
 
@@ -84,7 +111,7 @@ def create_item(
     item = Item(
         name=name.strip(),
         category=category.strip(),
-        brand=_clean(brand),
+        brand_ref=_brand(db, brand),
         color=_clean(color),
         size=_clean(size),
         season=_clean(season),
@@ -117,7 +144,7 @@ def duplicate_item(
     item = Item(
         name=f"{src.name} (kopie)",
         category=src.category,
-        brand=src.brand,
+        brand_ref=src.brand_ref,
         color=src.color,
         size=src.size,
         season=src.season,
@@ -160,7 +187,7 @@ def update_item(
     if category is not None:
         item.category = category.strip()
     if brand is not None:
-        item.brand = _clean(brand)
+        item.brand_ref = _brand(db, brand)
     if color is not None:
         item.color = _clean(color)
     if size is not None:
@@ -203,26 +230,12 @@ def delete_item(
 
 @brands_router.get("", response_model=list[str])
 def list_brands(
-    user: User = Depends(get_current_user),
+    _: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Brand names already in use, across every wardrobe the user can open.
+    """Every brand known to the app, for the item form's brand picker.
 
-    Feeds the brand picker on the item form so a brand is normally chosen from
-    a list instead of retyped (and spelled differently every time).
+    Brands are shared across all wardrobes rather than scoped per kast, so a
+    new user with an empty kast still gets a filled list to pick from.
     """
-    rows = (
-        db.query(Item.brand)
-        .filter(
-            Item.wardrobe_id.in_(accessible_wardrobe_ids(db, user)),
-            Item.brand.isnot(None),
-        )
-        .all()
-    )
-    # Collapse case/whitespace variants, keeping the first spelling seen.
-    seen: dict[str, str] = {}
-    for (brand,) in rows:
-        name = (brand or "").strip()
-        if name:
-            seen.setdefault(name.lower(), name)
-    return sorted(seen.values(), key=str.casefold)
+    return [name for (name,) in db.query(Brand.name).order_by(Brand.name).all()]
