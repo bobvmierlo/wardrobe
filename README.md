@@ -201,12 +201,6 @@ met goede/botsende kleurparen **volledig aanpasbaar** door een beheerder onder
 
 ---
 
-## Ideeën voor later
-
-Zie de "Verbeteringen" hieronder — o.a. gedeelde outfit-looks (top+broek+schoenen
-als één setje opslaan), filteren op seizoen/gelegenheid, en automatische
-kleurherkenning uit de foto.
-
 ## Licentie
 
 Vrij te gebruiken en aan te passen voor eigen gebruik.
