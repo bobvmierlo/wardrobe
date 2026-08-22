@@ -58,7 +58,18 @@ export default function Wardrobe() {
           {isShared && current ? current.name : "Mijn kast"}{" "}
           {items.length > 0 && <span className="muted">· {items.length}</span>}
         </h1>
-        <WardrobeSwitcher />
+        <div className="row" style={{ gap: 8, alignItems: "center" }}>
+          <WardrobeSwitcher />
+          {!isShared && (
+            <button
+              className="btn-ghost"
+              style={{ padding: "8px 12px", fontSize: "0.85rem", whiteSpace: "nowrap" }}
+              onClick={() => navigate("/settings#delen")}
+            >
+              🔗 Delen
+            </button>
+          )}
+        </div>
       </div>
       <div className="content">
         <div className="field">
