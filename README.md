@@ -175,6 +175,32 @@ gewoon een eigen kast als elke andere gebruiker.
 
 ---
 
+## Waarop de kleurensuggesties zijn gebaseerd
+
+De automatische suggesties (bij **Combineer**, **Outfits** en op een
+kledingstuk) draaien op een **kleine, lokale kennisbank** — géén externe API,
+géén AI en géén wetenschappelijke bron. Het zijn met de hand samengestelde
+vuistregels zoals een stylist ze zou hanteren:
+
+- **Neutralen passen bij bijna alles.** Zwart, wit, grijs, beige, bruin, navy
+  en denim gelden als neutrale basis en scoren altijd goed.
+- **Ton-sur-ton** (twee keer dezelfde kleurfamilie) krijgt een pluspunt.
+- Een korte, **handmatig gekozen lijst** van kleurparen die mooi samengaan
+  (bv. navy + beige, denim + wit, oranje + blauw) en van paren die botsen
+  (bv. rood + roze, groen + oranje).
+- Vrij ingetikte kleuren worden eerst teruggebracht tot een klein **basispalet**
+  ("marineblauw"/"donkerblauw" → navy, "camel"/"khaki" → beige), zodat ze toch
+  meetellen.
+- Daarbovenop telt **seizoensoverlap** mee: stukken die geen seizoen kunnen
+  delen, worden niet samen voorgesteld.
+
+Kortom: een opzettelijk eenvoudige, op stijlconventies gebaseerde scoring —
+bewust geen zwarte doos, maar ook geen objectieve waarheid. Daarom is de lijst
+met goede/botsende kleurparen **volledig aanpasbaar** door een beheerder onder
+**Instellingen → Combinatie-logica**: pas de regels aan naar je eigen smaak.
+
+---
+
 ## Ideeën voor later
 
 Zie de "Verbeteringen" hieronder — o.a. gedeelde outfit-looks (top+broek+schoenen
