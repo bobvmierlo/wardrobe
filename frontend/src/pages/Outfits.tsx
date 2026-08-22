@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, photoUrl } from "../api";
 import AppFooter from "../components/AppFooter";
+import PartnerGrid from "../components/PartnerGrid";
 import SuggestionList from "../components/SuggestionList";
 import WardrobeSwitcher from "../components/WardrobeSwitcher";
 import { useWardrobe } from "../wardrobe";
@@ -26,11 +27,19 @@ export default function Outfits() {
   // suggestions
   const [suggestions, setSuggestions] = useState<OutfitSuggestion[]>([]);
   const [loadingSug, setLoadingSug] = useState(false);
+  // The outfit just adopted, confirmed here because it drops out of the list.
+  const [accepted, setAccepted] = useState<OutfitSuggestion | null>(null);
+
+  // The strip can be much wider than the screen, so scroll the chosen thumb
+  // back into view whenever it changes — otherwise the marked item is off to
+  // the side and it stops being obvious which one is selected.
+  const activeThumb = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     if (!current) return;
     // Reset when switching wardrobes so nothing from another kast lingers.
     setSuggestions([]);
+    setAccepted(null);
     setLoading(true);
     (async () => {
       try {
@@ -42,6 +51,10 @@ export default function Outfits() {
       }
     })();
   }, [current?.id]);
+
+  useEffect(() => {
+    activeThumb.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+  }, [selected?.id, tab]);
 
   useEffect(() => {
     if (!selected) return;
@@ -60,6 +73,24 @@ export default function Outfits() {
       .then(setSuggestions)
       .finally(() => setLoadingSug(false));
   }, [tab, suggestions.length, current?.id]);
+
+  /** Withdraw my approval of a combination shown for the selected garment. */
+  async function undoCombination(partner: OutfitPartner) {
+    if (!selected || !current) return;
+    await api.resetPair(selected.id, partner.item.id);
+    setPartners(await api.outfitsFor(selected.id));
+    // The pair is up for judging again, so it may resurface as a suggestion.
+    setSuggestions(await api.suggestions(current.id));
+  }
+
+  /** Adopt a suggested outfit as a real combination, then refresh what changed. */
+  async function acceptSuggestion(suggestion: OutfitSuggestion) {
+    if (!current) return;
+    await api.acceptSuggestion(suggestion.items.map((it) => it.id));
+    setAccepted(suggestion);
+    setSuggestions(await api.suggestions(current.id));
+    if (selected) setPartners(await api.outfitsFor(selected.id));
+  }
 
   const categories = useMemo(
     () => Array.from(new Set(items.map((i) => i.category))).sort((a, b) => a.localeCompare(b)),
@@ -119,7 +150,12 @@ export default function Outfits() {
             <p>Nog geen kledingstukken. Voeg eerst wat toe.</p>
           </div>
         ) : tab === "suggest" ? (
-          <SuggestTab loading={loadingSug} suggestions={suggestions} />
+          <SuggestTab
+            loading={loadingSug}
+            suggestions={suggestions}
+            accepted={accepted}
+            onAccept={acceptSuggestion}
+          />
         ) : (
           <>
             <p className="muted" style={{ marginTop: 0 }}>
@@ -158,6 +194,7 @@ export default function Outfits() {
               </div>
             ) : (
               <>
+                <div className="pick-label">Kies het stuk waar je omheen bouwt</div>
                 <div className="pick-strip">
                   {visibleItems.map((it) => {
                     const s = photoUrl(it, true);
@@ -165,30 +202,42 @@ export default function Outfits() {
                     return (
                       <button
                         key={it.id}
+                        ref={active ? activeThumb : undefined}
                         onClick={() => setSelected(it)}
-                        className={`pick-thumb ${active ? "active" : ""}`}
+                        className={`pick-card ${active ? "active" : ""}`}
                         title={it.name}
+                        aria-pressed={active}
                       >
-                        {s ? (
-                          <img src={s} alt={it.name} />
-                        ) : (
-                          <span className="noimg-ico">👕</span>
-                        )}
+                        <span className="pick-photo">
+                          {s ? (
+                            <img src={s} alt={it.name} />
+                          ) : (
+                            <span className="noimg-ico">👕</span>
+                          )}
+                          {active && <span className="pick-check" aria-hidden="true">✓</span>}
+                        </span>
+                        <span className="pick-name">{it.name}</span>
                       </button>
                     );
                   })}
                 </div>
 
                 {selected && (
-                  <div className="anchor-band" style={{ marginBottom: 16 }}>
+                  <div className="anchor-band selected-band">
                     {photoUrl(selected, true) ? (
                       <img src={photoUrl(selected, true)!} alt={selected.name} />
                     ) : (
                       <div className="noimg-sm">👕</div>
                     )}
                     <div>
-                      <div style={{ fontWeight: 700 }}>{selected.name}</div>
-                      <div className="muted" style={{ fontSize: "0.8rem" }}>{selected.category}</div>
+                      <div className="muted" style={{ fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                        Gekozen stuk
+                      </div>
+                      <div style={{ fontWeight: 700, fontSize: "1.05rem" }}>{selected.name}</div>
+                      <div className="muted" style={{ fontSize: "0.8rem" }}>
+                        {selected.category}
+                        {selected.color ? ` · ${selected.color}` : ""}
+                      </div>
                     </div>
                     <Link to={`/item/${selected.id}`} className="pill" style={{ marginLeft: "auto" }}>
                       Details
@@ -206,20 +255,7 @@ export default function Outfits() {
                     </Link>
                   </div>
                 ) : (
-                  <div className="grid">
-                    {partners.map(({ item: p, approved_by }) => {
-                      const s = photoUrl(p, true);
-                      return (
-                        <Link to={`/item/${p.id}`} key={p.id} className="card">
-                          {s ? <img className="thumb" src={s} alt={p.name} /> : <div className="noimg">👕</div>}
-                          <div className="meta">
-                            <div className="name">{p.name}</div>
-                            <div className="sub">👍 {approved_by.join(", ")}</div>
-                          </div>
-                        </Link>
-                      );
-                    })}
-                  </div>
+                  <PartnerGrid partners={partners} onUndo={undoCombination} />
                 )}
               </>
             )}
@@ -231,23 +267,52 @@ export default function Outfits() {
   );
 }
 
-function SuggestTab({ loading, suggestions }: { loading: boolean; suggestions: OutfitSuggestion[] }) {
+function SuggestTab({
+  loading,
+  suggestions,
+  accepted,
+  onAccept,
+}: {
+  loading: boolean;
+  suggestions: OutfitSuggestion[];
+  accepted: OutfitSuggestion | null;
+  onAccept: (suggestion: OutfitSuggestion) => Promise<void>;
+}) {
   if (loading) return <div className="spinner" />;
+  const confirmation = accepted && (
+    <div className="undo-bar" style={{ marginBottom: 12 }}>
+      <span>
+        ✓ Opgeslagen als combinatie:{" "}
+        <strong>{accepted.items.map((it) => it.name).join(" + ")}</strong>
+      </span>
+      <span className="muted" style={{ fontSize: "0.78rem" }}>
+        Terug te draaien bij "Per stuk"
+      </span>
+    </div>
+  );
   if (suggestions.length === 0) {
     return (
-      <div className="empty">
-        <div className="big">🎨</div>
-        <p>Nog geen suggesties.</p>
-        <p className="muted">Voeg wat kleuren en seizoenen aan je kledingstukken toe voor betere combinaties.</p>
-      </div>
+      <>
+        {confirmation}
+        <div className="empty">
+          <div className="big">🎨</div>
+          <p>Nog geen suggesties.</p>
+          <p className="muted">
+            Voeg wat kleuren en seizoenen aan je kledingstukken toe voor betere combinaties,
+            of neem eerst een besluit over de combinaties die je al hebt gezien.
+          </p>
+        </div>
+      </>
     );
   }
   return (
     <>
+      {confirmation}
       <p className="muted" style={{ marginTop: 0 }}>
-        Automatische combinaties op basis van kleur en seizoen. Afgekeurde paren worden nooit voorgesteld.
+        Automatische combinaties op basis van kleur en seizoen. Combinaties die je al hebt
+        goedgekeurd of afgekeurd staan er niet tussen — bevalt er een? Sla 'm op.
       </p>
-      <SuggestionList suggestions={suggestions} />
+      <SuggestionList suggestions={suggestions} onAccept={onAccept} />
     </>
   );
 }

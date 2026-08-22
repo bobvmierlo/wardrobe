@@ -7,6 +7,7 @@ only admins can add or remove them.
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from .. import audit
 from ..database import get_db
 from ..deps import get_current_user, require_admin
 from ..models import ColorRule, User
@@ -46,7 +47,7 @@ def list_rules(
 @router.post("", response_model=ColorRuleOut, status_code=201)
 def add_rule(
     body: ColorRuleIn,
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     a, b = _canonical(body.color_a, body.color_b)
@@ -63,17 +64,29 @@ def add_rule(
     db.add(rule)
     db.commit()
     db.refresh(rule)
+    audit.record(
+        db,
+        "color_rule.create",
+        f"Kleurregel {rule.color_a} + {rule.color_b} = "
+        f"{'past' if rule.verdict == 'good' else 'botst'} toegevoegd",
+        user=admin, entity_type="color_rule", entity_id=rule.id,
+    )
     return rule
 
 
 @router.delete("/{rule_id}", status_code=204)
 def delete_rule(
     rule_id: int,
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     rule = db.get(ColorRule, rule_id)
     if not rule:
         raise HTTPException(status_code=404, detail="Regel niet gevonden")
+    described = f"{rule.color_a} + {rule.color_b} ({rule.verdict})"
     db.delete(rule)
     db.commit()
+    audit.record(
+        db, "color_rule.delete", f"Kleurregel {described} verwijderd",
+        user=admin, entity_type="color_rule", entity_id=rule_id,
+    )

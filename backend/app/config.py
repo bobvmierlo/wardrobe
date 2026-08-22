@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     # Max upload size in megabytes.
     max_upload_mb: int = 15
 
+    # How chatty the application log is. DEBUG also logs every read request;
+    # INFO logs changes, warnings and errors. Visible in the container log and
+    # in the app under Instellingen → Logboek.
+    log_level: str = "INFO"
+
     # Directory containing the built frontend (index.html + assets). Relative
     # paths are resolved against the backend package root. In the Docker image
     # the Vite build is copied to "static". Left empty during local dev.

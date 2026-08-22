@@ -8,6 +8,7 @@ wardrobe with full rights.
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from .. import audit
 from ..access import (
     can_edit,
     can_manage,
@@ -141,6 +142,15 @@ def invite_member(
         db.add(member)
     db.commit()
     db.refresh(member)
+    audit.record(
+        db,
+        "member.invite",
+        f"{invitee.display_name} kreeg toegang tot '{wardrobe.name}' als {member.role}",
+        user=user,
+        wardrobe_id=wardrobe_id,
+        entity_type="member",
+        entity_id=invitee.id,
+    )
     return WardrobeMemberOut(user=UserOut.model_validate(invitee), role=member.role)
 
 
@@ -169,6 +179,15 @@ def update_member(
     member.role = body.role
     db.commit()
     db.refresh(member)
+    audit.record(
+        db,
+        "member.update",
+        f"{member.user.display_name} is nu {member.role} op deze kast",
+        user=user,
+        wardrobe_id=wardrobe_id,
+        entity_type="member",
+        entity_id=user_id,
+    )
     return WardrobeMemberOut(user=UserOut.model_validate(member.user), role=member.role)
 
 
@@ -181,8 +200,18 @@ def remove_member(
 ):
     """Revoke a user's access to this wardrobe."""
     require_manage(db, wardrobe_id, user)
+    removed = db.get(User, user_id)
     db.query(WardrobeMember).filter(
         WardrobeMember.wardrobe_id == wardrobe_id,
         WardrobeMember.user_id == user_id,
     ).delete()
     db.commit()
+    audit.record(
+        db,
+        "member.remove",
+        f"Toegang van {removed.display_name if removed else user_id} tot deze kast ingetrokken",
+        user=user,
+        wardrobe_id=wardrobe_id,
+        entity_type="member",
+        entity_id=user_id,
+    )

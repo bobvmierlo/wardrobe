@@ -3,9 +3,11 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, photoUrl } from "../api";
 import ItemForm from "../components/ItemForm";
 import AppFooter from "../components/AppFooter";
+import PartnerGrid from "../components/PartnerGrid";
+import RejectedGrid from "../components/RejectedGrid";
 import SuggestionList from "../components/SuggestionList";
 import { useWardrobe } from "../wardrobe";
-import type { Item, OutfitPartner, OutfitSuggestion } from "../types";
+import type { Item, OutfitPartner, OutfitSuggestion, RejectedPartner } from "../types";
 
 export default function ItemDetail() {
   const { id } = useParams();
@@ -14,6 +16,7 @@ export default function ItemDetail() {
   const { wardrobes } = useWardrobe();
   const [item, setItem] = useState<Item | null>(null);
   const [partners, setPartners] = useState<OutfitPartner[]>([]);
+  const [rejected, setRejected] = useState<RejectedPartner[]>([]);
   const [suggestions, setSuggestions] = useState<OutfitSuggestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -22,13 +25,15 @@ export default function ItemDetail() {
   async function load() {
     setLoading(true);
     try {
-      const [it, ps, sg] = await Promise.all([
+      const [it, ps, rj, sg] = await Promise.all([
         api.getItem(itemId),
         api.outfitsFor(itemId),
+        api.rejectedFor(itemId),
         api.suggestionsFor(itemId).catch(() => [] as OutfitSuggestion[]),
       ]);
       setItem(it);
       setPartners(ps);
+      setRejected(rj);
       setSuggestions(sg);
       setError(null);
     } catch (e) {
@@ -36,6 +41,18 @@ export default function ItemDetail() {
     } finally {
       setLoading(false);
     }
+  }
+
+  /** Reload everything a verdict can move between: approved, rejected, suggested. */
+  async function reloadVerdicts() {
+    const [ps, rj, sg] = await Promise.all([
+      api.outfitsFor(itemId),
+      api.rejectedFor(itemId),
+      api.suggestionsFor(itemId).catch(() => [] as OutfitSuggestion[]),
+    ]);
+    setPartners(ps);
+    setRejected(rj);
+    setSuggestions(sg);
   }
   useEffect(() => {
     load();
@@ -46,6 +63,24 @@ export default function ItemDetail() {
     if (!confirm("Dit kledingstuk definitief verwijderen?")) return;
     await api.deleteItem(itemId);
     navigate("/", { replace: true });
+  }
+
+  /** Withdraw my approval of one of this garment's combinations. */
+  async function undoCombination(partner: OutfitPartner) {
+    await api.resetPair(itemId, partner.item.id);
+    await reloadVerdicts();
+  }
+
+  /** Withdraw my own "nee", so the pair is up for judging again. */
+  async function undoRejection(partner: RejectedPartner) {
+    await api.resetPair(itemId, partner.item.id);
+    await reloadVerdicts();
+  }
+
+  /** Adopt a suggested outfit that includes this garment. */
+  async function acceptSuggestion(suggestion: OutfitSuggestion) {
+    await api.acceptSuggestion(suggestion.items.map((it) => it.id));
+    await reloadVerdicts();
   }
 
   async function duplicate() {
@@ -158,30 +193,29 @@ export default function ItemDetail() {
               {partners.length === 0 ? (
                 <p className="muted">Nog geen goedgekeurde combinaties. Ga naar Combineer om te swipen.</p>
               ) : (
-                <div className="grid">
-                  {partners.map(({ item: p, approved_by }) => {
-                    const psrc = photoUrl(p, true);
-                    return (
-                      <Link to={`/item/${p.id}`} key={p.id} className="card">
-                        {psrc ? <img className="thumb" src={psrc} alt={p.name} /> : <div className="noimg">👕</div>}
-                        <div className="meta">
-                          <div className="name">{p.name}</div>
-                          <div className="sub">👍 {approved_by.join(", ")}</div>
-                        </div>
-                      </Link>
-                    );
-                  })}
-                </div>
+                <PartnerGrid partners={partners} onUndo={undoCombination} />
               )}
             </div>
+
+            {rejected.length > 0 && (
+              <div>
+                <h3 style={{ margin: "0 0 4px" }}>Past niet bij</h3>
+                <p className="muted" style={{ marginTop: 0, fontSize: "0.82rem" }}>
+                  Afgekeurd, dus deze staan niet bij Outfits. Eén "nee" blokkeert een
+                  combinatie, ook als iemand anders 'm goedkeurde.
+                </p>
+                <RejectedGrid rejected={rejected} onUndo={undoRejection} />
+              </div>
+            )}
 
             {suggestions.length > 0 && (
               <div>
                 <h3 style={{ margin: "0 0 4px" }}>✨ Suggesties van het systeem</h3>
                 <p className="muted" style={{ marginTop: 0, fontSize: "0.82rem" }}>
-                  Automatisch samengesteld op kleur en seizoen, met dit stuk erin.
+                  Automatisch samengesteld op kleur en seizoen, met dit stuk erin. Wat je al
+                  hebt beoordeeld staat er niet tussen.
                 </p>
-                <SuggestionList suggestions={suggestions} />
+                <SuggestionList suggestions={suggestions} onAccept={acceptSuggestion} />
               </div>
             )}
 

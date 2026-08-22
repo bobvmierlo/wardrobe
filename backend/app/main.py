@@ -1,7 +1,8 @@
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -9,10 +10,28 @@ from fastapi.staticfiles import StaticFiles
 from ._version import __version__
 from .config import settings
 from .database import Base, SessionLocal, engine
+from .logging_setup import configure_logging, get_logger
 from .models import Category, ColorRule, Item, SizeOption, User, Wardrobe
-from .routers import auth, catalog, color_rules, imports, items, matches, users, wardrobes
+from .routers import (
+    admin_log,
+    auth,
+    catalog,
+    color_rules,
+    imports,
+    invitations,
+    items,
+    matches,
+    users,
+    wardrobes,
+)
 from .security import hash_password
 from .suggestions import DEFAULT_BAD_PAIRS, DEFAULT_GOOD_PAIRS
+
+# Logging is configured before anything else runs, so even the startup
+# migrations below end up in the container log and the in-app log screen.
+configure_logging(settings.log_level)
+log = get_logger("app")
+request_log = get_logger("request")
 
 DEFAULT_CATEGORIES = [
     "Polo", "T-shirt", "Overhemd", "Blouse", "Trui", "Vest", "Hoodie",
@@ -39,6 +58,58 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Requests that change something, and anything that fails, are worth a log
+# line. Successful reads are not — they would drown the log on every screen
+# the app paints. Photos and the SPA's own assets are skipped entirely.
+_QUIET_PREFIXES = ("/uploads/", "/assets/")
+
+# An invitation token *is* a credential: whoever holds it can join a wardrobe.
+# It travels in the URL, so it must never be written to a log that admins (or
+# anyone with the container output) can read back.
+_SECRET_PATHS = ("/api/invitations/", "/invite/")
+
+
+def _safe_path(path: str) -> str:
+    """The request path with any invitation token replaced by a placeholder."""
+    for prefix in _SECRET_PATHS:
+        if path.startswith(prefix):
+            rest = path[len(prefix):]
+            if not rest:
+                return path
+            # Keep whatever follows the token (e.g. "/accept") — that says what
+            # was attempted, and only the token itself is sensitive.
+            _, _, tail = rest.partition("/")
+            return f"{prefix}<token>" + (f"/{tail}" if tail else "")
+    return path
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        elapsed = (time.perf_counter() - started) * 1000
+        request_log.exception(
+            "%s %s faalde na %.0f ms", request.method, _safe_path(request.url.path), elapsed
+        )
+        raise
+    elapsed = (time.perf_counter() - started) * 1000
+    path = _safe_path(request.url.path)
+    if path.startswith(_QUIET_PREFIXES):
+        return response
+    changes = request.method not in {"GET", "HEAD", "OPTIONS"}
+    if response.status_code >= 500:
+        level = request_log.error
+    elif response.status_code >= 400:
+        level = request_log.warning
+    elif changes:
+        level = request_log.info
+    else:
+        level = request_log.debug
+    level("%s %s → %s (%.0f ms)", request.method, path, response.status_code, elapsed)
+    return response
+
 
 def seed_admin() -> None:
     Base.metadata.create_all(bind=engine)
@@ -54,9 +125,9 @@ def seed_admin() -> None:
                 )
             )
             db.commit()
-            print(
-                f"[kledingkast] Beheerder aangemaakt: '{settings.admin_username}'. "
-                "Wijzig het wachtwoord na de eerste login."
+            log.warning(
+                "Beheerder aangemaakt: '%s'. Wijzig het wachtwoord na de eerste login.",
+                settings.admin_username,
             )
     finally:
         db.close()
@@ -245,6 +316,7 @@ def seed_color_rules() -> None:
 
 
 # Schema changes first, then data backfills that rely on the ORM.
+log.info("Kledingkast %s start op, database: %s", __version__, settings.db_path)
 migrate_schema()
 seed_admin()
 migrate_sizes()
@@ -253,6 +325,7 @@ migrate_wardrobes()
 migrate_brands()
 seed_catalog()
 seed_color_rules()
+log.info("Migraties en seeds afgerond; app is klaar")
 
 app.include_router(auth.router)
 app.include_router(users.router)
@@ -264,6 +337,9 @@ app.include_router(catalog.categories_router)
 app.include_router(catalog.sizes_router)
 app.include_router(color_rules.router)
 app.include_router(imports.router)
+app.include_router(invitations.router)
+app.include_router(invitations.wardrobe_router)
+app.include_router(admin_log.router)
 
 # Uploaded photos.
 app.mount("/uploads", StaticFiles(directory=str(settings.uploads_dir)), name="uploads")

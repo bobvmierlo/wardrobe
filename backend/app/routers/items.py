@@ -3,6 +3,7 @@ from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from .. import audit
 from ..access import require_edit, require_view
 from ..database import get_db
 from ..deps import get_current_user
@@ -37,6 +38,39 @@ async def submitted_fields(request: Request) -> set[str]:
     """
     form = await request.form()
     return set(form.keys())
+
+
+# The fields the audit trail reports on when a garment is edited, so an entry
+# says *what* changed instead of just "gewijzigd".
+_TRACKED_FIELDS: dict[str, str] = {
+    "name": "naam",
+    "category": "categorie",
+    "brand": "merk",
+    "color": "kleur",
+    "size": "maat",
+    "season": "seizoen",
+    "notes": "notities",
+    "is_favorite": "favoriet",
+    "photo_filename": "foto",
+}
+
+
+def _snapshot(item: Item) -> dict[str, object]:
+    return {field: getattr(item, field) for field in _TRACKED_FIELDS}
+
+
+def _describe_changes(before: dict, after: dict) -> str:
+    """A short "veld: oud → nieuw" summary of what an edit actually changed."""
+    parts = []
+    for field, label in _TRACKED_FIELDS.items():
+        old, new = before.get(field), after.get(field)
+        if old == new:
+            continue
+        if field == "photo_filename":
+            parts.append("foto vervangen")
+        else:
+            parts.append(f"{label} '{old or '—'}' → '{new or '—'}'")
+    return ", ".join(parts)
 
 
 def _brand(db: Session, name: str | None) -> Brand | None:
@@ -141,6 +175,15 @@ def create_item(
     db.add(item)
     db.commit()
     db.refresh(item)
+    audit.record(
+        db,
+        "item.create",
+        f"'{item.name}' ({item.category}) toegevoegd",
+        user=user,
+        wardrobe_id=wardrobe_id,
+        entity_type="item",
+        entity_id=item.id,
+    )
     return item
 
 
@@ -174,6 +217,15 @@ def duplicate_item(
     db.add(item)
     db.commit()
     db.refresh(item)
+    audit.record(
+        db,
+        "item.duplicate",
+        f"'{src.name}' gedupliceerd naar '{item.name}'",
+        user=user,
+        wardrobe_id=item.wardrobe_id,
+        entity_type="item",
+        entity_id=item.id,
+    )
     return item
 
 
@@ -198,6 +250,7 @@ def update_item(
     if not item:
         raise HTTPException(status_code=404, detail="Kledingstuk niet gevonden")
     require_edit(db, item.wardrobe_id, user)
+    before = _snapshot(item)
 
     # Only touch fields the request actually sent; sending one empty clears it.
     # Name and category are required, so an empty value for those is ignored.
@@ -229,6 +282,16 @@ def update_item(
 
     db.commit()
     db.refresh(item)
+    changes = _describe_changes(before, _snapshot(item))
+    audit.record(
+        db,
+        "item.update",
+        f"'{item.name}' gewijzigd: {changes}" if changes else f"'{item.name}' opgeslagen zonder wijzigingen",
+        user=user,
+        wardrobe_id=item.wardrobe_id,
+        entity_type="item",
+        entity_id=item.id,
+    )
     return item
 
 
@@ -242,9 +305,19 @@ def delete_item(
     if not item:
         raise HTTPException(status_code=404, detail="Kledingstuk niet gevonden")
     require_edit(db, item.wardrobe_id, user)
+    name, wardrobe_id = item.name, item.wardrobe_id
     delete_files(item.photo_filename, item.thumb_filename)
     db.delete(item)
     db.commit()
+    audit.record(
+        db,
+        "item.delete",
+        f"'{name}' verwijderd",
+        user=user,
+        wardrobe_id=wardrobe_id,
+        entity_type="item",
+        entity_id=item_id,
+    )
 
 
 @brands_router.get("", response_model=list[str])

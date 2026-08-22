@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useWardrobe } from "../wardrobe";
 import AppFooter from "../components/AppFooter";
-import { ROLE_LABELS, SIZE_KIND_LABELS, compareSizes, type Category, type ColorLogic, type MemberRole, type SizeKind, type SizeOption, type User, type WardrobeMember } from "../types";
+import { INVITATION_STATUS_LABELS, ROLE_LABELS, SIZE_KIND_LABELS, compareSizes, type Category, type ColorLogic, type Invitation, type MemberRole, type SizeKind, type SizeOption, type User, type WardrobeMember } from "../types";
 
 export default function Settings() {
   const { user, logout } = useAuth();
@@ -20,6 +21,13 @@ export default function Settings() {
   const [members, setMembers] = useState<WardrobeMember[]>([]);
   const [inviteName, setInviteName] = useState("");
   const [inviteRole, setInviteRole] = useState<MemberRole>("viewer");
+
+  // invitation links (for people without an account yet)
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [linkLabel, setLinkLabel] = useState("");
+  const [linkRole, setLinkRole] = useState<MemberRole>("viewer");
+  const [linkDays, setLinkDays] = useState("14");
+  const [copied, setCopied] = useState<number | null>(null);
 
   // users (admin)
   const [users, setUsers] = useState<User[]>([]);
@@ -67,13 +75,22 @@ export default function Settings() {
       /* ignore */
     }
   }
+  async function loadInvitations(wardrobeId: number) {
+    try {
+      setInvitations(await api.listInvitations(wardrobeId));
+    } catch {
+      /* ignore */
+    }
+  }
   useEffect(() => {
     loadUsers();
     loadCatalog();
     loadLogic();
   }, []);
   useEffect(() => {
-    if (ownWardrobe) loadMembers(ownWardrobe.id);
+    if (!ownWardrobe) return;
+    loadMembers(ownWardrobe.id);
+    loadInvitations(ownWardrobe.id);
   }, [ownWardrobe?.id]);
   // When linked to from the "Delen" button (/settings#delen), scroll the
   // sharing card into view and highlight it briefly.
@@ -122,6 +139,56 @@ export default function Settings() {
       refreshWardrobes();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Verwijderen mislukt");
+    }
+  }
+
+  /** The full link to share, built from the current origin. */
+  function inviteUrl(invitation: Invitation): string {
+    return `${window.location.origin}${invitation.path}`;
+  }
+
+  async function createLink(e: React.FormEvent) {
+    e.preventDefault();
+    setErr(null);
+    setMsg(null);
+    if (!ownWardrobe) return;
+    try {
+      const created = await api.createInvitation(ownWardrobe.id, {
+        role: linkRole,
+        label: linkLabel.trim() || null,
+        expires_days: linkDays ? Number(linkDays) : null,
+      });
+      setLinkLabel("");
+      setMsg("Uitnodigingslink gemaakt — kopieer 'm en stuur 'm door.");
+      await loadInvitations(ownWardrobe.id);
+      copyLink(created);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Link maken mislukt");
+    }
+  }
+
+  async function copyLink(invitation: Invitation) {
+    const url = inviteUrl(invitation);
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(invitation.id);
+      setTimeout(() => setCopied((id) => (id === invitation.id ? null : id)), 2000);
+    } catch {
+      // Clipboard access is blocked outside a secure context (plain http on
+      // your LAN, for instance) — the link is on screen to copy by hand.
+      setErr("Kopiëren lukte niet; selecteer de link en kopieer 'm handmatig.");
+    }
+  }
+
+  async function revokeLink(invitation: Invitation) {
+    if (!ownWardrobe) return;
+    if (!confirm("Deze uitnodigingslink intrekken? Hij werkt daarna niet meer.")) return;
+    setErr(null);
+    try {
+      await api.revokeInvitation(invitation.id);
+      await loadInvitations(ownWardrobe.id);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Intrekken mislukt");
     }
   }
 
@@ -364,7 +431,85 @@ export default function Settings() {
               <button className="btn-primary" style={{ flex: "none" }}>Uitnodigen</button>
             </form>
           )}
+
+          <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "16px 0" }} />
+
+          <h4 style={{ margin: "0 0 6px" }}>Uitnodigen met een link</h4>
+          <p className="muted" style={{ fontSize: "0.82rem", marginTop: 0 }}>
+            Nog geen account? Stuur iemand een persoonlijke link. Daarmee kan diegene
+            zelf een account aanmaken en komt 'ie meteen in je kast. Zonder zo'n link
+            kan niemand zich registreren.
+          </p>
+
+          {invitations.length > 0 && (
+            <div className="stack" style={{ marginBottom: 12 }}>
+              {invitations.map((inv) => (
+                <div key={inv.id} className="invite-row">
+                  <div style={{ minWidth: 0 }}>
+                    <div>
+                      {inv.label || <span className="muted">Zonder omschrijving</span>}{" "}
+                      <span className={`status-badge ${inv.status}`}>
+                        {INVITATION_STATUS_LABELS[inv.status]}
+                      </span>
+                    </div>
+                    <div className="muted" style={{ fontSize: "0.78rem" }}>
+                      Rol: {ROLE_LABELS[inv.role]}
+                      {inv.accepted_by && ` · gebruikt door ${inv.accepted_by.display_name}`}
+                      {inv.status === "open" && inv.expires_at &&
+                        ` · geldig tot ${new Date(inv.expires_at).toLocaleDateString("nl-NL")}`}
+                    </div>
+                    {inv.status === "open" && (
+                      <div className="invite-link">
+                        <input readOnly value={inviteUrl(inv)} onFocus={(e) => e.target.select()} />
+                        <button className="btn-ghost btn-small" type="button" onClick={() => copyLink(inv)}>
+                          {copied === inv.id ? "✓ Gekopieerd" : "Kopieer"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  {inv.status === "open" && (
+                    <button className="btn-danger btn-small" onClick={() => revokeLink(inv)}>
+                      Intrekken
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <form onSubmit={createLink} className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+            <input
+              placeholder="Voor wie? (naam of e-mail)"
+              value={linkLabel}
+              onChange={(e) => setLinkLabel(e.target.value)}
+              style={{ flex: "1 1 45%" }}
+            />
+            <select value={linkRole} onChange={(e) => setLinkRole(e.target.value as MemberRole)} style={{ flex: "1 1 25%", width: "auto" }}>
+              <option value="viewer">{ROLE_LABELS.viewer}</option>
+              <option value="editor">{ROLE_LABELS.editor}</option>
+            </select>
+            <select value={linkDays} onChange={(e) => setLinkDays(e.target.value)} style={{ flex: "1 1 25%", width: "auto" }}>
+              <option value="7">7 dagen geldig</option>
+              <option value="14">14 dagen geldig</option>
+              <option value="30">30 dagen geldig</option>
+              <option value="">Nooit verlopen</option>
+            </select>
+            <button className="btn-primary" style={{ flex: "none" }}>Link maken</button>
+          </form>
         </div>
+
+        {user?.is_admin && (
+          <div className="card" style={{ padding: 16 }}>
+            <h3 style={{ marginTop: 0 }}>Logboek</h3>
+            <p className="muted" style={{ fontSize: "0.82rem", marginTop: 0 }}>
+              Wie heeft wat gewijzigd, goedgekeurd of afgekeurd — plus de technische
+              logregels van de server, dezelfde als in de container-logs.
+            </p>
+            <Link to="/logboek" className="btn-ghost btn-block" style={{ display: "block", textAlign: "center", padding: 12 }}>
+              📋 Logboek openen
+            </Link>
+          </div>
+        )}
 
         {user?.is_admin && (
           <div className="card" style={{ padding: 16 }}>

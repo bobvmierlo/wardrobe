@@ -7,6 +7,7 @@ can change, so the mobile UI can offer a real dropdown instead of free text.
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from .. import audit
 from ..database import get_db
 from ..deps import get_current_user, require_admin
 from ..models import Category, Item, SizeOption, User
@@ -28,7 +29,7 @@ def list_categories(
 @categories_router.post("", response_model=CategoryOut, status_code=201)
 def create_category(
     body: NameIn,
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     name = body.name.strip()
@@ -39,13 +40,17 @@ def create_category(
     db.add(cat)
     db.commit()
     db.refresh(cat)
+    audit.record(
+        db, "category.create", f"Categorie '{cat.name}' toegevoegd",
+        user=admin, entity_type="category", entity_id=cat.id,
+    )
     return cat
 
 
 @categories_router.delete("/{category_id}", status_code=204)
 def delete_category(
     category_id: int,
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     cat = db.get(Category, category_id)
@@ -57,8 +62,13 @@ def delete_category(
             status_code=409,
             detail=f"Categorie is nog in gebruik door {in_use} kledingstuk(ken)",
         )
+    name = cat.name
     db.delete(cat)
     db.commit()
+    audit.record(
+        db, "category.delete", f"Categorie '{name}' verwijderd",
+        user=admin, entity_type="category", entity_id=category_id,
+    )
 
 
 # ---- Sizes ----
@@ -73,7 +83,7 @@ def list_sizes(
 @sizes_router.post("", response_model=SizeOut, status_code=201)
 def create_size(
     body: LabelIn,
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     label = body.label.strip()
@@ -88,6 +98,10 @@ def create_size(
     db.add(size)
     db.commit()
     db.refresh(size)
+    audit.record(
+        db, "size.create", f"Maat '{size.label}' ({size.kind}) toegevoegd",
+        user=admin, entity_type="size", entity_id=size.id,
+    )
     return size
 
 
@@ -95,7 +109,7 @@ def create_size(
 def delete_size(
     size_id: int,
     force: bool = False,
-    _: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     size = db.get(SizeOption, size_id)
@@ -109,5 +123,12 @@ def delete_size(
             status_code=409,
             detail=f"Maat '{size.label}' is nog in gebruik door {in_use} kledingstuk(ken)",
         )
+    label = size.label
     db.delete(size)
     db.commit()
+    audit.record(
+        db,
+        "size.delete",
+        f"Maat '{label}' verwijderd" + (f" (nog in gebruik door {in_use} stuk(ken))" if in_use else ""),
+        user=admin, entity_type="size", entity_id=size_id,
+    )

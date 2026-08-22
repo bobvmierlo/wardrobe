@@ -114,3 +114,24 @@ def test_second_boot_is_a_no_op(tmp_path):
     )
     assert again.returncode == 0, again.stderr
     assert rows(tmp_path, "SELECT id, name FROM brands ORDER BY id") == before
+
+
+def test_upgrade_creates_the_new_tables(tmp_path):
+    """Skips, invitations and the audit trail arrive on an existing install.
+
+    These are new tables rather than new columns, so ``create_all`` handles
+    them — but only if it runs, and only if nothing earlier in the startup
+    sequence blows up on a database that predates them.
+    """
+    result = boot(tmp_path, OLD_USERS + WARDROBES + old_items(with_wardrobe_id=True))
+    assert result.returncode == 0, result.stderr
+
+    tables = {
+        name for (name,) in rows(
+            tmp_path, "SELECT name FROM sqlite_master WHERE type='table'"
+        )
+    }
+    assert {"match_skips", "invitations", "audit_logs"} <= tables
+    # Empty, not backfilled: there is no history to invent for them.
+    for table in ("match_skips", "invitations", "audit_logs"):
+        assert rows(tmp_path, f"SELECT COUNT(*) FROM {table}") == [(0,)]
