@@ -75,6 +75,17 @@ export default function Settings() {
   useEffect(() => {
     if (ownWardrobe) loadMembers(ownWardrobe.id);
   }, [ownWardrobe?.id]);
+  // When linked to from the "Delen" button (/settings#delen), scroll the
+  // sharing card into view and highlight it briefly.
+  useEffect(() => {
+    if (window.location.hash !== "#delen") return;
+    const el = document.getElementById("delen");
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    el.classList.add("flash");
+    const t = setTimeout(() => el.classList.remove("flash"), 1600);
+    return () => clearTimeout(t);
+  }, []);
 
   async function invite(e: React.FormEvent) {
     e.preventDefault();
@@ -279,7 +290,7 @@ export default function Settings() {
           </form>
         </div>
 
-        <div className="card" style={{ padding: 16 }}>
+        <div className="card" id="delen" style={{ padding: 16, scrollMarginTop: 80 }}>
           <h3 style={{ marginTop: 0 }}>Mijn kast delen</h3>
           <p className="muted" style={{ fontSize: "0.82rem", marginTop: 0 }}>
             Nodig iemand uit voor je kast. Een <strong>bewerker</strong> kan kledingstukken

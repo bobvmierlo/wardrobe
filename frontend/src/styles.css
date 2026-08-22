@@ -425,6 +425,13 @@ label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0 0 6px
 }
 .role-badge.admin { background: color-mix(in srgb, var(--primary) 22%, transparent); color: var(--primary); border-color: transparent; }
 
+/* Brief highlight when scrolling to a linked card (e.g. #delen). */
+.card.flash { animation: card-flash 1.6s ease-out; }
+@keyframes card-flash {
+  0%, 30% { box-shadow: 0 0 0 2px var(--primary); }
+  100% { box-shadow: 0 0 0 2px transparent; }
+}
+
 /* ---- wardrobe switcher (top bar) ---- */
 .wardrobe-select {
   width: auto;
