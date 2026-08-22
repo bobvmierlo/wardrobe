@@ -159,6 +159,20 @@ def outfits_for(
     return result
 
 
+def _verdict_pairs(db: Session) -> tuple[set[frozenset[int]], set[frozenset[int]]]:
+    """Return (rejected, approved) item-id pairs. A rejection by anyone wins."""
+    rejected: set[frozenset[int]] = set()
+    approved: set[frozenset[int]] = set()
+    for m in db.query(Match).all():
+        pair = frozenset((m.item_a_id, m.item_b_id))
+        if m.verdict == "no":
+            rejected.add(pair)
+        elif m.verdict == "yes":
+            approved.add(pair)
+    approved -= rejected
+    return rejected, approved
+
+
 @router.get("/suggestions", response_model=list[OutfitSuggestion])
 def suggestions(
     _: User = Depends(get_current_user),
@@ -173,20 +187,41 @@ def suggestions(
     if len(items) < 2:
         return []
 
-    rejected: set[frozenset[int]] = set()
-    approved: set[frozenset[int]] = set()
-    for m in db.query(Match).all():
-        pair = frozenset((m.item_a_id, m.item_b_id))
-        if m.verdict == "no":
-            rejected.add(pair)
-        elif m.verdict == "yes":
-            approved.add(pair)
-    # A rejection by anyone wins over an approval.
-    approved -= rejected
-
+    rejected, approved = _verdict_pairs(db)
     good_pairs, bad_pairs = load_pairs(db)
     outfits = suggest_outfits(
         items, rejected, approved, limit=30, good_pairs=good_pairs, bad_pairs=bad_pairs
+    )
+    return [
+        OutfitSuggestion(
+            items=[ItemOut.model_validate(it) for it in o["items"]],
+            score=o["score"],
+            reason=o["reason"],
+        )
+        for o in outfits
+    ]
+
+
+@router.get("/suggestions/{item_id}", response_model=list[OutfitSuggestion])
+def suggestions_for_item(
+    item_id: int,
+    _: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Automatic outfit suggestions that include one specific item, shown on
+    that item's page below the manually approved combinations."""
+    item = db.get(Item, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Kledingstuk niet gevonden")
+    items = db.query(Item).all()
+    if len(items) < 2:
+        return []
+
+    rejected, approved = _verdict_pairs(db)
+    good_pairs, bad_pairs = load_pairs(db)
+    outfits = suggest_outfits(
+        items, rejected, approved, limit=12,
+        good_pairs=good_pairs, bad_pairs=bad_pairs, must_include=item_id,
     )
     return [
         OutfitSuggestion(

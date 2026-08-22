@@ -3,7 +3,8 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, photoUrl } from "../api";
 import ItemForm from "../components/ItemForm";
 import AppFooter from "../components/AppFooter";
-import type { Item, OutfitPartner } from "../types";
+import SuggestionList from "../components/SuggestionList";
+import type { Item, OutfitPartner, OutfitSuggestion } from "../types";
 
 export default function ItemDetail() {
   const { id } = useParams();
@@ -11,6 +12,7 @@ export default function ItemDetail() {
   const navigate = useNavigate();
   const [item, setItem] = useState<Item | null>(null);
   const [partners, setPartners] = useState<OutfitPartner[]>([]);
+  const [suggestions, setSuggestions] = useState<OutfitSuggestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -18,9 +20,14 @@ export default function ItemDetail() {
   async function load() {
     setLoading(true);
     try {
-      const [it, ps] = await Promise.all([api.getItem(itemId), api.outfitsFor(itemId)]);
+      const [it, ps, sg] = await Promise.all([
+        api.getItem(itemId),
+        api.outfitsFor(itemId),
+        api.suggestionsFor(itemId).catch(() => [] as OutfitSuggestion[]),
+      ]);
       setItem(it);
       setPartners(ps);
+      setSuggestions(sg);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Laden mislukt");
@@ -160,6 +167,16 @@ export default function ItemDetail() {
                 </div>
               )}
             </div>
+
+            {suggestions.length > 0 && (
+              <div>
+                <h3 style={{ margin: "0 0 4px" }}>✨ Suggesties van het systeem</h3>
+                <p className="muted" style={{ marginTop: 0, fontSize: "0.82rem" }}>
+                  Automatisch samengesteld op kleur en seizoen, met dit stuk erin.
+                </p>
+                <SuggestionList suggestions={suggestions} />
+              </div>
+            )}
 
             <button className="btn-ghost btn-block" onClick={duplicate}>
               ⧉ Dupliceren
