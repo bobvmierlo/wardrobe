@@ -41,3 +41,13 @@ jobs:
             backend/requirements-dev.txt
       - run: pip install -r requirements.txt -r requirements-dev.txt
       - run: pytest -q
+
+  docker:
+    name: Docker image build
+    runs-on: ubuntu-latest
+    # Builds the full multi-stage image (frontend on the node base, runtime on
+    # the python base) without pushing, so Dockerfile base-image bumps get
+    # validated on the PR instead of only failing at release time.
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build -t wardrobe:ci .
