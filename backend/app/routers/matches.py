@@ -19,6 +19,7 @@ from ..schemas import (
     PairOut,
     PairSkip,
     PairVote,
+    RejectedPartner,
     SuggestionAccept,
 )
 from ..suggestions import all_pairs, is_combination, suggest_outfits
@@ -367,6 +368,47 @@ def reset_pair(
         )
 
 
+def _partner_verdicts(
+    db: Session, item: Item, user: User
+) -> tuple[dict[int, dict[str, set[int]]], dict[int, Item]]:
+    """Every verdict cast on this garment, grouped per partner garment.
+
+    Returns ``{partner_id: {"yes": {user_id}, "no": {user_id}}}`` along with the
+    partner items themselves. Only partners inside the same wardrobe count.
+    """
+    require_view(db, item.wardrobe_id, user)
+    partners = {it.id: it for it in _wardrobe_items(db, item.wardrobe_id)}
+    rows = (
+        db.query(Match)
+        .filter((Match.item_a_id == item.id) | (Match.item_b_id == item.id))
+        .all()
+    )
+    verdicts: dict[int, dict[str, set[int]]] = {}
+    for m in rows:
+        partner_id = m.item_b_id if m.item_a_id == item.id else m.item_a_id
+        if partner_id not in partners:
+            continue
+        verdicts.setdefault(partner_id, {"yes": set(), "no": set()})
+        verdicts[partner_id][m.verdict].add(m.user_id)
+    return verdicts, partners
+
+
+def _names(db: Session, user_ids: set[int]) -> list[str]:
+    """Display names for a set of voters, alphabetically so the order is stable."""
+    if not user_ids:
+        return []
+    rows = db.query(User).filter(User.id.in_(user_ids)).all()
+    known = {u.id: u.display_name for u in rows}
+    return sorted((known.get(uid, "?") for uid in user_ids), key=str.lower)
+
+
+def _get_item(db: Session, item_id: int) -> Item:
+    item = db.get(Item, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Kledingstuk niet gevonden")
+    return item
+
+
 @router.get("/outfits/{item_id}", response_model=list[OutfitPartner])
 def outfits_for(
     item_id: int,
@@ -378,45 +420,55 @@ def outfits_for(
     A partner is approved when at least one member of the wardrobe said 'yes'
     and nobody said 'no'.
     """
-    item = db.get(Item, item_id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Kledingstuk niet gevonden")
-    require_view(db, item.wardrobe_id, user)
-
-    # Only consider partners within the same wardrobe.
-    partner_ids_in_wardrobe = {
-        it.id for it in _wardrobe_items(db, item.wardrobe_id)
-    }
-    rows = (
-        db.query(Match)
-        .filter((Match.item_a_id == item_id) | (Match.item_b_id == item_id))
-        .all()
-    )
-    # partner_id -> {"yes": set(user_id), "no": set(user_id)}
-    verdicts: dict[int, dict[str, set[int]]] = {}
-    for m in rows:
-        partner_id = m.item_b_id if m.item_a_id == item_id else m.item_a_id
-        if partner_id not in partner_ids_in_wardrobe:
-            continue
-        verdicts.setdefault(partner_id, {"yes": set(), "no": set()})
-        verdicts[partner_id][m.verdict].add(m.user_id)
-
-    approved_partner_ids = [
-        pid for pid, v in verdicts.items() if v["yes"] and not v["no"]
-    ]
-    if not approved_partner_ids:
-        return []
-
-    users = {u.id: u.display_name for u in db.query(User).all()}
-    partners = {it.id: it for it in db.query(Item).filter(Item.id.in_(approved_partner_ids)).all()}
+    item = _get_item(db, item_id)
+    verdicts, partners = _partner_verdicts(db, item, user)
 
     result: list[OutfitPartner] = []
-    for pid in approved_partner_ids:
+    for pid, v in verdicts.items():
+        if not v["yes"] or v["no"]:
+            continue
         part = partners.get(pid)
         if not part:
             continue
-        names = [users.get(uid, "?") for uid in verdicts[pid]["yes"]]
-        result.append(OutfitPartner(item=ItemOut.model_validate(part), approved_by=names))
+        result.append(
+            OutfitPartner(
+                item=ItemOut.model_validate(part), approved_by=_names(db, v["yes"])
+            )
+        )
+    return result
+
+
+@router.get("/rejected/{item_id}", response_model=list[RejectedPartner])
+def rejected_for(
+    item_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Items judged *not* to go with the given item, and who said so.
+
+    Deliberately its own endpoint rather than a flag on the approved list: a
+    rejected pair is not an outfit and must never leak into the Outfits screen.
+    It belongs on the garment's own page, where "waarom staat die combinatie
+    er niet bij?" is the question being asked.
+    """
+    item = _get_item(db, item_id)
+    verdicts, partners = _partner_verdicts(db, item, user)
+
+    result: list[RejectedPartner] = []
+    for pid, v in verdicts.items():
+        if not v["no"]:
+            continue
+        part = partners.get(pid)
+        if not part:
+            continue
+        result.append(
+            RejectedPartner(
+                item=ItemOut.model_validate(part),
+                rejected_by=_names(db, v["no"]),
+                approved_by=_names(db, v["yes"]),
+                rejected_by_me=user.id in v["no"],
+            )
+        )
     return result
 
 

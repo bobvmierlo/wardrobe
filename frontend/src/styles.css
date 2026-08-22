@@ -625,3 +625,24 @@ label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0 0 6px
 .level-badge.WARNING { background: color-mix(in srgb, var(--fav) 22%, transparent); color: var(--fav); }
 .level-badge.ERROR, .level-badge.CRITICAL { background: color-mix(in srgb, var(--no) 22%, transparent); color: #fca5a5; }
 .log-pager { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; }
+
+
+/* ---- rejected combinations (kledingstukpagina, nooit bij Outfits) ---- */
+.rejected-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; }
+.rejected-thumb {
+  display: block; width: 52px; height: 52px; border-radius: 10px; flex: none;
+  overflow: hidden; background: var(--surface-2);
+  /* Dimmed: these are the combinations that did not make it. */
+  opacity: 0.72;
+}
+.rejected-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.rejected-thumb .noimg-ico {
+  display: flex; width: 100%; height: 100%;
+  align-items: center; justify-content: center; font-size: 1.4rem;
+}
+.rejected-meta { min-width: 0; flex: 1; }
+.rejected-name {
+  font-size: 0.9rem; font-weight: 600; line-height: 1.2;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rejected-by { font-size: 0.78rem; color: var(--no); margin-top: 2px; }

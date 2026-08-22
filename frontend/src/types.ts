@@ -169,6 +169,17 @@ export interface OutfitPartner {
   approved_by: string[];
 }
 
+/** A garment judged *not* to go with this one. Shown on a kledingstuk's own
+ *  page, never on Outfits — a rejected pair is not an outfit. */
+export interface RejectedPartner {
+  item: Item;
+  rejected_by: string[];
+  /** Members who said yes anyway; non-empty means the household is split. */
+  approved_by: string[];
+  /** Only your own "nee" is yours to withdraw. */
+  rejected_by_me: boolean;
+}
+
 export interface Stats {
   item_count: number;
   total_pairs: number;

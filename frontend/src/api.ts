@@ -12,6 +12,7 @@ import type {
   OutfitPartner,
   OutfitSuggestion,
   Pair,
+  RejectedPartner,
   ScrapeResult,
   SizeOption,
   Stats,
@@ -234,6 +235,8 @@ export const api = {
       body: JSON.stringify({ item_ids }),
     }),
   outfitsFor: (itemId: number) => request<OutfitPartner[]>(`/api/matches/outfits/${itemId}`),
+  // Pairs that were judged not to work, for the garment's own page.
+  rejectedFor: (itemId: number) => request<RejectedPartner[]>(`/api/matches/rejected/${itemId}`),
   suggestions: (wardrobeId: number) =>
     request<OutfitSuggestion[]>(`/api/matches/suggestions?wardrobe_id=${wardrobeId}`),
   suggestionsFor: (itemId: number) =>

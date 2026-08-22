@@ -203,6 +203,21 @@ class OutfitPartner(BaseModel):
     approved_by: list[str]  # display names who said 'yes'
 
 
+class RejectedPartner(BaseModel):
+    """A garment that was judged *not* to go with this one.
+
+    Both sides are reported, because the interesting case is a split vote: you
+    said yes, your partner said no, and the combination is blocked. Without
+    seeing the "nee" that would be inexplicable.
+    """
+    item: ItemOut
+    rejected_by: list[str]  # display names who said 'no'
+    approved_by: list[str]  # display names who said 'yes' anyway
+    # Whether the current user is one of the people who said no. Only their own
+    # verdict is theirs to withdraw, so this decides if undo is offered at all.
+    rejected_by_me: bool
+
+
 # ---- Invitation links ----
 class InvitationCreate(BaseModel):
     role: str = Field(default="viewer", pattern="^(editor|viewer)$")

@@ -10,7 +10,8 @@ welke stukken bij elkaar passen — via een **Tinder-achtige swipe**.
   links = past niet, en **overslaan** als je er nog niet uit bent (dat paar komt
   achteraan de rij weer terug). Vergist? Elke beoordeling is **ongedaan te maken**.
 - ✨ **Outfits** – bekijk per stuk alle goedgekeurde combinaties, met wie ze goedkeurde.
-  Suggesties van het systeem kun je in één tik **opslaan als combinatie**.
+  Suggesties van het systeem kun je in één tik **opslaan als combinatie**. Op een
+  kledingstuk zie je ook wat er juist **niet** bij past, en wie dat vond.
 - 🚪 **Eigen kast per gebruiker** – iedereen heeft z'n eigen kledingkast.
 - 🤝 **Delen** – nodig iemand uit voor je kast als **bewerker** (mag alles aanpassen)
   of **kijker** (alleen inzage, maar mag wél meestemmen op combinaties). Heeft diegene
@@ -205,6 +206,11 @@ gebruikt is kun je 'm altijd **intrekken**.
 - Bij **Outfits** geldt een combinatie als goedgekeurd wanneer minstens één
   lid van de kast **ja** zei én niemand **nee**. Zo blokkeert een "nee" van een
   ander een combinatie die jij goedkeurde (handig — vaak heeft de ander gelijk 😉).
+- Zie je een combinatie niet terug bij Outfits, dan staat 'ie op de pagina van
+  het kledingstuk onder **"Past niet bij"**, mét wie 'm afkeurde. Zo is een
+  ontbrekende combinatie te verklaren in plaats van onzichtbaar. Afgekeurde
+  paren blijven bewust weg bij Outfits: dat scherm gaat over wat wél kan.
+  Je kunt alleen je **eigen** "nee" intrekken — die van een ander is niet aan jou.
 - De swipe toont eerst **cross-categorie**-paren (bv. polo × broek) omdat die
   het nuttigst zijn; twee stukken uit dezelfde groep komen later.
 

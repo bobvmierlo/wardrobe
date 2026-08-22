@@ -190,3 +190,92 @@ def test_accepting_a_suggestion_needs_access_to_the_wardrobe(client):
         "/api/matches/suggestions/accept", headers=h(other_token), json={"item_ids": ids}
     )
     assert r.status_code == 403, r.text
+
+
+def share_with_partner(client, owner_token, wardrobe_id, role="viewer"):
+    """Add a second person to the wardrobe; returns their token and display name."""
+    from tests.test_wardrobes import make_user
+
+    admin = login(client, ADMIN_USER, ADMIN_PASS)
+    user, un, pw = make_user(client, admin, "Partner")
+    r = client.post(
+        f"/api/wardrobes/{wardrobe_id}/members",
+        headers=h(owner_token),
+        json={"username": un, "role": role},
+    )
+    assert r.status_code == 201, r.text
+    return login(client, un, pw), user["display_name"]
+
+
+def test_a_rejected_pair_is_listed_on_the_garment_with_who_said_no(client):
+    token, wid, (top, bottom) = setup_wardrobe(
+        client, ("Rode trui", "Trui", "rood"), ("Roze broek", "Broek", "roze")
+    )
+    partner, partner_name = share_with_partner(client, token, wid)
+
+    client.post(
+        "/api/matches", headers=h(partner),
+        json={"item_a_id": top, "item_b_id": bottom, "verdict": "no"},
+    )
+
+    rejected = client.get(f"/api/matches/rejected/{top}", headers=h(token)).json()
+    assert len(rejected) == 1
+    assert rejected[0]["item"]["id"] == bottom
+    assert rejected[0]["rejected_by"] == [partner_name]
+    assert rejected[0]["approved_by"] == []
+    # It was the partner's "nee", not mine, so it is not mine to undo.
+    assert rejected[0]["rejected_by_me"] is False
+
+    # It stays out of the approved list — a rejection is not an outfit.
+    assert client.get(f"/api/matches/outfits/{top}", headers=h(token)).json() == []
+    # And it reads the same from the other garment's page.
+    assert client.get(f"/api/matches/rejected/{bottom}", headers=h(token)).json()[0][
+        "item"
+    ]["id"] == top
+
+
+def test_a_split_vote_shows_both_sides(client):
+    """The case that is otherwise baffling: I said yes, my partner said no."""
+    token, wid, (top, bottom) = setup_wardrobe(
+        client, ("Groene polo", "Polo", "groen"), ("Oranje broek", "Broek", "oranje")
+    )
+    partner, partner_name = share_with_partner(client, token, wid)
+
+    client.post(
+        "/api/matches", headers=h(token),
+        json={"item_a_id": top, "item_b_id": bottom, "verdict": "yes"},
+    )
+    client.post(
+        "/api/matches", headers=h(partner),
+        json={"item_a_id": top, "item_b_id": bottom, "verdict": "no"},
+    )
+
+    rejected = client.get(f"/api/matches/rejected/{top}", headers=h(token)).json()
+    assert len(rejected) == 1
+    assert rejected[0]["rejected_by"] == [partner_name]
+    assert rejected[0]["approved_by"] == ["Swiper"]
+    assert rejected[0]["rejected_by_me"] is False
+    # Blocked, so it is nowhere near the Outfits screen.
+    assert client.get(f"/api/matches/outfits/{top}", headers=h(token)).json() == []
+
+    # From the partner's side the "nee" is theirs, and theirs to withdraw.
+    theirs = client.get(f"/api/matches/rejected/{top}", headers=h(partner)).json()
+    assert theirs[0]["rejected_by_me"] is True
+    assert client.delete(f"/api/matches/{top}/{bottom}", headers=h(partner)).status_code == 204
+    assert client.get(f"/api/matches/rejected/{top}", headers=h(token)).json() == []
+    # With the block gone, my own "ja" makes it a real combination.
+    assert [p["item"]["id"] for p in
+            client.get(f"/api/matches/outfits/{top}", headers=h(token)).json()] == [bottom]
+
+
+def test_the_rejected_list_respects_wardrobe_access(client):
+    token, wid, (top, bottom) = setup_wardrobe(
+        client, ("Blauwe trui", "Trui", "blauw"), ("Bruine broek", "Broek", "bruin")
+    )
+    client.post(
+        "/api/matches", headers=h(token),
+        json={"item_a_id": top, "item_b_id": bottom, "verdict": "no"},
+    )
+    outsider, _, _ = setup_wardrobe(client, ("Losse jas", "Jas", "grijs"))
+    assert client.get(f"/api/matches/rejected/{top}", headers=h(outsider)).status_code == 403
+    assert client.get("/api/matches/rejected/999999", headers=h(token)).status_code == 404

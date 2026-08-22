@@ -4,9 +4,10 @@ import { api, photoUrl } from "../api";
 import ItemForm from "../components/ItemForm";
 import AppFooter from "../components/AppFooter";
 import PartnerGrid from "../components/PartnerGrid";
+import RejectedGrid from "../components/RejectedGrid";
 import SuggestionList from "../components/SuggestionList";
 import { useWardrobe } from "../wardrobe";
-import type { Item, OutfitPartner, OutfitSuggestion } from "../types";
+import type { Item, OutfitPartner, OutfitSuggestion, RejectedPartner } from "../types";
 
 export default function ItemDetail() {
   const { id } = useParams();
@@ -15,6 +16,7 @@ export default function ItemDetail() {
   const { wardrobes } = useWardrobe();
   const [item, setItem] = useState<Item | null>(null);
   const [partners, setPartners] = useState<OutfitPartner[]>([]);
+  const [rejected, setRejected] = useState<RejectedPartner[]>([]);
   const [suggestions, setSuggestions] = useState<OutfitSuggestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -23,13 +25,15 @@ export default function ItemDetail() {
   async function load() {
     setLoading(true);
     try {
-      const [it, ps, sg] = await Promise.all([
+      const [it, ps, rj, sg] = await Promise.all([
         api.getItem(itemId),
         api.outfitsFor(itemId),
+        api.rejectedFor(itemId),
         api.suggestionsFor(itemId).catch(() => [] as OutfitSuggestion[]),
       ]);
       setItem(it);
       setPartners(ps);
+      setRejected(rj);
       setSuggestions(sg);
       setError(null);
     } catch (e) {
@@ -37,6 +41,18 @@ export default function ItemDetail() {
     } finally {
       setLoading(false);
     }
+  }
+
+  /** Reload everything a verdict can move between: approved, rejected, suggested. */
+  async function reloadVerdicts() {
+    const [ps, rj, sg] = await Promise.all([
+      api.outfitsFor(itemId),
+      api.rejectedFor(itemId),
+      api.suggestionsFor(itemId).catch(() => [] as OutfitSuggestion[]),
+    ]);
+    setPartners(ps);
+    setRejected(rj);
+    setSuggestions(sg);
   }
   useEffect(() => {
     load();
@@ -52,23 +68,19 @@ export default function ItemDetail() {
   /** Withdraw my approval of one of this garment's combinations. */
   async function undoCombination(partner: OutfitPartner) {
     await api.resetPair(itemId, partner.item.id);
-    const [ps, sg] = await Promise.all([
-      api.outfitsFor(itemId),
-      api.suggestionsFor(itemId).catch(() => [] as OutfitSuggestion[]),
-    ]);
-    setPartners(ps);
-    setSuggestions(sg);
+    await reloadVerdicts();
+  }
+
+  /** Withdraw my own "nee", so the pair is up for judging again. */
+  async function undoRejection(partner: RejectedPartner) {
+    await api.resetPair(itemId, partner.item.id);
+    await reloadVerdicts();
   }
 
   /** Adopt a suggested outfit that includes this garment. */
   async function acceptSuggestion(suggestion: OutfitSuggestion) {
     await api.acceptSuggestion(suggestion.items.map((it) => it.id));
-    const [ps, sg] = await Promise.all([
-      api.outfitsFor(itemId),
-      api.suggestionsFor(itemId).catch(() => [] as OutfitSuggestion[]),
-    ]);
-    setPartners(ps);
-    setSuggestions(sg);
+    await reloadVerdicts();
   }
 
   async function duplicate() {
@@ -184,6 +196,17 @@ export default function ItemDetail() {
                 <PartnerGrid partners={partners} onUndo={undoCombination} />
               )}
             </div>
+
+            {rejected.length > 0 && (
+              <div>
+                <h3 style={{ margin: "0 0 4px" }}>Past niet bij</h3>
+                <p className="muted" style={{ marginTop: 0, fontSize: "0.82rem" }}>
+                  Afgekeurd, dus deze staan niet bij Outfits. Eén "nee" blokkeert een
+                  combinatie, ook als iemand anders 'm goedkeurde.
+                </p>
+                <RejectedGrid rejected={rejected} onUndo={undoRejection} />
+              </div>
+            )}
 
             {suggestions.length > 0 && (
               <div>
