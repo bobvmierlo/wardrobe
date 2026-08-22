@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -149,6 +150,53 @@ def migrate_wardrobes() -> None:
         db.close()
 
 
+def migrate_brands() -> None:
+    """Move free-text item brands into the shared ``brands`` table.
+
+    Brands used to be a plain string column on ``items``, so the same brand
+    could exist under several spellings. Create the table, add ``brand_id``,
+    and fold each distinct name into one row case-insensitively, keeping the
+    spelling of the oldest garment that used it. The old column is left in
+    place (SQLite cannot drop one) but is no longer read.
+    """
+    Base.metadata.create_all(bind=engine)
+    with engine.begin() as conn:
+        cols = [c[1] for c in conn.exec_driver_sql("PRAGMA table_info(items)").fetchall()]
+        if not cols:
+            return  # fresh install: create_all already made the right schema
+        if "brand_id" not in cols:
+            conn.exec_driver_sql(
+                "ALTER TABLE items ADD COLUMN brand_id INTEGER REFERENCES brands(id)"
+            )
+        if "brand" not in cols:
+            return  # nothing to migrate from
+
+        seen: dict[str, int] = {
+            name.strip().lower(): brand_id
+            for brand_id, name in conn.exec_driver_sql("SELECT id, name FROM brands").fetchall()
+        }
+        rows = conn.exec_driver_sql(
+            "SELECT id, brand FROM items"
+            " WHERE brand_id IS NULL AND brand IS NOT NULL AND TRIM(brand) <> ''"
+            " ORDER BY id"
+        ).fetchall()
+        for item_id, brand in rows:
+            name = (brand or "").strip()
+            if not name:
+                continue
+            brand_id = seen.get(name.lower())
+            if brand_id is None:
+                cur = conn.exec_driver_sql(
+                    "INSERT INTO brands (name, created_at) VALUES (?, ?)",
+                    (name, datetime.now(timezone.utc)),
+                )
+                brand_id = cur.lastrowid
+                seen[name.lower()] = brand_id
+            conn.exec_driver_sql(
+                "UPDATE items SET brand_id = ? WHERE id = ?", (brand_id, item_id)
+            )
+
+
 def seed_catalog() -> None:
     """Populate the category and size lists on first run, and top up any newly
     introduced default sizes (e.g. shoe sizes, One-size) on existing installs."""
@@ -192,6 +240,7 @@ seed_admin()
 migrate_sizes()
 migrate_size_uniqueness()
 migrate_wardrobes()
+migrate_brands()
 seed_catalog()
 seed_color_rules()
 
@@ -199,6 +248,7 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(wardrobes.router)
 app.include_router(items.router)
+app.include_router(items.brands_router)
 app.include_router(matches.router)
 app.include_router(catalog.categories_router)
 app.include_router(catalog.sizes_router)

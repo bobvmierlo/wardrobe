@@ -73,13 +73,35 @@ class WardrobeMember(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class Brand(Base):
+    """A clothing brand, shared across every wardrobe in the installation.
+
+    Brands live in their own table so the same brand can only exist once: the
+    name is unique and compared case-insensitively (NOCASE), so "Nike", "NIKE"
+    and "nike" all resolve to one row. Unlike categories and sizes this is not
+    an admin-managed list — any user adds a brand simply by naming it on a
+    garment.
+    """
+
+    __tablename__ = "brands"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(
+        String(120, collation="NOCASE"), unique=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class Item(Base):
     __tablename__ = "items"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(120))
     category: Mapped[str] = mapped_column(String(60), index=True)
-    brand: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    brand_id: Mapped[int | None] = mapped_column(
+        ForeignKey("brands.id"), index=True, nullable=True
+    )
+    brand_ref: Mapped["Brand | None"] = relationship(lazy="joined")
     color: Mapped[str | None] = mapped_column(String(60), nullable=True)
     size: Mapped[str | None] = mapped_column(String(40), nullable=True)
     # One or more seasons, stored comma-separated (e.g. "Lente,Zomer").
@@ -97,6 +119,11 @@ class Item(Base):
     created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     created_by: Mapped[User] = relationship()
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    @property
+    def brand(self) -> str | None:
+        """The brand name, so the API keeps exposing a plain string."""
+        return self.brand_ref.name if self.brand_ref else None
 
 
 class Category(Base):

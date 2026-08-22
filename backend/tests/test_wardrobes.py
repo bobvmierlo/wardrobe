@@ -152,3 +152,92 @@ def test_cannot_invite_unknown_user(client):
         json={"username": "doesnotexist", "role": "viewer"},
     )
     assert r.status_code == 404
+
+
+def test_brands_are_global_and_never_duplicated(client):
+    """Brands live in one shared table, so the list can't hold the same brand twice."""
+    admin = login(client, ADMIN_USER, ADMIN_PASS)
+    _, ou, op = make_user(client, admin, "Emma")
+    _, xu, xp = make_user(client, admin, "Frank")
+    owner_t = login(client, ou, op)
+    outsider_t = login(client, xu, xp)
+    owner_w, _ = own_wardrobe(client, owner_t)
+
+    tag = uuid.uuid4().hex[:8]
+    brand = f"Merk{tag}"
+    # The same brand typed three ways, plus a genuinely different one.
+    add_item(client, owner_t, owner_w["id"], "Trui", "Trui", brand=brand)
+    add_item(client, owner_t, owner_w["id"], "Broek", "Broek", brand=brand.upper())
+    r = add_item(client, owner_t, owner_w["id"], "Jas", "Jas", brand=f"  {brand.lower()}  ")
+
+    brands = client.get("/api/brands", headers=h(owner_t)).json()
+    assert brands.count(brand) == 1
+    assert brand.upper() not in brands and brand.lower() not in brands
+    assert brands == sorted(brands, key=str.casefold)
+
+    # Variants collapse onto the first spelling, on the garment itself too.
+    assert r.json()["brand"] == brand
+
+    # Brands are shared app-wide: a user with no kast of their own shared with
+    # them still gets the full list to pick from.
+    assert brand in client.get("/api/brands", headers=h(outsider_t)).json()
+    assert brand in client.get("/api/brands", headers=h(admin)).json()
+
+    # Switching a garment to another brand reuses/creates exactly one row.
+    moved = client.patch(
+        f"/api/items/{r.json()['id']}", headers=h(owner_t), data={"brand": brand.upper()}
+    )
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["brand"] == brand
+    assert client.get("/api/brands", headers=h(owner_t)).json().count(brand) == 1
+
+
+def test_items_are_searchable_by_brand(client):
+    admin = login(client, ADMIN_USER, ADMIN_PASS)
+    _, gu, gp = make_user(client, admin, "Gerda")
+    t = login(client, gu, gp)
+    w, _ = own_wardrobe(client, t)
+
+    tag = uuid.uuid4().hex[:8]
+    add_item(client, t, w["id"], "Blauwe trui", "Trui", brand=f"Zoekmerk{tag}")
+    add_item(client, t, w["id"], "Rode broek", "Broek")
+
+    found = client.get(f"/api/items?wardrobe_id={w['id']}&q=Zoekmerk{tag}", headers=h(t)).json()
+    assert [it["name"] for it in found] == ["Blauwe trui"]
+
+
+def test_optional_fields_can_be_cleared(client):
+    """Sending a field empty clears it; leaving it out keeps the stored value."""
+    admin = login(client, ADMIN_USER, ADMIN_PASS)
+    _, hu, hp = make_user(client, admin, "Hanna")
+    t = login(client, hu, hp)
+    w, _ = own_wardrobe(client, t)
+
+    created = add_item(
+        client, t, w["id"], "Vest", "Vest",
+        brand="Leegmaakmerk", color="blauw", size="M", notes="iets", season="Zomer",
+    ).json()
+    assert created["brand"] == "Leegmaakmerk" and created["color"] == "blauw"
+
+    # Sending only some fields leaves the rest untouched.
+    partial = client.patch(
+        f"/api/items/{created['id']}", headers=h(t), data={"color": "rood"}
+    ).json()
+    assert partial["color"] == "rood"
+    assert partial["brand"] == "Leegmaakmerk" and partial["notes"] == "iets"
+
+    # Sending them empty actually clears them.
+    cleared = client.patch(
+        f"/api/items/{created['id']}",
+        headers=h(t),
+        data={"brand": "", "color": "", "size": "", "notes": "", "season": ""},
+    )
+    assert cleared.status_code == 200, cleared.text
+    body = cleared.json()
+    assert body["brand"] is None
+    assert body["color"] is None
+    assert body["size"] is None
+    assert body["notes"] is None
+    assert body["seasons"] == []
+    # Required fields survive an empty submission.
+    assert body["name"] == "Vest" and body["category"] == "Vest"
