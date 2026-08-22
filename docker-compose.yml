@@ -21,6 +21,9 @@ services:
       WARDROBE_ADMIN_PASSWORD: "${WARDROBE_ADMIN_PASSWORD:-changeme}"
       WARDROBE_ADMIN_DISPLAY_NAME: "${WARDROBE_ADMIN_DISPLAY_NAME:-Beheerder}"
       WARDROBE_MAX_UPLOAD_MB: "${WARDROBE_MAX_UPLOAD_MB:-15}"
+      # DEBUG, INFO, WARNING of ERROR. Zie `docker compose logs -f kledingkast`
+      # en in de app onder Instellingen → Logboek.
+      WARDROBE_LOG_LEVEL: "${WARDROBE_LOG_LEVEL:-INFO}"
 
 volumes:
   kledingkast-data:

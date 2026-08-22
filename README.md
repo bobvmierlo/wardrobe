@@ -192,6 +192,29 @@ Wat blijft staan:
 Dit kan niet ongedaan gemaakt worden — maak eerst een [back-up](#back-up) als
 je twijfelt.
 
+**Let op:** het verwijderen haalt een account weg; het laat accounts die je
+*niet* verwijderd hebt gewoon staan. Zie je iemand nog in de lijst staan, dan
+bestaat dat account nog.
+
+Bij het opstarten controleert de app of er resten liggen van accounts die in
+een oudere versie half verwijderd zijn, en ruimt die op. In beide gevallen zegt
+het logboek wat er gebeurd is:
+
+```
+WARNING  Resten van eerder verwijderde accounts opgeruimd: 1 kasten, 2 kledingstukken
+INFO     Databasecontrole: geen resten van verwijderde accounts gevonden (3 account(s), 3 kast(en))
+```
+
+Wil je zelf in de database kijken wie er nog staat en of er iets is blijven
+liggen:
+
+```bash
+docker compose exec -T kledingkast python - < scripts/check_db.py
+```
+
+(De `-T` is nodig: zonder die vlag opent `docker compose exec` een terminal en
+weigert 'ie het doorgegeven script met *"the input device is not a TTY"*.)
+
 ### Iemand uitnodigen die nog geen account heeft
 
 Registratie staat standaard dicht: niemand kan zichzelf zomaar aanmelden. Wél kun
