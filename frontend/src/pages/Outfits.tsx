@@ -3,11 +3,14 @@ import { Link } from "react-router-dom";
 import { api, photoUrl } from "../api";
 import AppFooter from "../components/AppFooter";
 import SuggestionList from "../components/SuggestionList";
+import WardrobeSwitcher from "../components/WardrobeSwitcher";
+import { useWardrobe } from "../wardrobe";
 import { SEASONS, type Item, type OutfitPartner, type OutfitSuggestion } from "../types";
 
 type Tab = "browse" | "suggest";
 
 export default function Outfits() {
+  const { current } = useWardrobe();
   const [tab, setTab] = useState<Tab>("browse");
   const [items, setItems] = useState<Item[]>([]);
   const [selected, setSelected] = useState<Item | null>(null);
@@ -25,16 +28,20 @@ export default function Outfits() {
   const [loadingSug, setLoadingSug] = useState(false);
 
   useEffect(() => {
+    if (!current) return;
+    // Reset when switching wardrobes so nothing from another kast lingers.
+    setSuggestions([]);
+    setLoading(true);
     (async () => {
       try {
-        const list = await api.listItems();
+        const list = await api.listItems(current.id);
         setItems(list);
-        if (list.length) setSelected(list[0]);
+        setSelected(list.length ? list[0] : null);
       } finally {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [current?.id]);
 
   useEffect(() => {
     if (!selected) return;
@@ -46,13 +53,13 @@ export default function Outfits() {
   }, [selected]);
 
   useEffect(() => {
-    if (tab !== "suggest" || suggestions.length) return;
+    if (tab !== "suggest" || suggestions.length || !current) return;
     setLoadingSug(true);
     api
-      .suggestions()
+      .suggestions(current.id)
       .then(setSuggestions)
       .finally(() => setLoadingSug(false));
-  }, [tab, suggestions.length]);
+  }, [tab, suggestions.length, current?.id]);
 
   const categories = useMemo(
     () => Array.from(new Set(items.map((i) => i.category))).sort((a, b) => a.localeCompare(b)),
@@ -92,6 +99,7 @@ export default function Outfits() {
     <>
       <div className="topbar">
         <h1>Outfits</h1>
+        <WardrobeSwitcher />
       </div>
       <div className="content">
         <div className="seg">

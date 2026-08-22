@@ -3,6 +3,7 @@ import type {
   ColorLogic,
   ColorRule,
   Item,
+  MemberRole,
   OutfitPartner,
   OutfitSuggestion,
   Pair,
@@ -10,6 +11,8 @@ import type {
   SizeOption,
   Stats,
   User,
+  Wardrobe,
+  WardrobeMember,
 } from "./types";
 
 const TOKEN_KEY = "kledingkast_token";
@@ -88,6 +91,25 @@ export const api = {
     }),
   deleteUser: (id: number) => request<void>(`/api/users/${id}`, { method: "DELETE" }),
 
+  // ---- wardrobes (kasten) & sharing ----
+  listWardrobes: () => request<Wardrobe[]>("/api/wardrobes"),
+  wardrobeMembers: (wardrobeId: number) =>
+    request<WardrobeMember[]>(`/api/wardrobes/${wardrobeId}/members`),
+  inviteMember: (wardrobeId: number, username: string, role: MemberRole) =>
+    request<WardrobeMember>(`/api/wardrobes/${wardrobeId}/members`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, role }),
+    }),
+  updateMember: (wardrobeId: number, userId: number, role: MemberRole) =>
+    request<WardrobeMember>(`/api/wardrobes/${wardrobeId}/members/${userId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role }),
+    }),
+  removeMember: (wardrobeId: number, userId: number) =>
+    request<void>(`/api/wardrobes/${wardrobeId}/members/${userId}`, { method: "DELETE" }),
+
   // ---- colour-combination rules (editable suggestion logic) ----
   colorLogic: () => request<ColorLogic>("/api/color-rules"),
   addColorRule: (data: { color_a: string; color_b: string; verdict: "good" | "bad" }) =>
@@ -99,24 +121,33 @@ export const api = {
   deleteColorRule: (id: number) => request<void>(`/api/color-rules/${id}`, { method: "DELETE" }),
 
   // ---- items ----
-  listItems: (params: { category?: string; q?: string; favorites?: boolean } = {}) => {
+  listItems: (
+    wardrobeId: number,
+    params: { category?: string; q?: string; favorites?: boolean } = {},
+  ) => {
     const sp = new URLSearchParams();
+    sp.set("wardrobe_id", String(wardrobeId));
     if (params.category) sp.set("category", params.category);
     if (params.q) sp.set("q", params.q);
     if (params.favorites) sp.set("favorites", "true");
-    const qs = sp.toString();
-    return request<Item[]>(`/api/items${qs ? `?${qs}` : ""}`);
+    return request<Item[]>(`/api/items?${sp.toString()}`);
   },
   getItem: (id: number) => request<Item>(`/api/items/${id}`),
-  createItem: (form: FormData) => request<Item>("/api/items", { method: "POST", body: form }),
+  createItem: (wardrobeId: number, form: FormData) => {
+    form.set("wardrobe_id", String(wardrobeId));
+    return request<Item>("/api/items", { method: "POST", body: form });
+  },
   updateItem: (id: number, form: FormData) =>
     request<Item>(`/api/items/${id}`, { method: "PATCH", body: form }),
   duplicateItem: (id: number) => request<Item>(`/api/items/${id}/duplicate`, { method: "POST" }),
   deleteItem: (id: number) => request<void>(`/api/items/${id}`, { method: "DELETE" }),
 
   // ---- matches ----
-  nextPair: (anchorId?: number) =>
-    request<Pair | null>(`/api/matches/next${anchorId ? `?anchor_id=${anchorId}` : ""}`),
+  nextPair: (wardrobeId: number, anchorId?: number) => {
+    const sp = new URLSearchParams({ wardrobe_id: String(wardrobeId) });
+    if (anchorId) sp.set("anchor_id", String(anchorId));
+    return request<Pair | null>(`/api/matches/next?${sp.toString()}`);
+  },
   submitVerdict: (item_a_id: number, item_b_id: number, verdict: "yes" | "no") =>
     request<void>("/api/matches", {
       method: "POST",
@@ -126,10 +157,12 @@ export const api = {
   resetPair: (a: number, b: number) =>
     request<void>(`/api/matches/${a}/${b}`, { method: "DELETE" }),
   outfitsFor: (itemId: number) => request<OutfitPartner[]>(`/api/matches/outfits/${itemId}`),
-  suggestions: () => request<OutfitSuggestion[]>("/api/matches/suggestions"),
+  suggestions: (wardrobeId: number) =>
+    request<OutfitSuggestion[]>(`/api/matches/suggestions?wardrobe_id=${wardrobeId}`),
   suggestionsFor: (itemId: number) =>
     request<OutfitSuggestion[]>(`/api/matches/suggestions/${itemId}`),
-  stats: () => request<Stats>("/api/matches/stats"),
+  stats: (wardrobeId: number) =>
+    request<Stats>(`/api/matches/stats?wardrobe_id=${wardrobeId}`),
 
   // ---- categories (admin-managed) ----
   listCategories: () => request<Category[]>("/api/categories"),

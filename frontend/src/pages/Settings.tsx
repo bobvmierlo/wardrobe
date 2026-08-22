@@ -1,17 +1,25 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
+import { useWardrobe } from "../wardrobe";
 import AppFooter from "../components/AppFooter";
-import { SIZE_KIND_LABELS, compareSizes, type Category, type ColorLogic, type SizeKind, type SizeOption, type User } from "../types";
+import { ROLE_LABELS, SIZE_KIND_LABELS, compareSizes, type Category, type ColorLogic, type MemberRole, type SizeKind, type SizeOption, type User, type WardrobeMember } from "../types";
 
 export default function Settings() {
   const { user, logout } = useAuth();
+  const { wardrobes, refresh: refreshWardrobes } = useWardrobe();
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   // change password
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
+
+  // sharing my own kast
+  const ownWardrobe = wardrobes.find((w) => w.my_role === "owner") ?? null;
+  const [members, setMembers] = useState<WardrobeMember[]>([]);
+  const [inviteName, setInviteName] = useState("");
+  const [inviteRole, setInviteRole] = useState<MemberRole>("viewer");
 
   // users (admin)
   const [users, setUsers] = useState<User[]>([]);
@@ -52,11 +60,59 @@ export default function Settings() {
       /* ignore */
     }
   }
+  async function loadMembers(wardrobeId: number) {
+    try {
+      setMembers(await api.wardrobeMembers(wardrobeId));
+    } catch {
+      /* ignore */
+    }
+  }
   useEffect(() => {
     loadUsers();
     loadCatalog();
     loadLogic();
   }, []);
+  useEffect(() => {
+    if (ownWardrobe) loadMembers(ownWardrobe.id);
+  }, [ownWardrobe?.id]);
+
+  async function invite(e: React.FormEvent) {
+    e.preventDefault();
+    setErr(null);
+    setMsg(null);
+    if (!ownWardrobe || !inviteName.trim()) return;
+    try {
+      await api.inviteMember(ownWardrobe.id, inviteName.trim(), inviteRole);
+      setInviteName("");
+      setInviteRole("viewer");
+      setMsg("Uitnodiging toegevoegd.");
+      await loadMembers(ownWardrobe.id);
+      refreshWardrobes();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Uitnodigen mislukt");
+    }
+  }
+  async function changeMemberRole(userId: number, role: MemberRole) {
+    if (!ownWardrobe) return;
+    setErr(null);
+    try {
+      await api.updateMember(ownWardrobe.id, userId, role);
+      await loadMembers(ownWardrobe.id);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Wijzigen mislukt");
+    }
+  }
+  async function removeMember(userId: number) {
+    if (!ownWardrobe) return;
+    setErr(null);
+    try {
+      await api.removeMember(ownWardrobe.id, userId);
+      await loadMembers(ownWardrobe.id);
+      refreshWardrobes();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Verwijderen mislukt");
+    }
+  }
 
   async function addCategory(e: React.FormEvent) {
     e.preventDefault();
@@ -220,6 +276,61 @@ export default function Settings() {
             <input type="password" placeholder="Nieuw wachtwoord" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" />
             <input type="password" placeholder="Herhaal wachtwoord" value={pw2} onChange={(e) => setPw2(e.target.value)} autoComplete="new-password" />
             <button className="btn-primary">Opslaan</button>
+          </form>
+        </div>
+
+        <div className="card" style={{ padding: 16 }}>
+          <h3 style={{ marginTop: 0 }}>Mijn kast delen</h3>
+          <p className="muted" style={{ fontSize: "0.82rem", marginTop: 0 }}>
+            Nodig iemand uit voor je kast. Een <strong>bewerker</strong> kan kledingstukken
+            toevoegen en aanpassen; een <strong>kijker</strong> kan alleen kijken, maar wél
+            meestemmen op combinaties.
+          </p>
+
+          <div className="stack" style={{ marginBottom: 12 }}>
+            {members.length === 0 ? (
+              <p className="muted" style={{ fontSize: "0.85rem", margin: 0 }}>
+                Je kast is nog met niemand gedeeld.
+              </p>
+            ) : (
+              members.map((m) => (
+                <div key={m.user.id} className="row spread" style={{ borderBottom: "1px solid var(--border)", paddingBottom: 8, gap: 8 }}>
+                  <div>
+                    <div>{m.user.display_name}</div>
+                    <div className="muted" style={{ fontSize: "0.8rem" }}>@{m.user.username}</div>
+                  </div>
+                  <div className="row" style={{ gap: 6 }}>
+                    <select
+                      value={m.role}
+                      onChange={(e) => changeMemberRole(m.user.id, e.target.value as MemberRole)}
+                      style={{ width: "auto", padding: "6px 10px" }}
+                      aria-label={`Rol van ${m.user.display_name}`}
+                    >
+                      <option value="viewer">{ROLE_LABELS.viewer}</option>
+                      <option value="editor">{ROLE_LABELS.editor}</option>
+                    </select>
+                    <button className="btn-danger" style={{ padding: "6px 10px" }} onClick={() => removeMember(m.user.id)}>
+                      Verwijder
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          <form onSubmit={invite} className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+            <input
+              placeholder="Gebruikersnaam"
+              value={inviteName}
+              onChange={(e) => setInviteName(e.target.value)}
+              autoCapitalize="none"
+              style={{ flex: "1 1 45%" }}
+            />
+            <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value as MemberRole)} style={{ flex: "1 1 25%", width: "auto" }}>
+              <option value="viewer">{ROLE_LABELS.viewer}</option>
+              <option value="editor">{ROLE_LABELS.editor}</option>
+            </select>
+            <button className="btn-primary" style={{ flex: "none" }}>Uitnodigen</button>
           </form>
         </div>
 

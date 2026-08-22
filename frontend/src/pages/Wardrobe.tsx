@@ -2,10 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, photoUrl } from "../api";
 import AppFooter from "../components/AppFooter";
+import WardrobeSwitcher from "../components/WardrobeSwitcher";
+import { useWardrobe } from "../wardrobe";
 import type { Item } from "../types";
 
 export default function Wardrobe() {
   const navigate = useNavigate();
+  const { current, canEdit, isShared, loading: wLoading } = useWardrobe();
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -13,10 +16,10 @@ export default function Wardrobe() {
   const [category, setCategory] = useState<string | null>(null);
   const [favOnly, setFavOnly] = useState(false);
 
-  async function load() {
+  async function load(wardrobeId: number) {
     setLoading(true);
     try {
-      setItems(await api.listItems());
+      setItems(await api.listItems(wardrobeId));
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Laden mislukt");
@@ -25,8 +28,10 @@ export default function Wardrobe() {
     }
   }
   useEffect(() => {
-    load();
-  }, []);
+    if (current) load(current.id);
+    else if (!wLoading) setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current?.id, wLoading]);
 
   const categories = useMemo(() => {
     const set = new Set(items.map((i) => i.category));
@@ -49,7 +54,11 @@ export default function Wardrobe() {
   return (
     <>
       <div className="topbar">
-        <h1>Mijn kast {items.length > 0 && <span className="muted">· {items.length}</span>}</h1>
+        <h1>
+          {isShared && current ? current.name : "Mijn kast"}{" "}
+          {items.length > 0 && <span className="muted">· {items.length}</span>}
+        </h1>
+        <WardrobeSwitcher />
       </div>
       <div className="content">
         <div className="field">
@@ -82,10 +91,14 @@ export default function Wardrobe() {
           <div className="empty">
             <div className="big">👗</div>
             {items.length === 0 ? (
-              <>
-                <p>Je kast is nog leeg.</p>
-                <p className="muted">Tik op de knop rechtsonder om je eerste kledingstuk toe te voegen.</p>
-              </>
+              isShared ? (
+                <p>Deze kast is nog leeg.</p>
+              ) : (
+                <>
+                  <p>Je kast is nog leeg.</p>
+                  <p className="muted">Tik op de knop rechtsonder om je eerste kledingstuk toe te voegen.</p>
+                </>
+              )
             ) : (
               <p>Geen kledingstukken gevonden.</p>
             )}
@@ -117,11 +130,13 @@ export default function Wardrobe() {
         <AppFooter />
       </div>
 
-      <button className="fab" onClick={() => navigate("/add")} aria-label="Kledingstuk toevoegen">
-        <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
-        </svg>
-      </button>
+      {canEdit && (
+        <button className="fab" onClick={() => navigate("/add")} aria-label="Kledingstuk toevoegen">
+          <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+          </svg>
+        </button>
+      )}
     </>
   );
 }

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from ..access import ensure_wardrobe
 from ..database import get_db
 from ..deps import get_current_user, require_admin
 from ..models import User
@@ -37,6 +38,8 @@ def create_user(
     db.add(user)
     db.commit()
     db.refresh(user)
+    # Give the new user their own wardrobe right away.
+    ensure_wardrobe(db, user)
     return user
 
 

@@ -4,12 +4,14 @@ import { api, photoUrl } from "../api";
 import ItemForm from "../components/ItemForm";
 import AppFooter from "../components/AppFooter";
 import SuggestionList from "../components/SuggestionList";
+import { useWardrobe } from "../wardrobe";
 import type { Item, OutfitPartner, OutfitSuggestion } from "../types";
 
 export default function ItemDetail() {
   const { id } = useParams();
   const itemId = Number(id);
   const navigate = useNavigate();
+  const { wardrobes } = useWardrobe();
   const [item, setItem] = useState<Item | null>(null);
   const [partners, setPartners] = useState<OutfitPartner[]>([]);
   const [suggestions, setSuggestions] = useState<OutfitSuggestion[]>([]);
@@ -56,6 +58,11 @@ export default function ItemDetail() {
   }
 
   const src = item ? photoUrl(item) : null;
+  // Whether the current user may change this garment depends on their role in
+  // the wardrobe it belongs to (viewers can only look and vote).
+  const canEdit = item
+    ? wardrobes.find((w) => w.id === item.wardrobe_id)?.can_edit ?? false
+    : false;
 
   return (
     <div className="app">
@@ -64,7 +71,7 @@ export default function ItemDetail() {
           ← Terug
         </button>
         <h1>{editing ? "Bewerken" : "Kledingstuk"}</h1>
-        {item && !editing ? (
+        {item && !editing && canEdit ? (
           <button className="btn-ghost" onClick={() => setEditing(true)}>
             Bewerk
           </button>
@@ -178,13 +185,17 @@ export default function ItemDetail() {
               </div>
             )}
 
-            <button className="btn-ghost btn-block" onClick={duplicate}>
-              ⧉ Dupliceren
-            </button>
+            {canEdit && (
+              <>
+                <button className="btn-ghost btn-block" onClick={duplicate}>
+                  ⧉ Dupliceren
+                </button>
 
-            <button className="btn-danger btn-block" onClick={remove}>
-              Verwijderen
-            </button>
+                <button className="btn-danger btn-block" onClick={remove}>
+                  Verwijderen
+                </button>
+              </>
+            )}
           </div>
         )}
         <AppFooter />

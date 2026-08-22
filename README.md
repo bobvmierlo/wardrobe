@@ -8,7 +8,11 @@ welke stukken bij elkaar passen — via een **Tinder-achtige swipe**.
 - 🗂️ **Categorieën** – polo, t-shirt, trui, vest, hoodie, broek, shorts, schoenen… (vrij aan te vullen).
 - 💞 **Combineren** – swipe per kledingstuk of het bij een ander past. Rechts = past, links = past niet.
 - ✨ **Outfits** – bekijk per stuk alle goedgekeurde combinaties, met wie ze goedkeurde.
-- 👥 **Accounts** – jij én je partner een eigen login; jullie oordelen tellen samen.
+- 🚪 **Eigen kast per gebruiker** – iedereen heeft z'n eigen kledingkast.
+- 🤝 **Delen** – nodig iemand uit voor je kast als **bewerker** (mag alles aanpassen)
+  of **kijker** (alleen inzage, maar mag wél meestemmen op combinaties).
+- 👥 **Accounts** – jij én je partner een eigen login. Een **beheerder** kan bij
+  elke kast, en heeft daarnaast ook gewoon z'n eigen kast.
 - 📱 **PWA** – installeerbaar op je telefoon (Toevoegen aan beginscherm).
 
 Techniek: **FastAPI + SQLite + Pillow** (backend) en **React + Vite** (frontend),

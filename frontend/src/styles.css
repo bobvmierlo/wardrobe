@@ -425,6 +425,18 @@ label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0 0 6px
 }
 .role-badge.admin { background: color-mix(in srgb, var(--primary) 22%, transparent); color: var(--primary); border-color: transparent; }
 
+/* ---- wardrobe switcher (top bar) ---- */
+.wardrobe-select {
+  width: auto;
+  max-width: 55vw;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
 /* ---- admin tag lists ---- */
 .tag-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .tag.good { border-color: color-mix(in srgb, var(--yes) 55%, var(--border)); }

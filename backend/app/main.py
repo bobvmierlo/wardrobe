@@ -8,8 +8,8 @@ from fastapi.staticfiles import StaticFiles
 from ._version import __version__
 from .config import settings
 from .database import Base, SessionLocal, engine
-from .models import Category, ColorRule, SizeOption, User
-from .routers import auth, catalog, color_rules, imports, items, matches, users
+from .models import Category, ColorRule, Item, SizeOption, User, Wardrobe
+from .routers import auth, catalog, color_rules, imports, items, matches, users, wardrobes
 from .security import hash_password
 from .suggestions import DEFAULT_BAD_PAIRS, DEFAULT_GOOD_PAIRS
 
@@ -112,6 +112,43 @@ def migrate_size_uniqueness() -> None:
         conn.exec_driver_sql("ALTER TABLE sizes_new RENAME TO sizes")
 
 
+def migrate_wardrobes() -> None:
+    """Give every user a wardrobe and move existing garments into one.
+
+    Introduced when the app gained per-user wardrobes ("kasten") with sharing.
+    On existing installs the ``items`` table predates the ``wardrobe_id``
+    column, so add it, create one wardrobe per user, and file each garment
+    under its creator's wardrobe (falling back to the first admin's).
+    """
+    Base.metadata.create_all(bind=engine)  # create wardrobes / members tables
+    with engine.begin() as conn:
+        cols = conn.exec_driver_sql("PRAGMA table_info(items)").fetchall()
+        if cols and not any(c[1] == "wardrobe_id" for c in cols):
+            conn.exec_driver_sql(
+                "ALTER TABLE items ADD COLUMN wardrobe_id INTEGER REFERENCES wardrobes(id)"
+            )
+
+    db = SessionLocal()
+    try:
+        existing = {w.owner_id for w in db.query(Wardrobe).all()}
+        for u in db.query(User).all():
+            if u.id not in existing:
+                db.add(Wardrobe(owner_id=u.id, name=f"Kast van {u.display_name}"))
+        db.commit()
+
+        owner_to_wardrobe = {w.owner_id: w.id for w in db.query(Wardrobe).all()}
+        admin = db.query(User).filter(User.is_admin.is_(True)).order_by(User.id).first()
+        fallback = owner_to_wardrobe.get(admin.id) if admin else None
+
+        orphans = db.query(Item).filter(Item.wardrobe_id.is_(None)).all()
+        for it in orphans:
+            it.wardrobe_id = owner_to_wardrobe.get(it.created_by_id) or fallback
+        if orphans:
+            db.commit()
+    finally:
+        db.close()
+
+
 def seed_catalog() -> None:
     """Populate the category and size lists on first run, and top up any newly
     introduced default sizes (e.g. shoe sizes, One-size) on existing installs."""
@@ -154,11 +191,13 @@ def seed_color_rules() -> None:
 seed_admin()
 migrate_sizes()
 migrate_size_uniqueness()
+migrate_wardrobes()
 seed_catalog()
 seed_color_rules()
 
 app.include_router(auth.router)
 app.include_router(users.router)
+app.include_router(wardrobes.router)
 app.include_router(items.router)
 app.include_router(matches.router)
 app.include_router(catalog.categories_router)

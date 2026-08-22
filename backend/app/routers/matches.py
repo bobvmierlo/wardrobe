@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
+from ..access import require_view
 from ..database import get_db
 from ..deps import get_current_user
 from ..matching import can_combine, is_cross_group, seasons_compatible
@@ -16,27 +17,33 @@ def _ordered(a: int, b: int) -> tuple[int, int]:
     return (a, b) if a < b else (b, a)
 
 
-def _judged_pairs(db: Session, user_id: int) -> set[frozenset[int]]:
+def _wardrobe_items(db: Session, wardrobe_id: int) -> list[Item]:
+    return db.query(Item).filter(Item.wardrobe_id == wardrobe_id).all()
+
+
+def _judged_pairs(db: Session, user_id: int, item_ids: set[int]) -> set[frozenset[int]]:
     rows = db.query(Match.item_a_id, Match.item_b_id).filter(Match.user_id == user_id).all()
-    return {frozenset((a, b)) for a, b in rows}
+    return {frozenset((a, b)) for a, b in rows if a in item_ids and b in item_ids}
 
 
 @router.get("/next", response_model=PairOut | None)
 def next_pair(
+    wardrobe_id: int,
     anchor_id: int | None = None,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Return the next pair for the current user to judge.
+    """Return the next pair for the current user to judge, within one wardrobe.
 
     Pass ``anchor_id`` to keep swiping candidates for one garment. Omit it to
     let the server pick the garment with the most work left.
     """
-    items = db.query(Item).all()
+    require_view(db, wardrobe_id, user)
+    items = _wardrobe_items(db, wardrobe_id)
     if len(items) < 2:
         return None
     by_id = {it.id: it for it in items}
-    judged = _judged_pairs(db, user.id)
+    judged = _judged_pairs(db, user.id, set(by_id))
 
     def candidates_for(anchor: Item) -> list[Item]:
         cands = [
@@ -82,8 +89,13 @@ def submit_verdict(
     if body.item_a_id == body.item_b_id:
         raise HTTPException(status_code=400, detail="Een stuk kan niet met zichzelf gecombineerd worden")
     a, b = _ordered(body.item_a_id, body.item_b_id)
-    if not db.get(Item, a) or not db.get(Item, b):
+    item_a, item_b = db.get(Item, a), db.get(Item, b)
+    if not item_a or not item_b:
         raise HTTPException(status_code=404, detail="Kledingstuk niet gevonden")
+    if item_a.wardrobe_id != item_b.wardrobe_id:
+        raise HTTPException(status_code=400, detail="Stukken uit verschillende kasten")
+    # A viewer may vote, so view access is enough here.
+    require_view(db, item_a.wardrobe_id, user)
 
     existing = (
         db.query(Match)
@@ -107,6 +119,9 @@ def reset_pair(
 ):
     """Remove the current user's verdict for a pair, so it can be judged again."""
     a, b = _ordered(item_a_id, item_b_id)
+    item_a = db.get(Item, a)
+    if item_a is not None:
+        require_view(db, item_a.wardrobe_id, user)
     db.query(Match).filter(
         Match.item_a_id == a, Match.item_b_id == b, Match.user_id == user.id
     ).delete()
@@ -116,18 +131,23 @@ def reset_pair(
 @router.get("/outfits/{item_id}", response_model=list[OutfitPartner])
 def outfits_for(
     item_id: int,
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Items approved to combine with the given item.
 
-    A partner is approved when at least one household member said 'yes' and
-    nobody said 'no'.
+    A partner is approved when at least one member of the wardrobe said 'yes'
+    and nobody said 'no'.
     """
     item = db.get(Item, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Kledingstuk niet gevonden")
+    require_view(db, item.wardrobe_id, user)
 
+    # Only consider partners within the same wardrobe.
+    partner_ids_in_wardrobe = {
+        it.id for it in _wardrobe_items(db, item.wardrobe_id)
+    }
     rows = (
         db.query(Match)
         .filter((Match.item_a_id == item_id) | (Match.item_b_id == item_id))
@@ -137,6 +157,8 @@ def outfits_for(
     verdicts: dict[int, dict[str, set[int]]] = {}
     for m in rows:
         partner_id = m.item_b_id if m.item_a_id == item_id else m.item_a_id
+        if partner_id not in partner_ids_in_wardrobe:
+            continue
         verdicts.setdefault(partner_id, {"yes": set(), "no": set()})
         verdicts[partner_id][m.verdict].add(m.user_id)
 
@@ -159,11 +181,18 @@ def outfits_for(
     return result
 
 
-def _verdict_pairs(db: Session) -> tuple[set[frozenset[int]], set[frozenset[int]]]:
-    """Return (rejected, approved) item-id pairs. A rejection by anyone wins."""
+def _verdict_pairs(
+    db: Session, item_ids: set[int]
+) -> tuple[set[frozenset[int]], set[frozenset[int]]]:
+    """Return (rejected, approved) item-id pairs. A rejection by anyone wins.
+
+    Only pairs where both items live in the given wardrobe are considered.
+    """
     rejected: set[frozenset[int]] = set()
     approved: set[frozenset[int]] = set()
     for m in db.query(Match).all():
+        if m.item_a_id not in item_ids or m.item_b_id not in item_ids:
+            continue
         pair = frozenset((m.item_a_id, m.item_b_id))
         if m.verdict == "no":
             rejected.add(pair)
@@ -175,19 +204,21 @@ def _verdict_pairs(db: Session) -> tuple[set[frozenset[int]], set[frozenset[int]
 
 @router.get("/suggestions", response_model=list[OutfitSuggestion])
 def suggestions(
-    _: User = Depends(get_current_user),
+    wardrobe_id: int,
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Suggest whole outfits from the wardrobe using the colour knowledge base.
 
-    Pairs that any household member rejected are never suggested; pairs that
+    Pairs that any wardrobe member rejected are never suggested; pairs that
     were already approved are boosted.
     """
-    items = db.query(Item).all()
+    require_view(db, wardrobe_id, user)
+    items = _wardrobe_items(db, wardrobe_id)
     if len(items) < 2:
         return []
 
-    rejected, approved = _verdict_pairs(db)
+    rejected, approved = _verdict_pairs(db, {it.id for it in items})
     good_pairs, bad_pairs = load_pairs(db)
     outfits = suggest_outfits(
         items, rejected, approved, limit=30, good_pairs=good_pairs, bad_pairs=bad_pairs
@@ -205,7 +236,7 @@ def suggestions(
 @router.get("/suggestions/{item_id}", response_model=list[OutfitSuggestion])
 def suggestions_for_item(
     item_id: int,
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Automatic outfit suggestions that include one specific item, shown on
@@ -213,11 +244,12 @@ def suggestions_for_item(
     item = db.get(Item, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Kledingstuk niet gevonden")
-    items = db.query(Item).all()
+    require_view(db, item.wardrobe_id, user)
+    items = _wardrobe_items(db, item.wardrobe_id)
     if len(items) < 2:
         return []
 
-    rejected, approved = _verdict_pairs(db)
+    rejected, approved = _verdict_pairs(db, {it.id for it in items})
     good_pairs, bad_pairs = load_pairs(db)
     outfits = suggest_outfits(
         items, rejected, approved, limit=12,
@@ -235,11 +267,14 @@ def suggestions_for_item(
 
 @router.get("/stats")
 def stats(
+    wardrobe_id: int,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    items = db.query(Item).all()
+    require_view(db, wardrobe_id, user)
+    items = _wardrobe_items(db, wardrobe_id)
     n = len(items)
+    item_ids = {it.id for it in items}
     # Only count pairs that can share a season; the rest are never shown, so
     # including them would make the progress bar unable to reach 100%.
     total_pairs = 0
@@ -249,7 +284,7 @@ def stats(
                 items[i].category, items[j].category
             ):
                 total_pairs += 1
-    judged_by_me = db.query(Match).filter(Match.user_id == user.id).count()
+    judged_by_me = len(_judged_pairs(db, user.id, item_ids))
     return {
         "item_count": n,
         "total_pairs": total_pairs,
