@@ -2,13 +2,16 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from .. import audit
+from ..accounts import delete_account
 from ..access import ensure_wardrobe
 from ..database import get_db
 from ..deps import get_current_user, require_admin
 from ..models import User
+from ..logging_setup import get_logger
 from ..schemas import UserCreate, UserOut, UserUpdate
 
 router = APIRouter(prefix="/api/users", tags=["users"])
+log = get_logger("users")
 
 
 @router.get("", response_model=list[UserOut])
@@ -95,12 +98,27 @@ def delete_user(
     if not user:
         raise HTTPException(status_code=404, detail="Gebruiker niet gevonden")
     name, uname = user.display_name, user.username
-    db.delete(user)
-    db.commit()
+
+    # One transaction: either the whole account goes, or nothing does. A
+    # half-removed account is what left the username taken while the person
+    # appeared to be gone.
+    try:
+        tally = delete_account(db, user, reassign_items_to=admin)
+        db.commit()
+    except Exception:
+        db.rollback()
+        log.exception("Verwijderen van account '%s' (@%s) mislukt", name, uname)
+        raise HTTPException(
+            status_code=500,
+            detail="Verwijderen mislukt; het account is ongewijzigd gebleven",
+        )
+
     audit.record(
         db,
         "user.delete",
-        f"Account '{name}' (@{uname}) verwijderd",
+        f"Account '{name}' (@{uname}) verwijderd"
+        f" — inclusief {tally['items']} kledingstuk(ken),"
+        f" {tally['verdicts']} beoordeling(en) en {tally['invitations']} uitnodiging(en)",
         user=admin,
         entity_type="user",
         entity_id=user_id,

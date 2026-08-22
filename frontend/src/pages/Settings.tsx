@@ -31,6 +31,9 @@ export default function Settings() {
 
   // users (admin)
   const [users, setUsers] = useState<User[]>([]);
+  // Shown inside the accounts card: the page-wide banner sits far above the
+  // fold here, so a failed deletion used to look like nothing happened.
+  const [accountErr, setAccountErr] = useState<string | null>(null);
   const [nu, setNu] = useState({ username: "", display_name: "", password: "", is_admin: false });
 
   // colour-combination logic (admin)
@@ -290,13 +293,23 @@ export default function Settings() {
     }
   }
 
-  async function removeUser(id: number) {
-    if (!confirm("Dit account verwijderen?")) return;
+  async function removeUser(u: User) {
+    // Say what actually disappears: the account takes its kast, the garments
+    // in it and every judgement the person made along with it.
+    const warning =
+      `Account "${u.display_name}" (@${u.username}) verwijderen?\n\n` +
+      "Hun eigen kast verdwijnt mét alle kledingstukken en foto's erin, " +
+      "en al hun beoordelingen van combinaties. Kledingstukken die ze aan " +
+      "een gedeelde kast toevoegden blijven staan.\n\nDit kan niet ongedaan gemaakt worden.";
+    if (!confirm(warning)) return;
+    setAccountErr(null);
     try {
-      await api.deleteUser(id);
-      loadUsers();
+      await api.deleteUser(u.id);
+      await loadUsers();
+      // Their kasten (and their access to yours) are gone from the switcher.
+      refreshWardrobes();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Verwijderen mislukt");
+      setAccountErr(e instanceof Error ? e.message : "Verwijderen mislukt");
     }
   }
 
@@ -568,6 +581,7 @@ export default function Settings() {
         {user?.is_admin && (
           <div className="card" style={{ padding: 16 }}>
             <h3 style={{ marginTop: 0 }}>Accounts</h3>
+            {accountErr && <div className="error" style={{ marginBottom: 12 }}>{accountErr}</div>}
             <div className="stack" style={{ marginBottom: 16 }}>
               {users.map((u) => (
                 <div key={u.id} className="row spread" style={{ borderBottom: "1px solid var(--border)", paddingBottom: 8, gap: 8 }}>
@@ -585,7 +599,7 @@ export default function Settings() {
                       {u.is_admin ? "Maak gebruiker" : "Maak beheerder"}
                     </button>
                     {u.id !== user.id && (
-                      <button className="btn-danger" style={{ padding: "6px 10px" }} onClick={() => removeUser(u.id)}>
+                      <button className="btn-danger" style={{ padding: "6px 10px" }} onClick={() => removeUser(u)}>
                         Verwijder
                       </button>
                     )}
