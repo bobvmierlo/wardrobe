@@ -209,8 +209,11 @@ Wil je zelf in de database kijken wie er nog staat en of er iets is blijven
 liggen:
 
 ```bash
-docker compose exec kledingkast python - < scripts/check_db.py
+docker compose exec -T kledingkast python - < scripts/check_db.py
 ```
+
+(De `-T` is nodig: zonder die vlag opent `docker compose exec` een terminal en
+weigert 'ie het doorgegeven script met *"the input device is not a TTY"*.)
 
 ### Iemand uitnodigen die nog geen account heeft
 
