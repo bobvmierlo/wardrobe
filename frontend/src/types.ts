@@ -18,9 +18,37 @@ export interface Item {
   is_favorite: boolean;
   photo_filename: string | null;
   thumb_filename: string | null;
+  wardrobe_id: number | null;
   created_by_id: number;
   created_at: string;
 }
+
+// A member's role on someone else's wardrobe.
+export type MemberRole = "editor" | "viewer";
+// The current user's effective role on a wardrobe.
+export type WardrobeRole = "owner" | "admin" | MemberRole;
+
+export interface Wardrobe {
+  id: number;
+  name: string;
+  owner: User;
+  my_role: WardrobeRole;
+  can_edit: boolean;
+  can_manage: boolean;
+  member_count: number;
+}
+
+export interface WardrobeMember {
+  user: User;
+  role: MemberRole;
+}
+
+export const ROLE_LABELS: Record<WardrobeRole, string> = {
+  owner: "Eigenaar",
+  admin: "Beheerder",
+  editor: "Bewerker",
+  viewer: "Kijker",
+};
 
 export interface Category {
   id: number;

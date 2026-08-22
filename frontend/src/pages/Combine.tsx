@@ -5,11 +5,14 @@ import SwipeCard, { type SwipeCardHandle } from "../components/SwipeCard";
 import AppFooter from "../components/AppFooter";
 import SuggestionList from "../components/SuggestionList";
 import ImageModal from "../components/ImageModal";
+import WardrobeSwitcher from "../components/WardrobeSwitcher";
+import { useWardrobe } from "../wardrobe";
 import type { OutfitSuggestion, Pair, Stats } from "../types";
 
 export default function Combine() {
   const location = useLocation() as { state?: { anchorId?: number } };
   const initialAnchor = location.state?.anchorId;
+  const { current } = useWardrobe();
 
   const [pair, setPair] = useState<Pair | null>(null);
   const [loading, setLoading] = useState(true);
@@ -21,20 +24,22 @@ export default function Combine() {
   const cardRef = useRef<SwipeCardHandle>(null);
 
   async function refreshStats() {
+    if (!current) return;
     try {
-      setStats(await api.stats());
+      setStats(await api.stats(current.id));
     } catch {
       /* non-critical */
     }
   }
 
   async function loadNext(anchorId?: number) {
+    if (!current) return;
     setLoading(true);
     setError(null);
     try {
-      let next = await api.nextPair(anchorId);
+      let next = await api.nextPair(current.id, anchorId);
       // Current anchor exhausted → let the server pick a fresh anchor.
-      if (!next && anchorId != null) next = await api.nextPair();
+      if (!next && anchorId != null) next = await api.nextPair(current.id);
       if (next) {
         setPair(next);
         setDone(false);
@@ -50,13 +55,15 @@ export default function Combine() {
   }
 
   useEffect(() => {
+    if (!current) return;
     refreshStats();
+    // Only honour the passed anchor on the wardrobe it came from.
     loadNext(initialAnchor);
     // Load the system's own outfit ideas so they're ready to show alongside
     // (and after) the manual swiping.
-    api.suggestions().then(setSuggestions).catch(() => setSuggestions([]));
+    api.suggestions(current.id).then(setSuggestions).catch(() => setSuggestions([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [current?.id]);
 
   async function handleDecide(verdict: "yes" | "no") {
     if (!pair) return;
@@ -78,6 +85,7 @@ export default function Combine() {
     <>
       <div className="topbar">
         <h1>Combineer</h1>
+        <WardrobeSwitcher />
       </div>
       <div className="content combine">
         {stats && stats.total_pairs > 0 && (

@@ -12,6 +12,7 @@ import {
 } from "../types";
 import PhotoEditor from "./PhotoEditor";
 import ImportDialog, { type ImportResult } from "./ImportDialog";
+import { useWardrobe } from "../wardrobe";
 
 const ALL_SEASONS = "Alle seizoenen";
 
@@ -22,6 +23,7 @@ export interface ItemFormProps {
 }
 
 export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormProps) {
+  const { current } = useWardrobe();
   const [name, setName] = useState(initial?.name ?? "");
   const [category, setCategory] = useState(initial?.category ?? "");
   const [brand, setBrand] = useState(initial?.brand ?? "");
@@ -48,10 +50,11 @@ export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormPro
   useEffect(() => {
     api.listCategories().then(setCategories).catch(() => setCategories([]));
     api.listSizes().then(setSizes).catch(() => setSizes([]));
-    // Collect the brands already in the wardrobe so the Merk field can suggest
+    // Collect the brands already in this wardrobe so the Merk field can suggest
     // them — avoids duplicates and near-duplicate spellings of the same brand.
+    if (!current) return;
     api
-      .listItems()
+      .listItems(current.id)
       .then((items) => {
         const seen = new Map<string, string>();
         for (const it of items) {
@@ -61,7 +64,7 @@ export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormPro
         setBrands([...seen.values()].sort((a, b) => a.localeCompare(b, "nl", { sensitivity: "base" })));
       })
       .catch(() => setBrands([]));
-  }, []);
+  }, [current?.id]);
 
   // Include a legacy free-text value so an existing item stays selectable.
   const categoryOptions = useMemo(() => {

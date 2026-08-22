@@ -50,6 +50,7 @@ class ItemOut(ItemBase):
     id: int
     photo_filename: str | None
     thumb_filename: str | None
+    wardrobe_id: int | None
     created_by_id: int
     created_at: datetime
 
@@ -60,6 +61,33 @@ class ItemOut(ItemBase):
         if not self.season:
             return []
         return [s.strip() for s in self.season.split(",") if s.strip()]
+
+
+# ---- Wardrobes (kasten) & sharing ----
+class WardrobeOut(BaseModel):
+    """A wardrobe the current user can reach, with their role on it."""
+    id: int
+    name: str
+    owner: UserOut
+    # "owner" | "admin" | "editor" | "viewer" — the current user's role.
+    my_role: str
+    can_edit: bool
+    can_manage: bool
+    member_count: int
+
+
+class WardrobeMemberOut(BaseModel):
+    user: UserOut
+    role: str  # "editor" | "viewer"
+
+
+class MemberInvite(BaseModel):
+    username: str = Field(min_length=2, max_length=50)
+    role: str = Field(pattern="^(editor|viewer)$")
+
+
+class MemberRoleUpdate(BaseModel):
+    role: str = Field(pattern="^(editor|viewer)$")
 
 
 # ---- Categories & sizes (admin-managed lists) ----

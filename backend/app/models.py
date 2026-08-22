@@ -29,6 +29,50 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+# Roles a member can hold on someone else's wardrobe.
+ROLE_EDITOR = "editor"  # may add, edit and delete garments (and vote)
+ROLE_VIEWER = "viewer"  # may only look and vote on combinations
+
+
+class Wardrobe(Base):
+    """A user's personal wardrobe ("kast").
+
+    Every user owns exactly one wardrobe, created automatically. Other users
+    can be invited to it as an editor or a viewer via ``WardrobeMember``.
+    """
+
+    __tablename__ = "wardrobes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    owner: Mapped[User] = relationship()
+    name: Mapped[str] = mapped_column(String(120))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class WardrobeMember(Base):
+    """An invitation granting a user access to another user's wardrobe."""
+
+    __tablename__ = "wardrobe_members"
+    __table_args__ = (
+        UniqueConstraint("wardrobe_id", "user_id", name="uq_wardrobe_member"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    wardrobe_id: Mapped[int] = mapped_column(
+        ForeignKey("wardrobes.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    user: Mapped[User] = relationship()
+    # ROLE_EDITOR | ROLE_VIEWER
+    role: Mapped[str] = mapped_column(String(10), default=ROLE_VIEWER)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class Item(Base):
     __tablename__ = "items"
 
@@ -45,6 +89,11 @@ class Item(Base):
     thumb_filename: Mapped[str | None] = mapped_column(String(200), nullable=True)
     is_favorite: Mapped[bool] = mapped_column(default=False)
 
+    # The wardrobe this garment lives in. Nullable only so an in-place SQLite
+    # migration can add the column and backfill it on existing installs.
+    wardrobe_id: Mapped[int | None] = mapped_column(
+        ForeignKey("wardrobes.id", ondelete="CASCADE"), index=True, nullable=True
+    )
     created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     created_by: Mapped[User] = relationship()
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

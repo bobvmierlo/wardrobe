@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from ..access import require_edit, require_view
 from ..database import get_db
 from ..deps import get_current_user
 from ..images import copy_photo, delete_files, save_upload, save_upload_from_url
@@ -20,13 +21,15 @@ def _clean(value: str | None) -> str | None:
 
 @router.get("", response_model=list[ItemOut])
 def list_items(
+    wardrobe_id: int,
     category: str | None = None,
     q: str | None = None,
     favorites: bool = False,
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    query = db.query(Item)
+    require_view(db, wardrobe_id, user)
+    query = db.query(Item).filter(Item.wardrobe_id == wardrobe_id)
     if category:
         query = query.filter(Item.category == category)
     if favorites:
@@ -42,17 +45,19 @@ def list_items(
 @router.get("/{item_id}", response_model=ItemOut)
 def get_item(
     item_id: int,
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     item = db.get(Item, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Kledingstuk niet gevonden")
+    require_view(db, item.wardrobe_id, user)
     return item
 
 
 @router.post("", response_model=ItemOut, status_code=201)
 def create_item(
+    wardrobe_id: int = Form(...),
     name: str = Form(...),
     category: str = Form(...),
     brand: str | None = Form(None),
@@ -66,6 +71,7 @@ def create_item(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    require_edit(db, wardrobe_id, user)
     photo_name = thumb_name = None
     if photo is not None and photo.filename:
         photo_name, thumb_name = save_upload(photo)
@@ -83,6 +89,7 @@ def create_item(
         is_favorite=is_favorite,
         photo_filename=photo_name,
         thumb_filename=thumb_name,
+        wardrobe_id=wardrobe_id,
         created_by_id=user.id,
     )
     db.add(item)
@@ -101,6 +108,7 @@ def duplicate_item(
     src = db.get(Item, item_id)
     if not src:
         raise HTTPException(status_code=404, detail="Kledingstuk niet gevonden")
+    require_edit(db, src.wardrobe_id, user)
 
     photo_name, thumb_name = copy_photo(src.photo_filename, src.thumb_filename)
     item = Item(
@@ -114,6 +122,7 @@ def duplicate_item(
         is_favorite=src.is_favorite,
         photo_filename=photo_name,
         thumb_filename=thumb_name,
+        wardrobe_id=src.wardrobe_id,
         created_by_id=user.id,
     )
     db.add(item)
@@ -135,12 +144,13 @@ def update_item(
     is_favorite: bool | None = Form(None),
     photo: UploadFile | None = File(None),
     photo_url: str | None = Form(None),
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     item = db.get(Item, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Kledingstuk niet gevonden")
+    require_edit(db, item.wardrobe_id, user)
 
     if name is not None:
         item.name = name.strip()
@@ -176,12 +186,13 @@ def update_item(
 @router.delete("/{item_id}", status_code=204)
 def delete_item(
     item_id: int,
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     item = db.get(Item, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Kledingstuk niet gevonden")
+    require_edit(db, item.wardrobe_id, user)
     delete_files(item.photo_filename, item.thumb_filename)
     db.delete(item)
     db.commit()
