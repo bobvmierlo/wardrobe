@@ -375,22 +375,62 @@ label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0 0 6px
 .filters select { width: auto; flex: 1 1 30%; min-width: 120px; padding: 9px 12px; }
 .filters .btn-ghost { flex: 1 1 100%; }
 
-/* ---- item picker strip (Outfits · per stuk) ---- */
+/* ---- item picker strip (Outfits · per stuk) ----
+   The strip is how you pick the garment everything else is shown against, so
+   the cards are big enough to recognise at a glance and the chosen one is
+   marked three ways at once: a ring, a check badge and a highlighted name. */
+.pick-label {
+  font-size: 0.78rem; color: var(--muted); margin-bottom: 8px;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
 .pick-strip {
-  display: flex; gap: 10px; overflow-x: auto; padding: 2px 2px 10px;
-  margin-bottom: 16px; scroll-snap-type: x proximity;
+  display: flex; gap: 12px; overflow-x: auto; padding: 4px 2px 12px;
+  margin-bottom: 14px; scroll-snap-type: x proximity;
   -webkit-overflow-scrolling: touch; scrollbar-width: thin;
 }
 .pick-strip::-webkit-scrollbar { height: 6px; }
 .pick-strip::-webkit-scrollbar-thumb { background: var(--surface-2); border-radius: 999px; }
-.pick-thumb {
-  flex: none; width: 72px; height: 72px; padding: 0; border-radius: 14px;
-  overflow: hidden; border: 2px solid var(--border); background: var(--surface-2);
-  scroll-snap-align: start; transition: border-color 0.15s, transform 0.15s;
+.pick-card {
+  flex: none; width: 104px; padding: 0; background: transparent;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  scroll-snap-align: center; border-radius: 16px;
 }
-.pick-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.pick-thumb .noimg-ico { display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; font-size: 1.7rem; }
-.pick-thumb.active { border-color: var(--primary); transform: translateY(-2px); box-shadow: 0 6px 16px rgba(56,189,248,0.25); }
+.pick-photo {
+  position: relative; display: block; width: 104px; height: 104px;
+  border-radius: 16px; overflow: hidden; background: var(--surface-2);
+  border: 2px solid var(--border);
+  transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+.pick-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pick-photo .noimg-ico {
+  display: flex; width: 100%; height: 100%;
+  align-items: center; justify-content: center; font-size: 2.2rem;
+}
+.pick-name {
+  font-size: 0.78rem; color: var(--muted); line-height: 1.15; max-width: 104px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pick-check {
+  position: absolute; right: 5px; bottom: 5px;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--primary); color: var(--primary-ink);
+  font-size: 0.85rem; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+}
+.pick-card.active .pick-photo {
+  border-color: var(--primary); transform: translateY(-2px);
+  box-shadow: 0 0 0 2px var(--primary), 0 8px 18px rgba(56,189,248,0.28);
+}
+.pick-card.active .pick-name { color: var(--primary); font-weight: 700; }
+
+/* The chosen garment, restated below the strip so it is never in doubt. */
+.selected-band {
+  margin-bottom: 16px;
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+  background: color-mix(in srgb, var(--primary) 8%, var(--surface));
+}
+.selected-band img, .selected-band .noimg-sm { width: 64px; height: 64px; }
 
 /* ---- call-to-action link button ---- */
 .cta-link {
@@ -483,3 +523,105 @@ label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0 0 6px
 .import-thumb { padding: 0; border: 2px solid var(--border); border-radius: 10px; overflow: hidden; aspect-ratio: 1/1; background: var(--surface-2); }
 .import-thumb.sel { border-color: var(--primary); }
 .import-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+
+/* ---- skip / undo (Combineer) ---- */
+.circle-btn.skip { color: var(--muted); font-size: 1.35rem; width: 54px; height: 54px; }
+.pill.skipped {
+  margin-left: auto; flex: none;
+  background: color-mix(in srgb, var(--fav) 20%, transparent); color: var(--fav);
+}
+.btn-small { padding: 7px 12px; font-size: 0.82rem; border-radius: 10px; }
+.undo-bar {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 9px 12px; font-size: 0.85rem;
+}
+
+/* ---- already-judged pairs, with undo ---- */
+.judged-row {
+  display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+  flex-direction: row;
+}
+.judged-items { display: flex; align-items: center; gap: 4px; flex: none; }
+.judged-plus { color: var(--muted); font-size: 0.8rem; }
+.judged-thumb {
+  display: block; width: 46px; height: 46px; border-radius: 10px;
+  overflow: hidden; background: var(--surface-2); flex: none;
+}
+.judged-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.judged-thumb .noimg-ico {
+  display: flex; width: 100%; height: 100%;
+  align-items: center; justify-content: center; font-size: 1.3rem;
+}
+.judged-meta { min-width: 0; flex: 1; }
+.judged-names {
+  font-size: 0.85rem; font-weight: 600; line-height: 1.2;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.judged-verdict { font-size: 0.78rem; margin-top: 2px; }
+.judged-verdict.yes { color: var(--yes); }
+.judged-verdict.no { color: var(--no); }
+
+/* ---- accepting a suggestion ---- */
+.suggest-actions { margin-top: 10px; display: flex; justify-content: flex-end; }
+.suggest-done { font-size: 0.85rem; color: var(--yes); font-weight: 600; }
+
+/* ---- approved combinations, undoable in place ---- */
+.partner-card { position: relative; }
+.partner-link { display: block; color: var(--text); }
+.partner-undo {
+  position: absolute; top: 6px; right: 6px;
+  width: 30px; height: 30px; padding: 0; border-radius: 50%;
+  background: rgba(15,23,42,0.78); color: var(--text);
+  font-size: 0.9rem; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border);
+}
+
+/* ---- invitation links ---- */
+.invite-link {
+  display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap;
+}
+.invite-link input {
+  flex: 1 1 200px; font-size: 0.78rem; padding: 8px 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.invite-row {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 10px; border-bottom: 1px solid var(--border); padding-bottom: 8px;
+}
+.status-badge {
+  display: inline-block; font-size: 0.68rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.02em;
+  padding: 2px 8px; border-radius: 999px;
+  background: var(--surface-2); color: var(--muted); border: 1px solid var(--border);
+}
+.status-badge.open { background: color-mix(in srgb, var(--primary) 22%, transparent); color: var(--primary); border-color: transparent; }
+.status-badge.accepted { background: color-mix(in srgb, var(--yes) 20%, transparent); color: var(--yes); border-color: transparent; }
+.status-badge.expired, .status-badge.revoked { color: var(--muted); }
+
+/* ---- log screen (beheerder) ---- */
+.log-list { display: flex; flex-direction: column; gap: 8px; }
+.log-row {
+  border: 1px solid var(--border); background: var(--surface);
+  border-radius: 12px; padding: 9px 12px;
+}
+.log-head {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: 0.72rem; color: var(--muted); margin-bottom: 3px;
+}
+.log-detail { font-size: 0.87rem; line-height: 1.35; overflow-wrap: anywhere; }
+.log-detail.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.76rem; white-space: pre-wrap;
+}
+.log-actor { font-weight: 700; color: var(--text); }
+.level-badge {
+  font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
+  padding: 1px 7px; border-radius: 999px; background: var(--surface-2);
+}
+.level-badge.WARNING { background: color-mix(in srgb, var(--fav) 22%, transparent); color: var(--fav); }
+.level-badge.ERROR, .level-badge.CRITICAL { background: color-mix(in srgb, var(--no) 22%, transparent); color: #fca5a5; }
+.log-pager { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; }

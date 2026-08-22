@@ -125,6 +125,26 @@ def _season_overlap(items: list[Item]) -> tuple[int, str | None]:
     return -1, None
 
 
+def all_pairs(items: list[Item]) -> set[frozenset[int]]:
+    """Every unordered pair of item ids in an outfit."""
+    return {
+        frozenset({a.id, b.id})
+        for i, a in enumerate(items)
+        for b in items[i + 1:]
+    }
+
+
+def is_combination(items: list[Item], approved_pairs: set[frozenset[int]]) -> bool:
+    """Whether this outfit already exists as an approved combination.
+
+    True once *every* pair inside it has been approved — at that point the
+    outfit is no longer a suggestion but something the household already
+    decided on, so it should not be offered again.
+    """
+    pairs = all_pairs(items)
+    return bool(pairs) and pairs <= approved_pairs
+
+
 def suggest_outfits(
     items: list[Item],
     rejected_pairs: set[frozenset[int]],
@@ -138,6 +158,10 @@ def suggest_outfits(
 
     When ``must_include`` is given, only outfits containing that item id are
     returned — used to show suggestions on a single item's page.
+
+    Outfits the household already settled are left out entirely: a pair anyone
+    rejected is never combined, and an outfit whose every pair is approved is
+    dropped because it is a combination already, not a suggestion.
     """
     good_pairs = _GOOD_PAIRS if good_pairs is None else good_pairs
     bad_pairs = _BAD_PAIRS if bad_pairs is None else bad_pairs
@@ -179,8 +203,10 @@ def suggest_outfits(
             score += s
             reasons.append(why)
             if frozenset({top.id, bottom.id}) in approved_pairs:
+                # This pair is settled, but the outfit as a whole is not (fully
+                # approved outfits are dropped below), so say so precisely.
                 score += 3
-                reasons.append("al goedgekeurd")
+                reasons.append("deels al goedgekeurd")
             base.append(bottom)
 
         # Optionally add the best-matching shoe.
@@ -213,6 +239,9 @@ def suggest_outfits(
         score += season_score
         if season_name:
             reasons.append(f"geschikt voor {season_name}")
+
+        if is_combination(base, approved_pairs):
+            continue  # already an approved combination, not a suggestion
 
         reason = ", ".join(dict.fromkeys(r for r in reasons if r)) or "combinatie"
         results.append({"items": base, "score": score, "reason": reason.capitalize()})

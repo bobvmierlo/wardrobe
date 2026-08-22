@@ -3,11 +3,25 @@ import { useLocation } from "react-router-dom";
 import { api, photoUrl } from "../api";
 import SwipeCard, { type SwipeCardHandle } from "../components/SwipeCard";
 import AppFooter from "../components/AppFooter";
+import JudgedPairList from "../components/JudgedPairList";
 import SuggestionList from "../components/SuggestionList";
 import ImageModal from "../components/ImageModal";
 import WardrobeSwitcher from "../components/WardrobeSwitcher";
 import { useWardrobe } from "../wardrobe";
-import type { OutfitSuggestion, Pair, Stats } from "../types";
+import type { JudgedPair, OutfitSuggestion, Pair, Stats, Verdict } from "../types";
+
+/** The pair the user last decided on, so a mistake can be taken back at once. */
+interface LastDecision {
+  pair: Pair;
+  verdict: Verdict;
+}
+
+/** Whether a swiped pair and a judged pair are the same two garments. */
+function samePair(pair: Pair, judged: JudgedPair): boolean {
+  const swiped = [pair.anchor.id, pair.candidate.id].sort().join("-");
+  const listed = [judged.item_a.id, judged.item_b.id].sort().join("-");
+  return swiped === listed;
+}
 
 export default function Combine() {
   const location = useLocation() as { state?: { anchorId?: number } };
@@ -20,6 +34,12 @@ export default function Combine() {
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [suggestions, setSuggestions] = useState<OutfitSuggestion[]>([]);
+  const [judged, setJudged] = useState<JudgedPair[]>([]);
+  const [showJudged, setShowJudged] = useState(false);
+  const [last, setLast] = useState<LastDecision | null>(null);
+  // The outfit just adopted from the suggestions, so it can be confirmed and
+  // taken back — it vanishes from the list the moment it becomes a combination.
+  const [lastAccepted, setLastAccepted] = useState<OutfitSuggestion | null>(null);
   const [zoom, setZoom] = useState<string | null>(null);
   const cardRef = useRef<SwipeCardHandle>(null);
 
@@ -29,6 +49,24 @@ export default function Combine() {
       setStats(await api.stats(current.id));
     } catch {
       /* non-critical */
+    }
+  }
+
+  async function refreshSuggestions() {
+    if (!current) return;
+    try {
+      setSuggestions(await api.suggestions(current.id));
+    } catch {
+      setSuggestions([]);
+    }
+  }
+
+  async function refreshJudged() {
+    if (!current) return;
+    try {
+      setJudged(await api.judgedPairs(current.id));
+    } catch {
+      setJudged([]);
     }
   }
 
@@ -56,24 +94,96 @@ export default function Combine() {
 
   useEffect(() => {
     if (!current) return;
+    setLast(null);
+    setLastAccepted(null);
     refreshStats();
+    refreshJudged();
     // Only honour the passed anchor on the wardrobe it came from.
     loadNext(initialAnchor);
     // Load the system's own outfit ideas so they're ready to show alongside
     // (and after) the manual swiping.
-    api.suggestions(current.id).then(setSuggestions).catch(() => setSuggestions([]));
+    refreshSuggestions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.id]);
 
-  async function handleDecide(verdict: "yes" | "no") {
+  async function handleDecide(verdict: Verdict) {
     if (!pair) return;
-    const anchorId = pair.anchor.id;
+    const decided = pair;
     try {
-      await api.submitVerdict(pair.anchor.id, pair.candidate.id, verdict);
+      await api.submitVerdict(decided.anchor.id, decided.candidate.id, verdict);
+      setLast({ pair: decided, verdict });
       refreshStats();
-      await loadNext(anchorId);
+      refreshJudged();
+      // A verdict can turn an outfit into a combination, which removes it from
+      // the suggestions — so those are stale now.
+      refreshSuggestions();
+      await loadNext(decided.anchor.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Opslaan mislukt");
+    }
+  }
+
+  /** Put the current pair aside: no verdict, it returns at the end of the queue. */
+  async function handleSkip() {
+    if (!pair) return;
+    const skipped = pair;
+    try {
+      await api.skipPair(skipped.anchor.id, skipped.candidate.id);
+      setLast(null); // nothing was decided, so there is nothing to undo
+      refreshStats();
+      await loadNext(skipped.anchor.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Overslaan mislukt");
+    }
+  }
+
+  /** Take back the verdict just given — the pair comes straight back. */
+  async function undoLast() {
+    if (!last) return;
+    const { pair: p } = last;
+    try {
+      await api.resetPair(p.anchor.id, p.candidate.id);
+      setLast(null);
+      refreshStats();
+      refreshJudged();
+      refreshSuggestions();
+      await loadNext(p.anchor.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Ongedaan maken mislukt");
+    }
+  }
+
+  /** Undo any earlier verdict, from the list of everything already judged. */
+  async function undoJudged(judgedPair: JudgedPair) {
+    await api.resetPair(judgedPair.item_a.id, judgedPair.item_b.id);
+    // If that was also the pair the undo bar is offering, the bar is stale.
+    if (last && samePair(last.pair, judgedPair)) setLast(null);
+    await Promise.all([refreshStats(), refreshJudged(), refreshSuggestions()]);
+    // Nothing was left to swipe, but there is now.
+    if (!pair) await loadNext();
+  }
+
+  async function acceptSuggestion(suggestion: OutfitSuggestion) {
+    await api.acceptSuggestion(suggestion.items.map((it) => it.id));
+    setLastAccepted(suggestion);
+    await Promise.all([refreshStats(), refreshJudged(), refreshSuggestions()]);
+  }
+
+  /** Take back a whole adopted outfit: every pair in it goes back to unjudged. */
+  async function undoAccepted() {
+    if (!lastAccepted) return;
+    const ids = lastAccepted.items.map((it) => it.id);
+    try {
+      for (let i = 0; i < ids.length; i++) {
+        for (let j = i + 1; j < ids.length; j++) {
+          await api.resetPair(ids[i], ids[j]);
+        }
+      }
+      setLastAccepted(null);
+      await Promise.all([refreshStats(), refreshJudged(), refreshSuggestions()]);
+      if (!pair) await loadNext();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Ongedaan maken mislukt");
     }
   }
 
@@ -93,6 +203,7 @@ export default function Combine() {
             <div className="row spread" style={{ marginBottom: 6 }}>
               <span className="muted" style={{ fontSize: "0.8rem" }}>
                 {stats.judged_by_me} van {stats.total_pairs} paren beoordeeld
+                {stats.skipped_by_me > 0 && ` · ${stats.skipped_by_me} overgeslagen`}
               </span>
               <span className="muted" style={{ fontSize: "0.8rem" }}>{pct}%</span>
             </div>
@@ -103,6 +214,18 @@ export default function Combine() {
         )}
 
         {error && <div className="error" style={{ width: "100%" }}>{error}</div>}
+
+        {last && (
+          <div className="undo-bar">
+            <span>
+              {last.pair.anchor.name} + {last.pair.candidate.name}:{" "}
+              <strong>{last.verdict === "yes" ? "past bij elkaar" : "past niet"}</strong>
+            </span>
+            <button className="btn-ghost btn-small" onClick={undoLast}>
+              ↩ Ongedaan maken
+            </button>
+          </div>
+        )}
 
         {loading && !pair ? (
           <div className="spinner" />
@@ -141,6 +264,7 @@ export default function Combine() {
                 <div style={{ fontWeight: 700 }}>{anchor!.name}</div>
                 <div className="muted" style={{ fontSize: "0.8rem" }}>{anchor!.category}</div>
               </div>
+              {pair.skipped && <span className="pill skipped">⏭ Eerder overgeslagen</span>}
             </div>
 
             <div className="deck">
@@ -151,25 +275,68 @@ export default function Combine() {
               <button className="circle-btn no" onClick={() => cardRef.current?.swipe("no")} aria-label="Combineert niet">
                 ✕
               </button>
+              <button className="circle-btn skip" onClick={handleSkip} aria-label="Sla dit paar over" title="Later beslissen">
+                ⏭
+              </button>
               <button className="circle-btn yes" onClick={() => cardRef.current?.swipe("yes")} aria-label="Combineert goed">
                 ♥
               </button>
             </div>
             <p className="muted center" style={{ fontSize: "0.8rem" }}>
               Swipe naar rechts als het combineert, naar links als het niet past.
+              Twijfel je? Sla over — dit paar komt achteraan de rij weer terug.
             </p>
           </>
         )}
 
-        {suggestions.length > 0 && (
+        {(suggestions.length > 0 || lastAccepted) && (
           <div style={{ width: "100%", marginTop: 28 }}>
             <div className="row spread" style={{ marginBottom: 10 }}>
               <h3 style={{ margin: 0 }}>✨ Suggesties van het systeem</h3>
             </div>
             <p className="muted" style={{ marginTop: 0, fontSize: "0.82rem" }}>
-              Automatisch samengesteld op kleur en seizoen — een handig startpunt terwijl je beoordeelt.
+              Automatisch samengesteld op kleur en seizoen. Bevalt er een? Sla 'm op als
+              combinatie. Wat je al hebt goed- of afgekeurd staat er niet meer tussen.
             </p>
-            <SuggestionList suggestions={suggestions} />
+            {lastAccepted && (
+              <div className="undo-bar" style={{ marginBottom: 12 }}>
+                <span>
+                  ✓ Opgeslagen als combinatie:{" "}
+                  <strong>{lastAccepted.items.map((it) => it.name).join(" + ")}</strong>
+                </span>
+                <button className="btn-ghost btn-small" onClick={undoAccepted}>
+                  ↩ Ongedaan maken
+                </button>
+              </div>
+            )}
+            {suggestions.length > 0 ? (
+              <SuggestionList suggestions={suggestions} onAccept={acceptSuggestion} />
+            ) : (
+              <p className="muted" style={{ fontSize: "0.85rem" }}>
+                Geen suggesties meer — je hebt overal een besluit over genomen.
+              </p>
+            )}
+          </div>
+        )}
+
+        {judged.length > 0 && (
+          <div style={{ width: "100%", marginTop: 28 }}>
+            <button
+              className="btn-ghost btn-block"
+              onClick={() => setShowJudged((v) => !v)}
+              aria-expanded={showJudged}
+            >
+              {showJudged ? "▾" : "▸"} Al beoordeeld ({judged.length})
+            </button>
+            {showJudged && (
+              <>
+                <p className="muted" style={{ fontSize: "0.82rem" }}>
+                  Per ongeluk iets goedgekeurd? Maak het hier ongedaan — het paar komt
+                  dan gewoon weer langs om opnieuw te beoordelen.
+                </p>
+                <JudgedPairList pairs={judged} onUndo={undoJudged} />
+              </>
+            )}
           </div>
         )}
 

@@ -1,8 +1,13 @@
 import type {
+  AuditPage,
   Category,
   ColorLogic,
   ColorRule,
+  Invitation,
+  InvitationInfo,
   Item,
+  JudgedPair,
+  LogEntry,
   MemberRole,
   OutfitPartner,
   OutfitSuggestion,
@@ -11,6 +16,7 @@ import type {
   SizeOption,
   Stats,
   User,
+  Verdict,
   Wardrobe,
   WardrobeMember,
 } from "./types";
@@ -41,8 +47,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(path, { ...options, headers });
   if (res.status === 401) {
     setToken(null);
-    // Force a re-login on session expiry.
-    if (!path.endsWith("/auth/login")) window.location.assign("/login");
+    // Force a re-login on session expiry — except on the endpoints that are
+    // reachable while logged out, where a 401 is just an answer.
+    if (!path.endsWith("/auth/login") && !path.startsWith("/api/invitations/")) {
+      window.location.assign("/login");
+    }
     throw new ApiError(401, "Sessie verlopen");
   }
   if (!res.ok) {
@@ -110,6 +119,53 @@ export const api = {
   removeMember: (wardrobeId: number, userId: number) =>
     request<void>(`/api/wardrobes/${wardrobeId}/members/${userId}`, { method: "DELETE" }),
 
+  // ---- invitation links ----
+  listInvitations: (wardrobeId: number) =>
+    request<Invitation[]>(`/api/wardrobes/${wardrobeId}/invitations`),
+  createInvitation: (
+    wardrobeId: number,
+    data: { role: MemberRole; label?: string | null; expires_days?: number | null },
+  ) =>
+    request<Invitation>(`/api/wardrobes/${wardrobeId}/invitations`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+  revokeInvitation: (invitationId: number) =>
+    request<void>(`/api/invitations/${invitationId}`, { method: "DELETE" }),
+  // Reachable without a login: the token is the credential.
+  invitationInfo: (token: string) => request<InvitationInfo>(`/api/invitations/${token}`),
+  acceptInvitation: (token: string) =>
+    request<void>(`/api/invitations/${token}/accept`, { method: "POST" }),
+  registerViaInvitation: (
+    token: string,
+    data: { username: string; display_name: string; password: string },
+  ) =>
+    request<{ access_token: string; user: User }>(`/api/invitations/${token}/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+
+  // ---- audit trail & application log (beheerder) ----
+  auditTrail: (
+    params: { action?: string; user_id?: number; wardrobe_id?: number; q?: string; limit?: number; offset?: number } = {},
+  ) => {
+    const sp = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") sp.set(k, String(v));
+    });
+    const query = sp.toString();
+    return request<AuditPage>(`/api/audit${query ? `?${query}` : ""}`);
+  },
+  appLogs: (params: { level?: string; limit?: number } = {}) => {
+    const sp = new URLSearchParams();
+    if (params.level) sp.set("level", params.level);
+    if (params.limit) sp.set("limit", String(params.limit));
+    const query = sp.toString();
+    return request<LogEntry[]>(`/api/logs${query ? `?${query}` : ""}`);
+  },
+
   // ---- colour-combination rules (editable suggestion logic) ----
   colorLogic: () => request<ColorLogic>("/api/color-rules"),
   addColorRule: (data: { color_a: string; color_b: string; verdict: "good" | "bad" }) =>
@@ -151,14 +207,32 @@ export const api = {
     if (anchorId) sp.set("anchor_id", String(anchorId));
     return request<Pair | null>(`/api/matches/next?${sp.toString()}`);
   },
-  submitVerdict: (item_a_id: number, item_b_id: number, verdict: "yes" | "no") =>
+  submitVerdict: (item_a_id: number, item_b_id: number, verdict: Verdict) =>
     request<void>("/api/matches", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ item_a_id, item_b_id, verdict }),
     }),
+  // Postpone a pair: no verdict, it returns at the end of the queue.
+  skipPair: (item_a_id: number, item_b_id: number) =>
+    request<void>("/api/matches/skip", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_a_id, item_b_id }),
+    }),
   resetPair: (a: number, b: number) =>
     request<void>(`/api/matches/${a}/${b}`, { method: "DELETE" }),
+  judgedPairs: (wardrobeId: number, verdict?: Verdict) => {
+    const sp = new URLSearchParams({ wardrobe_id: String(wardrobeId) });
+    if (verdict) sp.set("verdict", verdict);
+    return request<JudgedPair[]>(`/api/matches/judged?${sp.toString()}`);
+  },
+  acceptSuggestion: (item_ids: number[]) =>
+    request<void>("/api/matches/suggestions/accept", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_ids }),
+    }),
   outfitsFor: (itemId: number) => request<OutfitPartner[]>(`/api/matches/outfits/${itemId}`),
   suggestions: (wardrobeId: number) =>
     request<OutfitSuggestion[]>(`/api/matches/suggestions?wardrobe_id=${wardrobeId}`),

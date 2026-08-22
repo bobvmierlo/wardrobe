@@ -135,11 +135,33 @@ export interface OutfitSuggestion {
   items: Item[];
   score: number;
   reason: string;
+  /** Always false in practice: suggestions that are already a combination are
+   *  filtered out server-side. Kept so the UI can disable "accepteren". */
+  already_combined: boolean;
 }
 
 export interface Pair {
   anchor: Item;
   candidate: Item;
+  /** True when this pair was skipped earlier and has come back around. */
+  skipped: boolean;
+}
+
+export type Verdict = "yes" | "no";
+
+export interface PairVote {
+  user_id: number;
+  display_name: string;
+  verdict: Verdict;
+}
+
+/** A pair the current user already judged, shown in the "ongedaan maken" list. */
+export interface JudgedPair {
+  item_a: Item;
+  item_b: Item;
+  my_verdict: Verdict;
+  votes: PairVote[];
+  updated_at: string;
 }
 
 export interface OutfitPartner {
@@ -151,7 +173,72 @@ export interface Stats {
   item_count: number;
   total_pairs: number;
   judged_by_me: number;
+  skipped_by_me: number;
   remaining_for_me: number;
+}
+
+// ---- invitation links ----
+export type InvitationStatus = "open" | "accepted" | "expired" | "revoked";
+
+export const INVITATION_STATUS_LABELS: Record<InvitationStatus, string> = {
+  open: "Nog te gebruiken",
+  accepted: "Gebruikt",
+  expired: "Verlopen",
+  revoked: "Ingetrokken",
+};
+
+export interface Invitation {
+  id: number;
+  token: string;
+  /** Path to open in a browser, e.g. "/invite/abc". Combine with the current
+   *  origin to get the full link to share. */
+  path: string;
+  role: MemberRole;
+  label: string | null;
+  status: InvitationStatus;
+  created_at: string;
+  expires_at: string | null;
+  accepted_at: string | null;
+  accepted_by: User | null;
+}
+
+/** What the holder of a link is told before signing in or registering. */
+export interface InvitationInfo {
+  wardrobe_name: string;
+  owner_name: string;
+  role: MemberRole;
+  label: string | null;
+  status: InvitationStatus;
+  expires_at: string | null;
+}
+
+// ---- logging & audit trail (beheerder) ----
+export interface AuditEntry {
+  id: number;
+  created_at: string;
+  action: string;
+  action_label: string;
+  user_id: number | null;
+  user_name: string;
+  wardrobe_id: number | null;
+  wardrobe_name: string | null;
+  entity_type: string | null;
+  entity_id: number | null;
+  detail: string;
+}
+
+export interface AuditPage {
+  entries: AuditEntry[];
+  total: number;
+  actions: string[];
+}
+
+export interface LogEntry {
+  id: number;
+  time: string;
+  level: string;
+  logger: string;
+  message: string;
 }
 
 // The seasons are a fixed set; multiple can apply to one garment.

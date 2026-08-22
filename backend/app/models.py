@@ -193,3 +193,113 @@ class Match(Base):
     verdict: Mapped[str] = mapped_column(String(3))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class MatchSkip(Base):
+    """A pair the user postponed instead of judging ("sla over").
+
+    Skipping is deliberately *not* a verdict: the pair stays unjudged, it just
+    moves to the back of the queue so the swipe screen offers everything else
+    first. Stored canonically (item_a_id < item_b_id) like ``Match``; giving a
+    verdict later removes the skip again.
+    """
+
+    __tablename__ = "match_skips"
+    __table_args__ = (
+        UniqueConstraint("item_a_id", "item_b_id", "user_id", name="uq_skip_pair_user"),
+        CheckConstraint("item_a_id < item_b_id", name="ck_skip_pair_order"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    item_a_id: Mapped[int] = mapped_column(
+        ForeignKey("items.id", ondelete="CASCADE"), index=True
+    )
+    item_b_id: Mapped[int] = mapped_column(
+        ForeignKey("items.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class Invitation(Base):
+    """A shareable link that grants access to one wardrobe.
+
+    Unlike ``WardrobeMember`` — which needs the invitee to already have an
+    account — an invitation is created *before* knowing who will use it. The
+    holder of the link either signs in and accepts, or (since open registration
+    is disabled) registers a brand-new account through this very link.
+
+    The row is kept after use so the audit trail can show who accepted what.
+    """
+
+    __tablename__ = "invitations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # URL-safe random secret; the only thing that proves you were invited.
+    token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    wardrobe_id: Mapped[int] = mapped_column(
+        ForeignKey("wardrobes.id", ondelete="CASCADE"), index=True
+    )
+    wardrobe: Mapped["Wardrobe"] = relationship()
+    # ROLE_EDITOR | ROLE_VIEWER — the role the invitee gets on acceptance.
+    role: Mapped[str] = mapped_column(String(10), default=ROLE_VIEWER)
+    # Free-text reminder of who this link was meant for (name or e-mail).
+    label: Mapped[str | None] = mapped_column(String(120), nullable=True)
+
+    created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    created_by: Mapped[User] = relationship(foreign_keys=[created_by_id])
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    accepted_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    accepted_by: Mapped["User | None"] = relationship(foreign_keys=[accepted_by_id])
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    @property
+    def status(self) -> str:
+        """"revoked" | "accepted" | "expired" | "open" — never two at once."""
+        if self.revoked_at is not None:
+            return "revoked"
+        if self.accepted_at is not None:
+            return "accepted"
+        if self.expires_at is not None and as_utc(self.expires_at) < utcnow():
+            return "expired"
+        return "open"
+
+
+class AuditLog(Base):
+    """Who did what, when — the trail an admin reads back in the app.
+
+    ``user_name`` duplicates the actor's display name on purpose: entries must
+    stay readable after the account is deleted, so the row never depends on the
+    user still existing. ``detail`` holds a short human-readable sentence in
+    Dutch rather than a machine format, because that is what the log screen
+    shows.
+    """
+
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    # e.g. "match.verdict", "item.create" — "<onderwerp>.<handeling>".
+    action: Mapped[str] = mapped_column(String(50), index=True)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+    user_name: Mapped[str] = mapped_column(String(100), default="onbekend")
+    wardrobe_id: Mapped[int | None] = mapped_column(
+        ForeignKey("wardrobes.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+    entity_type: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    entity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    detail: Mapped[str] = mapped_column(Text, default="")
+
+
+def as_utc(value: datetime) -> datetime:
+    """SQLite hands back naive datetimes; treat those as UTC."""
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)

@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, photoUrl } from "../api";
 import ItemForm from "../components/ItemForm";
 import AppFooter from "../components/AppFooter";
+import PartnerGrid from "../components/PartnerGrid";
 import SuggestionList from "../components/SuggestionList";
 import { useWardrobe } from "../wardrobe";
 import type { Item, OutfitPartner, OutfitSuggestion } from "../types";
@@ -46,6 +47,28 @@ export default function ItemDetail() {
     if (!confirm("Dit kledingstuk definitief verwijderen?")) return;
     await api.deleteItem(itemId);
     navigate("/", { replace: true });
+  }
+
+  /** Withdraw my approval of one of this garment's combinations. */
+  async function undoCombination(partner: OutfitPartner) {
+    await api.resetPair(itemId, partner.item.id);
+    const [ps, sg] = await Promise.all([
+      api.outfitsFor(itemId),
+      api.suggestionsFor(itemId).catch(() => [] as OutfitSuggestion[]),
+    ]);
+    setPartners(ps);
+    setSuggestions(sg);
+  }
+
+  /** Adopt a suggested outfit that includes this garment. */
+  async function acceptSuggestion(suggestion: OutfitSuggestion) {
+    await api.acceptSuggestion(suggestion.items.map((it) => it.id));
+    const [ps, sg] = await Promise.all([
+      api.outfitsFor(itemId),
+      api.suggestionsFor(itemId).catch(() => [] as OutfitSuggestion[]),
+    ]);
+    setPartners(ps);
+    setSuggestions(sg);
   }
 
   async function duplicate() {
@@ -158,20 +181,7 @@ export default function ItemDetail() {
               {partners.length === 0 ? (
                 <p className="muted">Nog geen goedgekeurde combinaties. Ga naar Combineer om te swipen.</p>
               ) : (
-                <div className="grid">
-                  {partners.map(({ item: p, approved_by }) => {
-                    const psrc = photoUrl(p, true);
-                    return (
-                      <Link to={`/item/${p.id}`} key={p.id} className="card">
-                        {psrc ? <img className="thumb" src={psrc} alt={p.name} /> : <div className="noimg">👕</div>}
-                        <div className="meta">
-                          <div className="name">{p.name}</div>
-                          <div className="sub">👍 {approved_by.join(", ")}</div>
-                        </div>
-                      </Link>
-                    );
-                  })}
-                </div>
+                <PartnerGrid partners={partners} onUndo={undoCombination} />
               )}
             </div>
 
@@ -179,9 +189,10 @@ export default function ItemDetail() {
               <div>
                 <h3 style={{ margin: "0 0 4px" }}>✨ Suggesties van het systeem</h3>
                 <p className="muted" style={{ marginTop: 0, fontSize: "0.82rem" }}>
-                  Automatisch samengesteld op kleur en seizoen, met dit stuk erin.
+                  Automatisch samengesteld op kleur en seizoen, met dit stuk erin. Wat je al
+                  hebt beoordeeld staat er niet tussen.
                 </p>
-                <SuggestionList suggestions={suggestions} />
+                <SuggestionList suggestions={suggestions} onAccept={acceptSuggestion} />
               </div>
             )}
 

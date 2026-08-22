@@ -3,6 +3,8 @@ import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./auth";
 import BottomNav from "./components/BottomNav";
 import Login from "./pages/Login";
+import Invite from "./pages/Invite";
+import AdminLog from "./pages/AdminLog";
 import Wardrobe from "./pages/Wardrobe";
 import AddItem from "./pages/AddItem";
 import ItemDetail from "./pages/ItemDetail";
@@ -36,6 +38,9 @@ export default function App() {
         path="/login"
         element={loading ? <div className="spinner" /> : user ? <Navigate to="/" replace /> : <Login />}
       />
+      {/* Reachable without a login: the token in the URL is the credential,
+          and a newcomer registers here (registration is closed elsewhere). */}
+      <Route path="/invite/:token" element={<Invite />} />
       <Route
         path="/"
         element={
@@ -89,6 +94,14 @@ export default function App() {
             <Shell>
               <Settings />
             </Shell>
+          </Protected>
+        }
+      />
+      <Route
+        path="/logboek"
+        element={
+          <Protected>
+            <AdminLog />
           </Protected>
         }
       />
