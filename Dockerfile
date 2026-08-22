@@ -1,5 +1,5 @@
 # ---- Stage 1: build the frontend ----
-FROM node:20-alpine AS frontend
+FROM node:26-alpine AS frontend
 WORKDIR /build
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm install
