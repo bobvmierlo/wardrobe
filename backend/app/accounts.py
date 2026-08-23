@@ -53,10 +53,12 @@ def _drop_item_verdicts(db: Session, item_ids: list[int]) -> None:
         ).delete(synchronize_session=False)
 
 
-def purge_wardrobe(db: Session, wardrobe: Wardrobe) -> int:
-    """Delete a wardrobe with its garments, photos, verdicts and sharing.
+def clear_wardrobe_items(db: Session, wardrobe: Wardrobe) -> int:
+    """Empty a kast: its garments, their photos and every verdict on them.
 
-    Returns how many garments went with it. Caller commits.
+    The kast itself, its members and its invitations stay. Used by a restore in
+    "vervangen" mode, where the wardrobe survives but its contents are replaced.
+    Returns how many garments were removed. Caller commits.
     """
     items = db.query(Item).filter(Item.wardrobe_id == wardrobe.id).all()
     _drop_item_verdicts(db, [it.id for it in items])
@@ -66,6 +68,15 @@ def purge_wardrobe(db: Session, wardrobe: Wardrobe) -> int:
         db.query(Item).filter(Item.wardrobe_id == wardrobe.id).delete(
             synchronize_session=False
         )
+    return len(items)
+
+
+def purge_wardrobe(db: Session, wardrobe: Wardrobe) -> int:
+    """Delete a wardrobe with its garments, photos, verdicts and sharing.
+
+    Returns how many garments went with it. Caller commits.
+    """
+    removed = clear_wardrobe_items(db, wardrobe)
     db.query(WardrobeMember).filter(
         WardrobeMember.wardrobe_id == wardrobe.id
     ).delete(synchronize_session=False)
@@ -73,7 +84,7 @@ def purge_wardrobe(db: Session, wardrobe: Wardrobe) -> int:
         synchronize_session=False
     )
     db.delete(wardrobe)
-    return len(items)
+    return removed
 
 
 def delete_account(db: Session, user: User, reassign_items_to: User) -> dict[str, int]:

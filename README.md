@@ -22,6 +22,9 @@ welke stukken bij elkaar passen — via een **Tinder-achtige swipe**.
 - 🤝 **Delen** – nodig iemand uit voor je kast als **bewerker** (mag alles aanpassen)
   of **kijker** (alleen inzage, maar mag wél meestemmen op combinaties). Heeft diegene
   nog geen account? Stuur een **uitnodigingslink** waarmee ze zich zelf registreren.
+- 💾 **Back-up & export** – iedereen kan z'n eigen kast downloaden als Excel-bestand
+  met de foto's erbij; een beheerder maakt een volledige back-up of een exacte
+  momentopname, en kan een export weer terugzetten.
 - 📋 **Logboek** – een beheerder ziet in de app wie wat wijzigde, goedkeurde of afkeurde,
   plus de technische logregels van de server.
 - 👥 **Accounts** – jij én je partner een eigen login. Een **beheerder** kan bij
@@ -100,10 +103,59 @@ en als JPEG opgeslagen, plus een thumbnail — zodat de kast licht blijft.
 
 ---
 
-## Back-up
+## Back-up, export en terugzetten
 
-Alle data (database + foto's) staat in het Docker-volume `kledingkast-data`.
-Een back-up maken:
+Onder **Instellingen → Back-up & export** staat alles wat met exporteren te maken
+heeft. Er zijn drie soorten bestanden, allemaal één ZIP:
+
+| Wat | Voor wie | Wat zit erin |
+| --- | --- | --- |
+| **Exporteer mijn kast** | iedereen, voor de eigen kast | `Kledingkast.xlsx`, de foto's in `photos/`, en `wardrobe.json` |
+| **Volledige back-up** | beheerder | hetzelfde, maar voor álle kasten, plus accounts, categorieën, maten en kleurregels |
+| **Momentopname** | beheerder | een exacte kopie van `wardrobe.db` en de map `uploads/` |
+
+### Het exportbestand
+
+`Kledingkast.xlsx` is bedoeld om zelf te openen: elke regel is een kledingstuk
+met een kleine foto erbij, en een link naar het volledige fotobestand in de map
+`photos`. Er zijn tabbladen voor **Kledingstukken**, **Combinaties** (inclusief
+wie welk oordeel gaf) en, in een volledige back-up, **Gebruikers**. Sorteer je de
+lijst, dan blijven de foto's staan waar ze staan — dat doet Excel nu eenmaal met
+afbeeldingen; de kolom *Fotobestand* blijft wel kloppen.
+
+Daarnaast zit er een `wardrobe.json` in met dezelfde gegevens in
+machineleesbare vorm. Dát bestand heeft de app nodig om een kast terug te
+zetten, en het verwijst naar kledingstukken via een vast kenmerk (`uid`) in
+plaats van via een database-id — daarom kun je dezelfde export twee keer
+terugzetten zonder dat je alles dubbel krijgt.
+
+### Terugzetten
+
+Terugzetten kan alleen een **beheerder**, en alleen met een export (niet met een
+momentopname). De app leest eerst het bestand en laat zien wat erin zit, daarna
+kies je de kast en:
+
+* **Samenvoegen** – voegt toe wat ontbreekt en werkt bij wat er al staat. Er
+  wordt niets verwijderd.
+* **Vervangen** – leegt de gekozen kast eerst helemaal (inclusief foto's en
+  beoordelingen) en zet daarna het bestand terug.
+
+Beide gaan in één transactie: mislukt er iets halverwege, dan is er niets
+gewijzigd. Elke export en elke restore komt in het logboek te staan.
+
+### Momentopname terugzetten
+
+Een momentopname is een exacte kopie en gaat buiten de app om terug:
+
+```bash
+docker compose down
+# pak het archief uit en zet de bestanden in het volume:
+#   wardrobe.db  ->  /data/wardrobe.db
+#   uploads/*    ->  /data/uploads/
+docker compose up -d
+```
+
+Of maak er zelf een van buitenaf, zonder de app:
 
 ```bash
 docker run --rm -v kledingkast-data:/data -v "$PWD":/backup alpine \
@@ -111,6 +163,10 @@ docker run --rm -v kledingkast-data:/data -v "$PWD":/backup alpine \
 ```
 
 Terugzetten: draai hetzelfde met `tar xzf` in `/data`.
+
+> Een volledige back-up en een momentopname bevatten de gegevens van iedereen —
+> een momentopname zelfs de wachtwoord-hashes. Bewaar ze net zo zorgvuldig als
+> de server zelf.
 
 ---
 

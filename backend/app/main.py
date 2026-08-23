@@ -1,4 +1,5 @@
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -28,6 +29,7 @@ from .models import (
 from .routers import (
     admin_log,
     auth,
+    backups,
     catalog,
     color_rules,
     imports,
@@ -219,6 +221,21 @@ def migrate_schema() -> None:
             conn.exec_driver_sql(
                 "ALTER TABLE items ADD COLUMN brand_id INTEGER REFERENCES brands(id)"
             )
+        if "uid" not in cols:
+            # Backups reference garments by uid, so every existing row needs
+            # one before the first export can run: add the column, fill it,
+            # and only then index it.
+            conn.exec_driver_sql("ALTER TABLE items ADD COLUMN uid VARCHAR(32)")
+            for (item_id,) in conn.exec_driver_sql("SELECT id FROM items").fetchall():
+                conn.exec_driver_sql(
+                    "UPDATE items SET uid = ? WHERE id = ?", (uuid.uuid4().hex, item_id)
+                )
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_items_uid ON items (uid)")
+        # Unique per kast, not globally: create_all cannot add a constraint to
+        # a table that already exists, so an index does the same job here.
+        conn.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_item_wardrobe_uid ON items (wardrobe_id, uid)"
+        )
 
 
 def migrate_wardrobes() -> None:
@@ -471,6 +488,7 @@ seed_color_rules()
 log.info("Migraties en seeds afgerond; app is klaar")
 
 app.include_router(auth.router)
+app.include_router(backups.router)
 app.include_router(users.router)
 app.include_router(wardrobes.router)
 app.include_router(items.router)

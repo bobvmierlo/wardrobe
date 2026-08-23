@@ -254,3 +254,36 @@ export interface LogEntry {
 
 // The seasons are a fixed set; multiple can apply to one garment.
 export const SEASONS = ["Lente", "Zomer", "Herfst", "Winter", "Alle seizoenen"];
+
+/** What a beheerder is told about an archive before restoring it. */
+export interface BackupPreview {
+  scope: "wardrobe" | "instance";
+  app_version: string;
+  generated_at: string;
+  generated_by: string;
+  wardrobe_names: string[];
+  wardrobes: number;
+  people: number;
+  items: number;
+  combinations: number;
+  skipped: number;
+  photos: number;
+}
+
+/** What a restore actually changed. */
+export interface RestoreResult {
+  mode: "merge" | "replace";
+  wardrobe: string;
+  added: number;
+  updated: number;
+  combinations: number;
+  skipped_pairs: number;
+  photos: number;
+}
+
+/** A kast a beheerder can restore into. */
+export interface RestoreTarget {
+  id: number;
+  name: string;
+  owner: string;
+}

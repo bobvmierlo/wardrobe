@@ -5,6 +5,7 @@ import { useAuth } from "../auth";
 import { useConfirm } from "../confirm";
 import { useWardrobe } from "../wardrobe";
 import AppFooter from "../components/AppFooter";
+import BackupCard from "../components/BackupCard";
 import { INVITATION_STATUS_LABELS, ROLE_LABELS, SIZE_KIND_LABELS, compareSizes, type Category, type ColorLogic, type Invitation, type MemberRole, type SizeKind, type SizeOption, type User, type WardrobeMember } from "../types";
 
 export default function Settings() {
@@ -526,6 +527,8 @@ export default function Settings() {
             <button className="btn-primary" style={{ flex: "none" }}>Link maken</button>
           </form>
         </div>
+
+        <BackupCard ownWardrobe={ownWardrobe} isAdmin={!!user?.is_admin} />
 
         {user?.is_admin && (
           <div className="card" style={{ padding: 16 }}>
