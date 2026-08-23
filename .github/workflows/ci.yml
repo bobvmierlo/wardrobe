@@ -22,6 +22,9 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      # Runs before the build: a hook-dependency mistake is cheaper to see
+      # here than after a five-minute Docker build.
+      - run: npm run lint
       - run: npm run build
 
   backend:

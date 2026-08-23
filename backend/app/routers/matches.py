@@ -627,6 +627,54 @@ def accept_suggestion(
     return Response(status_code=204)
 
 
+@router.post("/suggestions/undo", status_code=204)
+def undo_suggestion(
+    body: SuggestionAccept,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Take back a whole adopted outfit: every pair in it goes back to unjudged.
+
+    The mirror image of accepting a suggestion. Doing this pair by pair from
+    the frontend meant one request per pair — fifteen of them for a six-piece
+    outfit — and one audit line each, which buried what was actually one act.
+    """
+    ids = list(dict.fromkeys(body.item_ids))
+    items = db.query(Item).filter(Item.id.in_(ids)).all()
+    if len(items) != len(ids):
+        raise HTTPException(status_code=404, detail="Kledingstuk niet gevonden")
+    wardrobe_ids = {it.wardrobe_id for it in items}
+    if len(wardrobe_ids) > 1:
+        raise HTTPException(status_code=400, detail="Stukken uit verschillende kasten")
+    wardrobe_id = items[0].wardrobe_id
+    require_view(db, wardrobe_id, user)
+
+    removed = 0
+    for pair in all_pairs(items):
+        a, b = _ordered(*pair)
+        removed += (
+            db.query(Match)
+            .filter(Match.item_a_id == a, Match.item_b_id == b, Match.user_id == user.id)
+            .delete()
+        )
+        # An undone pair should come back as unseen, not as postponed.
+        _drop_skip(db, user.id, a, b)
+    db.commit()
+
+    if removed:
+        audit.record(
+            db,
+            "match.undo_suggestion",
+            f"Combinatie {' + '.join(it.name for it in items)} ongedaan gemaakt"
+            f" ({removed} {'paar' if removed == 1 else 'paren'} teruggezet)",
+            user=user,
+            wardrobe_id=wardrobe_id,
+            entity_type="suggestion",
+            entity_id=items[0].id,
+        )
+    return Response(status_code=204)
+
+
 @router.get("/stats")
 def stats(
     wardrobe_id: int,

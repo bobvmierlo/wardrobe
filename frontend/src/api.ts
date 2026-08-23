@@ -78,6 +78,8 @@ export const api = {
     return request("/api/auth/login", { method: "POST", body: form });
   },
   me: () => request<User>("/api/auth/me"),
+  // Drops the server-side photo cookie; the bearer token is cleared locally.
+  logout: () => request<void>("/api/auth/logout", { method: "POST" }),
   changePassword: (new_password: string) =>
     request<void>("/api/auth/change-password", {
       method: "POST",
@@ -230,6 +232,13 @@ export const api = {
   },
   acceptSuggestion: (item_ids: number[]) =>
     request<void>("/api/matches/suggestions/accept", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_ids }),
+    }),
+  // Undo a whole adopted outfit in one request, rather than one per pair.
+  undoSuggestion: (item_ids: number[]) =>
+    request<void>("/api/matches/suggestions/undo", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ item_ids }),

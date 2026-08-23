@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, photoUrl } from "../api";
 import AppFooter from "../components/AppFooter";
+import HScroll from "../components/HScroll";
 import WardrobeSwitcher from "../components/WardrobeSwitcher";
 import { useWardrobe } from "../wardrobe";
 import type { Item } from "../types";
@@ -80,7 +81,7 @@ export default function Wardrobe() {
           />
         </div>
 
-        <div className="chips">
+        <HScroll className="chips" label="Filter op categorie">
           <button className={`chip ${!category && !favOnly ? "active" : ""}`} onClick={() => { setCategory(null); setFavOnly(false); }}>
             Alles
           </button>
@@ -92,7 +93,7 @@ export default function Wardrobe() {
               {c}
             </button>
           ))}
-        </div>
+        </HScroll>
 
         {loading ? (
           <div className="spinner" />

@@ -290,7 +290,7 @@ export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormPro
 
       <div className="field">
         <label>Seizoen (meerdere mogelijk)</label>
-        <div className="chips" style={{ overflowX: "visible", flexWrap: "wrap", marginBottom: 0 }}>
+        <div className="chips wrap">
           {SEASONS.map((s) => (
             <button
               type="button"

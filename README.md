@@ -20,7 +20,10 @@ welke stukken bij elkaar passen — via een **Tinder-achtige swipe**.
   plus de technische logregels van de server.
 - 👥 **Accounts** – jij én je partner een eigen login. Een **beheerder** kan bij
   elke kast, en heeft daarnaast ook gewoon z'n eigen kast.
-- 📱 **PWA** – installeerbaar op je telefoon (Toevoegen aan beginscherm).
+- 📱 **PWA** – installeerbaar op je telefoon (Toevoegen aan beginscherm), en dankzij
+  een service worker blijft de app werken als je even geen verbinding hebt.
+- 🔒 **Foto's achter de login** – een foto-URL is geen achterdeur: elke foto wordt
+  geserveerd met dezelfde toegangsregels als het kledingstuk waar hij bij hoort.
 
 Techniek: **FastAPI + SQLite + Pillow** (backend) en **React + Vite** (frontend),
 samen in **één Docker-image**. Achter je bestaande nginx als reverse-proxy.
@@ -123,6 +126,7 @@ uvicorn app.main:app --reload --port 8000
 cd frontend
 npm install
 npm run dev            # http://localhost:5173
+npm run lint           # oxlint; draait ook in CI
 ```
 
 Standaard-admin bij eerste start: `admin` / `changeme`.
