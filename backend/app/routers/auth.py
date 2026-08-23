@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
@@ -8,12 +8,14 @@ from ..deps import get_current_user
 from ..models import User
 from ..schemas import PasswordChange, Token, UserOut
 from ..security import create_access_token, hash_password, verify_password
+from .photos import clear_photo_cookie, set_photo_cookie
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 @router.post("/login", response_model=Token)
 def login(
+    response: Response,
     form: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
@@ -30,13 +32,33 @@ def login(
         )
         raise HTTPException(status_code=401, detail="Onjuiste gebruikersnaam of wachtwoord")
     token = create_access_token(user.id)
+    # <img> requests cannot carry the bearer token, so photos are authorised
+    # by this cookie instead.
+    set_photo_cookie(response, token)
     audit.record(db, "auth.login", f"{user.display_name} logde in", user=user)
     return Token(access_token=token, user=UserOut.model_validate(user))
 
 
 @router.get("/me", response_model=UserOut)
-def me(user: User = Depends(get_current_user)):
+def me(
+    request: Request,
+    response: Response,
+    user: User = Depends(get_current_user),
+):
+    # The app calls this on every start, which is also where a session that
+    # predates the photo cookie (or whose cookie has expired) gets one.
+    header = request.headers.get("Authorization", "")
+    if header.lower().startswith("bearer "):
+        set_photo_cookie(response, header[7:].strip())
     return user
+
+
+@router.post("/logout", status_code=204)
+def logout():
+    """Drop the photo cookie. The bearer token itself lives in the browser."""
+    response = Response(status_code=204)
+    clear_photo_cookie(response)
+    return response
 
 
 @router.post("/change-password", status_code=204)

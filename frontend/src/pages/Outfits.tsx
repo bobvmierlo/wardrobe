@@ -13,6 +13,7 @@ type Tab = "browse" | "suggest";
 
 export default function Outfits() {
   const { current } = useWardrobe();
+  const currentId = current?.id;
   const [tab, setTab] = useState<Tab>("browse");
   const [items, setItems] = useState<Item[]>([]);
   const [selected, setSelected] = useState<Item | null>(null);
@@ -37,21 +38,21 @@ export default function Outfits() {
   const activeThumb = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
-    if (!current) return;
+    if (!currentId) return;
     // Reset when switching wardrobes so nothing from another kast lingers.
     setSuggestions([]);
     setAccepted(null);
     setLoading(true);
     (async () => {
       try {
-        const list = await api.listItems(current.id);
+        const list = await api.listItems(currentId);
         setItems(list);
         setSelected(list.length ? list[0] : null);
       } finally {
         setLoading(false);
       }
     })();
-  }, [current?.id]);
+  }, [currentId]);
 
   useEffect(() => {
     activeThumb.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
@@ -67,13 +68,13 @@ export default function Outfits() {
   }, [selected]);
 
   useEffect(() => {
-    if (tab !== "suggest" || suggestions.length || !current) return;
+    if (tab !== "suggest" || suggestions.length || !currentId) return;
     setLoadingSug(true);
     api
-      .suggestions(current.id)
+      .suggestions(currentId)
       .then(setSuggestions)
       .finally(() => setLoadingSug(false));
-  }, [tab, suggestions.length, current?.id]);
+  }, [tab, suggestions.length, currentId]);
 
   /** Withdraw my approval of a combination shown for the selected garment. */
   async function undoCombination(partner: OutfitPartner) {
@@ -211,7 +212,7 @@ export default function Outfits() {
                       >
                         <span className="pick-photo">
                           {s ? (
-                            <img src={s} alt={it.name} />
+                            <img src={s} alt={it.name} width={104} height={104} loading="lazy" decoding="async" />
                           ) : (
                             <span className="noimg-ico">👕</span>
                           )}
@@ -226,7 +227,7 @@ export default function Outfits() {
                 {selected && (
                   <div className="anchor-band selected-band">
                     {photoUrl(selected, true) ? (
-                      <img src={photoUrl(selected, true)!} alt={selected.name} />
+                      <img src={photoUrl(selected, true)!} alt={selected.name} width={64} height={64} decoding="async" />
                     ) : (
                       <div className="noimg-sm">👕</div>
                     )}

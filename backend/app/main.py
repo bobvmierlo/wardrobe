@@ -5,7 +5,6 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 
 from ._version import __version__
 from .config import settings
@@ -35,6 +34,7 @@ from .routers import (
     invitations,
     items,
     matches,
+    photos,
     users,
     wardrobes,
 )
@@ -484,8 +484,9 @@ app.include_router(invitations.router)
 app.include_router(invitations.wardrobe_router)
 app.include_router(admin_log.router)
 
-# Uploaded photos.
-app.mount("/uploads", StaticFiles(directory=str(settings.uploads_dir)), name="uploads")
+# Uploaded photos. Served by a router rather than a StaticFiles mount, so each
+# photo goes through the access check of the wardrobe it belongs to.
+app.include_router(photos.router)
 
 
 @app.get("/api/health")

@@ -17,7 +17,7 @@ function Thumb({ item }: { item: Item }) {
   const src = photoUrl(item, true);
   return (
     <Link to={`/item/${item.id}`} className="judged-thumb" title={item.name}>
-      {src ? <img src={src} alt={item.name} /> : <span className="noimg-ico">👕</span>}
+      {src ? <img src={src} alt={item.name} width={46} height={46} loading="lazy" decoding="async" /> : <span className="noimg-ico">👕</span>}
     </Link>
   );
 }

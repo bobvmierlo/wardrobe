@@ -14,7 +14,7 @@ anything but a valid, unused, unexpired token.
 import secrets
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from .. import audit
@@ -31,6 +31,7 @@ from ..schemas import (
     UserOut,
 )
 from ..security import create_access_token, hash_password
+from .photos import set_photo_cookie
 
 router = APIRouter(prefix="/api/invitations", tags=["invitations"])
 # Creating and listing links belongs to a wardrobe, so those live under the
@@ -231,6 +232,7 @@ def accept_invitation(
 def register_via_invitation(
     token: str,
     body: InvitationRegister,
+    response: Response,
     db: Session = Depends(get_db),
 ):
     """Create an account *through* an invitation link and redeem it.
@@ -276,6 +278,7 @@ def register_via_invitation(
         entity_type="user",
         entity_id=user.id,
     )
-    return Token(
-        access_token=create_access_token(user.id), user=UserOut.model_validate(user)
-    )
+    token_str = create_access_token(user.id)
+    # Same as a normal login: the browser needs the photo cookie too.
+    set_photo_cookie(response, token_str)
+    return Token(access_token=token_str, user=UserOut.model_validate(user))

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
+import { useConfirm } from "../confirm";
 import { useWardrobe } from "../wardrobe";
 import AppFooter from "../components/AppFooter";
 import { INVITATION_STATUS_LABELS, ROLE_LABELS, SIZE_KIND_LABELS, compareSizes, type Category, type ColorLogic, type Invitation, type MemberRole, type SizeKind, type SizeOption, type User, type WardrobeMember } from "../types";
@@ -9,6 +10,7 @@ import { INVITATION_STATUS_LABELS, ROLE_LABELS, SIZE_KIND_LABELS, compareSizes, 
 export default function Settings() {
   const { user, logout } = useAuth();
   const { wardrobes, refresh: refreshWardrobes } = useWardrobe();
+  const confirm = useConfirm();
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -90,11 +92,12 @@ export default function Settings() {
     loadCatalog();
     loadLogic();
   }, []);
+  const ownWardrobeId = ownWardrobe?.id;
   useEffect(() => {
-    if (!ownWardrobe) return;
-    loadMembers(ownWardrobe.id);
-    loadInvitations(ownWardrobe.id);
-  }, [ownWardrobe?.id]);
+    if (!ownWardrobeId) return;
+    loadMembers(ownWardrobeId);
+    loadInvitations(ownWardrobeId);
+  }, [ownWardrobeId]);
   // When linked to from the "Delen" button (/settings#delen), scroll the
   // sharing card into view and highlight it briefly.
   useEffect(() => {
@@ -185,7 +188,12 @@ export default function Settings() {
 
   async function revokeLink(invitation: Invitation) {
     if (!ownWardrobe) return;
-    if (!confirm("Deze uitnodigingslink intrekken? Hij werkt daarna niet meer.")) return;
+    const ok = await confirm({
+      title: "Deze uitnodigingslink intrekken?",
+      body: "De link werkt daarna niet meer. Wie hem al gebruikt heeft, houdt zijn toegang.",
+      confirmLabel: "Intrekken",
+    });
+    if (!ok) return;
     setErr(null);
     try {
       await api.revokeInvitation(invitation.id);
@@ -240,7 +248,13 @@ export default function Settings() {
       // admin and let them confirm before deleting it anyway.
       const status = (e as { status?: number }).status;
       const detail = e instanceof Error ? e.message : "Verwijderen mislukt";
-      if (status === 409 && confirm(`${detail}.\n\nToch verwijderen? De kledingstukken behouden hun huidige maat.`)) {
+      if (
+        status === 409 &&
+        (await confirm({
+          title: "Toch verwijderen?",
+          body: `${detail}.\n\nDe kledingstukken behouden hun huidige maat.`,
+        }))
+      ) {
         try {
           await api.deleteSize(id, true);
           loadCatalog();
@@ -296,12 +310,14 @@ export default function Settings() {
   async function removeUser(u: User) {
     // Say what actually disappears: the account takes its kast, the garments
     // in it and every judgement the person made along with it.
-    const warning =
-      `Account "${u.display_name}" (@${u.username}) verwijderen?\n\n` +
-      "Hun eigen kast verdwijnt mét alle kledingstukken en foto's erin, " +
-      "en al hun beoordelingen van combinaties. Kledingstukken die ze aan " +
-      "een gedeelde kast toevoegden blijven staan.\n\nDit kan niet ongedaan gemaakt worden.";
-    if (!confirm(warning)) return;
+    const ok = await confirm({
+      title: `Account "${u.display_name}" (@${u.username}) verwijderen?`,
+      body:
+        "Hun eigen kast verdwijnt mét alle kledingstukken en foto's erin, " +
+        "en al hun beoordelingen van combinaties. Kledingstukken die ze aan " +
+        "een gedeelde kast toevoegden blijven staan.\n\nDit kan niet ongedaan gemaakt worden.",
+    });
+    if (!ok) return;
     setAccountErr(null);
     try {
       await api.deleteUser(u.id);

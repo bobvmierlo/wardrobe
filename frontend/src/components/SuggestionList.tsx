@@ -48,7 +48,7 @@ export default function SuggestionList({ suggestions, onAccept }: Props) {
                 const src = photoUrl(it, true);
                 return (
                   <Link to={`/item/${it.id}`} key={it.id} className="suggest-item" title={it.name}>
-                    {src ? <img src={src} alt={it.name} /> : <div className="noimg-sm">👕</div>}
+                    {src ? <img src={src} alt={it.name} width={104} height={104} loading="lazy" decoding="async" /> : <div className="noimg-sm">👕</div>}
                     <span>{it.name}</span>
                   </Link>
                 );

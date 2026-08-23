@@ -6,6 +6,7 @@ import AppFooter from "../components/AppFooter";
 import PartnerGrid from "../components/PartnerGrid";
 import RejectedGrid from "../components/RejectedGrid";
 import SuggestionList from "../components/SuggestionList";
+import { useConfirm } from "../confirm";
 import { useWardrobe } from "../wardrobe";
 import type { Item, OutfitPartner, OutfitSuggestion, RejectedPartner } from "../types";
 
@@ -14,6 +15,7 @@ export default function ItemDetail() {
   const itemId = Number(id);
   const navigate = useNavigate();
   const { wardrobes } = useWardrobe();
+  const confirm = useConfirm();
   const [item, setItem] = useState<Item | null>(null);
   const [partners, setPartners] = useState<OutfitPartner[]>([]);
   const [rejected, setRejected] = useState<RejectedPartner[]>([]);
@@ -60,7 +62,11 @@ export default function ItemDetail() {
   }, [itemId]);
 
   async function remove() {
-    if (!confirm("Dit kledingstuk definitief verwijderen?")) return;
+    const ok = await confirm({
+      title: "Dit kledingstuk definitief verwijderen?",
+      body: "De foto en alle beoordeelde combinaties met dit stuk verdwijnen mee. Dit kan niet ongedaan gemaakt worden.",
+    });
+    if (!ok) return;
     await api.deleteItem(itemId);
     navigate("/", { replace: true });
   }

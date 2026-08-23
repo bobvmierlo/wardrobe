@@ -2,6 +2,9 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { api, getToken, setToken } from "./api";
 import type { User } from "./types";
 
+/** Runtime cache the service worker keeps photos in (see vite.config.ts). */
+const PHOTO_CACHE = "wardrobe-photos";
+
 interface AuthState {
   user: User | null;
   loading: boolean;
@@ -43,6 +46,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   function logout() {
+    // Best-effort: the local token is what actually gates the app, so a
+    // failed request here must not leave the user stuck on a logged-in screen.
+    api.logout().catch(() => {});
+    // The service worker holds this user's photos; the next person to log in
+    // on this browser should not inherit them.
+    globalThis.caches?.delete(PHOTO_CACHE).catch(() => {});
     setToken(null);
     setUser(null);
   }

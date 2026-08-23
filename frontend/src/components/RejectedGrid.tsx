@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { photoUrl } from "../api";
+import { useConfirm } from "../confirm";
 import type { RejectedPartner } from "../types";
 
 interface Props {
@@ -18,10 +19,17 @@ interface Props {
 export default function RejectedGrid({ rejected, onUndo }: Props) {
   const [busy, setBusy] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const confirm = useConfirm();
 
   async function undo(partner: RejectedPartner) {
     if (busy !== null) return;
-    if (!confirm(`Je "nee" voor "${partner.item.name}" intrekken?`)) return;
+    const ok = await confirm({
+      title: `Je "nee" voor "${partner.item.name}" intrekken?`,
+      body: "Het paar komt daarna weer langs bij Combineer om opnieuw te beoordelen.",
+      confirmLabel: "Intrekken",
+      danger: false,
+    });
+    if (!ok) return;
     setBusy(partner.item.id);
     setError(null);
     try {
@@ -44,7 +52,7 @@ export default function RejectedGrid({ rejected, onUndo }: Props) {
           return (
             <div key={p.id} className="card rejected-row">
               <Link to={`/item/${p.id}`} className="rejected-thumb" title={p.name}>
-                {src ? <img src={src} alt={p.name} /> : <span className="noimg-ico">👕</span>}
+                {src ? <img src={src} alt={p.name} width={52} height={52} loading="lazy" decoding="async" /> : <span className="noimg-ico">👕</span>}
               </Link>
               <div className="rejected-meta">
                 <div className="rejected-name">{p.name}</div>

@@ -172,13 +172,8 @@ export default function Combine() {
   /** Take back a whole adopted outfit: every pair in it goes back to unjudged. */
   async function undoAccepted() {
     if (!lastAccepted) return;
-    const ids = lastAccepted.items.map((it) => it.id);
     try {
-      for (let i = 0; i < ids.length; i++) {
-        for (let j = i + 1; j < ids.length; j++) {
-          await api.resetPair(ids[i], ids[j]);
-        }
-      }
+      await api.undoSuggestion(lastAccepted.items.map((it) => it.id));
       setLastAccepted(null);
       await Promise.all([refreshStats(), refreshJudged(), refreshSuggestions()]);
       if (!pair) await loadNext();
@@ -253,7 +248,7 @@ export default function Combine() {
                   onClick={() => setZoom(photoUrl(anchor!) || anchorSrc)}
                   aria-label={`Vergroot foto van ${anchor!.name}`}
                 >
-                  <img src={anchorSrc} alt={anchor!.name} />
+                  <img src={anchorSrc} alt={anchor!.name} width={54} height={54} decoding="async" />
                   <span className="zoom-badge" aria-hidden="true">⤢</span>
                 </button>
               ) : (

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { useConfirm } from "../confirm";
 import { photoUrl } from "../api";
 import type { OutfitPartner } from "../types";
 
@@ -18,10 +19,16 @@ interface Props {
 export default function PartnerGrid({ partners, onUndo }: Props) {
   const [busy, setBusy] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const confirm = useConfirm();
 
   async function undo(partner: OutfitPartner) {
     if (!onUndo || busy !== null) return;
-    if (!confirm(`Combinatie met "${partner.item.name}" ongedaan maken?`)) return;
+    const ok = await confirm({
+      title: `Combinatie met "${partner.item.name}" ongedaan maken?`,
+      body: "Alleen jouw goedkeuring wordt ingetrokken. Keurde iemand anders de combinatie ook goed, dan blijft die staan.",
+      confirmLabel: "Ongedaan maken",
+    });
+    if (!ok) return;
     setBusy(partner.item.id);
     setError(null);
     try {
@@ -43,7 +50,7 @@ export default function PartnerGrid({ partners, onUndo }: Props) {
           return (
             <div key={p.id} className="card partner-card">
               <Link to={`/item/${p.id}`} className="partner-link">
-                {src ? <img className="thumb" src={src} alt={p.name} /> : <div className="noimg">👕</div>}
+                {src ? <img className="thumb" src={src} alt={p.name} loading="lazy" decoding="async" /> : <div className="noimg">👕</div>}
                 <div className="meta">
                   <div className="name">{p.name}</div>
                   <div className="sub">👍 {partner.approved_by.join(", ")}</div>
