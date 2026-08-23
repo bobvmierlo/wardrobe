@@ -2,10 +2,14 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useConfirm } from "../confirm";
 import { photoUrl } from "../api";
-import type { OutfitPartner } from "../types";
+import ImageModal, { zoomPhoto, type ZoomPhoto } from "./ImageModal";
+import type { Item, OutfitPartner } from "../types";
 
 interface Props {
   partners: OutfitPartner[];
+  /** The garment these are combinations *of*. Given, every partner can be put
+   *  next to it full screen instead of being judged from a grid thumbnail. */
+  anchor?: Item;
   /** When given, each combination can be taken back (the current user's vote). */
   onUndo?: (partner: OutfitPartner) => Promise<void>;
 }
@@ -16,10 +20,17 @@ interface Props {
  * approved stays, which is why the button says "mijn goedkeuring" rather than
  * promising the combination disappears.
  */
-export default function PartnerGrid({ partners, onUndo }: Props) {
+export default function PartnerGrid({ partners, anchor, onUndo }: Props) {
   const [busy, setBusy] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [zoom, setZoom] = useState<ZoomPhoto[] | null>(null);
   const confirm = useConfirm();
+
+  /** Show the chosen garment and this partner at one and the same size. */
+  function compare(partner: OutfitPartner) {
+    const partnerPhoto = zoomPhoto(partner.item, "Combineert met");
+    setZoom(anchor ? [zoomPhoto(anchor, "Gekozen stuk"), partnerPhoto] : [partnerPhoto]);
+  }
 
   async function undo(partner: OutfitPartner) {
     if (!onUndo || busy !== null) return;
@@ -56,6 +67,15 @@ export default function PartnerGrid({ partners, onUndo }: Props) {
                   <div className="sub">👍 {partner.approved_by.join(", ")}</div>
                 </div>
               </Link>
+              <button
+                type="button"
+                className="partner-zoom"
+                onClick={() => compare(partner)}
+                title={anchor ? `Naast ${anchor.name} bekijken` : "Groot bekijken"}
+                aria-label={anchor ? `Bekijk ${p.name} groot naast ${anchor.name}` : `Bekijk ${p.name} groot`}
+              >
+                ⤢
+              </button>
               {onUndo && (
                 <button
                   type="button"
@@ -72,6 +92,7 @@ export default function PartnerGrid({ partners, onUndo }: Props) {
           );
         })}
       </div>
+      {zoom && <ImageModal photos={zoom} onClose={() => setZoom(null)} />}
     </>
   );
 }

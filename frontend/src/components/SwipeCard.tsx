@@ -9,11 +9,14 @@ export interface SwipeCardHandle {
 interface Props {
   item: Item;
   onDecide: (verdict: "yes" | "no") => void;
+  /** When given, a corner button opens this card next to the item it is being
+   *  compared with — one tap, without having to hunt for the small thumbnail. */
+  onZoom?: () => void;
 }
 
 const THRESHOLD = 90;
 
-const SwipeCard = forwardRef<SwipeCardHandle, Props>(({ item, onDecide }, ref) => {
+const SwipeCard = forwardRef<SwipeCardHandle, Props>(({ item, onDecide, onZoom }, ref) => {
   const [dx, setDx] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [leaving, setLeaving] = useState<null | "yes" | "no">(null);
@@ -71,6 +74,19 @@ const SwipeCard = forwardRef<SwipeCardHandle, Props>(({ item, onDecide }, ref) =
       <div className="stamp no" style={{ opacity: noOpacity }}>
         NOPE
       </div>
+      {onZoom && (
+        <button
+          type="button"
+          className="card-zoom"
+          // The card is a drag surface: keep the press from starting a swipe.
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={onZoom}
+          aria-label={`Vergelijk ${item.name} groot`}
+          title="Groot vergelijken"
+        >
+          ⤢
+        </button>
+      )}
       {src ? <img src={src} alt={item.name} draggable={false} /> : <div className="noimg-lg">👕</div>}
       <div className="cap">
         <div className="name">{item.name}</div>

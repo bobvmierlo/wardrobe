@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api, photoUrl } from "../api";
 import AppFooter from "../components/AppFooter";
 import HScroll from "../components/HScroll";
+import ImageModal, { zoomPhoto, type ZoomPhoto } from "../components/ImageModal";
 import PartnerGrid from "../components/PartnerGrid";
 import SuggestionList from "../components/SuggestionList";
 import WardrobeSwitcher from "../components/WardrobeSwitcher";
@@ -20,6 +21,9 @@ export default function Outfits() {
   const [partners, setPartners] = useState<OutfitPartner[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingPartners, setLoadingPartners] = useState(false);
+  // The chosen garment, blown up full screen — its band thumbnail is far too
+  // small to check a colour or a pattern on.
+  const [zoom, setZoom] = useState<ZoomPhoto[] | null>(null);
 
   // filters
   const [fCategory, setFCategory] = useState("");
@@ -227,7 +231,16 @@ export default function Outfits() {
                 {selected && (
                   <div className="anchor-band selected-band">
                     {photoUrl(selected, true) ? (
-                      <img src={photoUrl(selected, true)!} alt={selected.name} width={64} height={64} decoding="async" />
+                      <button
+                        type="button"
+                        className="anchor-thumb"
+                        onClick={() => setZoom([zoomPhoto(selected, "Gekozen stuk")])}
+                        aria-label={`Bekijk ${selected.name} groot`}
+                        title="Groot bekijken"
+                      >
+                        <img src={photoUrl(selected, true)!} alt={selected.name} width={64} height={64} decoding="async" />
+                        <span className="zoom-badge" aria-hidden="true">⤢</span>
+                      </button>
                     ) : (
                       <div className="noimg-sm">👕</div>
                     )}
@@ -257,7 +270,7 @@ export default function Outfits() {
                     </Link>
                   </div>
                 ) : (
-                  <PartnerGrid partners={partners} onUndo={undoCombination} />
+                  <PartnerGrid partners={partners} anchor={selected ?? undefined} onUndo={undoCombination} />
                 )}
               </>
             )}
@@ -265,6 +278,8 @@ export default function Outfits() {
         )}
         <AppFooter />
       </div>
+
+      {zoom && <ImageModal photos={zoom} onClose={() => setZoom(null)} />}
     </>
   );
 }
