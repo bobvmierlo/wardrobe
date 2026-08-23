@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { photoUrl } from "../api";
+import HScroll from "./HScroll";
 import type { OutfitSuggestion } from "../types";
 
 interface Props {
@@ -42,7 +43,7 @@ export default function SuggestionList({ suggestions, onAccept }: Props) {
       {suggestions.map((s, idx) => {
         return (
           <div key={idx} className="card suggest-card">
-            <div className="suggest-row">
+            <HScroll className="suggest-row" arrows={false}>
               {s.items.map((it) => {
                 const src = photoUrl(it, true);
                 return (
@@ -52,7 +53,7 @@ export default function SuggestionList({ suggestions, onAccept }: Props) {
                   </Link>
                 );
               })}
-            </div>
+            </HScroll>
             <div className="suggest-reason">💡 {s.reason}</div>
             {onAccept && (
               <div className="suggest-actions">

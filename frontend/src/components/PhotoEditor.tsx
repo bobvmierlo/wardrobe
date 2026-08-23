@@ -286,7 +286,7 @@ export default function PhotoEditor({ src, onCancel, onApply }: PhotoEditorProps
           )}
         </div>
 
-        <div className="chips" style={{ justifyContent: "center", overflowX: "visible", flexWrap: "wrap", marginTop: 14, marginBottom: 0 }}>
+        <div className="chips wrap" style={{ justifyContent: "center", marginTop: 14 }}>
           {RATIOS.map((r) => (
             <button
               type="button"

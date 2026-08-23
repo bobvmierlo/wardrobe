@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, photoUrl } from "../api";
 import AppFooter from "../components/AppFooter";
+import HScroll from "../components/HScroll";
 import PartnerGrid from "../components/PartnerGrid";
 import SuggestionList from "../components/SuggestionList";
 import WardrobeSwitcher from "../components/WardrobeSwitcher";
@@ -195,7 +196,7 @@ export default function Outfits() {
             ) : (
               <>
                 <div className="pick-label">Kies het stuk waar je omheen bouwt</div>
-                <div className="pick-strip">
+                <HScroll className="pick-strip" label="Kies een kledingstuk">
                   {visibleItems.map((it) => {
                     const s = photoUrl(it, true);
                     const active = selected?.id === it.id;
@@ -220,7 +221,7 @@ export default function Outfits() {
                       </button>
                     );
                   })}
-                </div>
+                </HScroll>
 
                 {selected && (
                   <div className="anchor-band selected-band">
