@@ -2,6 +2,7 @@ import { Suspense, lazy, type ReactElement } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./auth";
 import BottomNav from "./components/BottomNav";
+import OfflineBar from "./components/OfflineBar";
 import Login from "./pages/Login";
 import Wardrobe from "./pages/Wardrobe";
 
@@ -28,6 +29,7 @@ function Protected({ children }: { children: ReactElement }) {
 function Shell({ children }: { children: ReactElement }) {
   return (
     <div className="app">
+      <OfflineBar />
       {children}
       <BottomNav />
     </div>

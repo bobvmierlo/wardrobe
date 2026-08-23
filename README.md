@@ -29,8 +29,10 @@ welke stukken bij elkaar passen — via een **Tinder-achtige swipe**.
   plus de technische logregels van de server.
 - 👥 **Accounts** – jij én je partner een eigen login. Een **beheerder** kan bij
   elke kast, en heeft daarnaast ook gewoon z'n eigen kast.
-- 📱 **PWA** – installeerbaar op je telefoon (Toevoegen aan beginscherm), en dankzij
-  een service worker blijft de app werken als je even geen verbinding hebt.
+- 📱 **PWA & offline** – installeerbaar op je telefoon (Toevoegen aan beginscherm).
+  Zonder verbinding blijf je ingelogd, zie je je kast en je outfits zoals ze het
+  laatst geladen waren, en kun je gewoon doorswipen: je oordelen worden verstuurd
+  zodra je weer online bent — ook als je de app tussendoor sluit.
 - 🔒 **Foto's achter de login** – een foto-URL is geen achterdeur: elke foto wordt
   geserveerd met dezelfde toegangsregels als het kledingstuk waar hij bij hoort.
 
@@ -100,6 +102,44 @@ Alles via omgevingsvariabelen (zie `.env.example`):
 
 Foto's worden bij upload automatisch geroteerd (EXIF), verkleind (max 1280px)
 en als JPEG opgeslagen, plus een thumbnail — zodat de kast licht blijft.
+
+---
+
+## Offline
+
+De app is een PWA en moet dus ook iets doen als je telefoon geen bereik heeft.
+Wat er dan wél en niet werkt:
+
+| | Zonder verbinding |
+| --- | --- |
+| Ingelogd blijven | ✅ Je sessie blijft staan; alleen een écht geweigerde sessie (401) logt je uit |
+| Kast, Outfits, kledingstuk bekijken | ✅ Uit de cache, inclusief foto's |
+| Combineren (swipen) | ✅ De app heeft een stuk of 25 paren vooruit opgehaald |
+| Oordeel geven of overslaan | ✅ Wordt bewaard en later verstuurd |
+| Ongedaan maken | ❌ Kan pas weer online |
+| Kledingstuk toevoegen of wijzigen | ❌ Kan pas weer online |
+| Back-up, export, terugzetten | ❌ Kan pas weer online |
+
+Bovenin verschijnt een balk zodra de verbinding weg is, want een geïnstalleerde
+app verbergt de offline-melding van de browser — zonder die balk lijkt het net
+alsof je alles ziet zoals het nu is, terwijl je partner ondertussen van alles
+beoordeeld kan hebben.
+
+Onder water:
+
+* **App zelf** – voorgeladen in de cache, dus de app opent altijd.
+* **Foto's** – `cache-first`; een foto-URL bevat een UUID en verandert nooit.
+* **API (GET)** – `network-first`: online altijd vers, offline uit de cache.
+  Alleen de verzoeken die een scherm tekenen. De cache wordt gewist bij in- én
+  uitloggen, zodat de volgende persoon op dat toestel niet jouw kast ziet.
+* **Oordelen (POST)** – gaan bij verbindingsverlies in een wachtrij van de
+  service worker (`background sync`) en worden later opnieuw verstuurd, ook met
+  de app dicht. Zodra de app zelf merkt dat de server er weer is, stuurt hij ze
+  bovendien meteen zelf — de API bewaart één oordeel per paar per persoon, dus
+  twee keer aankomen verandert niets.
+* **Verbinding vaststellen** – niet op `navigator.onLine` alleen (die liegt
+  achter een captive portal, en klopt soms even niet vlak na het openen), maar
+  door `/api/version` op te vragen, dat expres nooit gecachet wordt.
 
 ---
 

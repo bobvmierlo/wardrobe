@@ -88,24 +88,24 @@ def _pair_items(db: Session, item_a_id: int, item_b_id: int, user: User) -> tupl
     return item_a, item_b
 
 
-@router.get("/next", response_model=PairOut | None)
-def next_pair(
+def _pair_queue(
+    db: Session,
     wardrobe_id: int,
-    anchor_id: int | None = None,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Return the next pair for the current user to judge, within one wardrobe.
+    user: User,
+    anchor_id: int | None,
+    limit: int,
+) -> list[PairOut]:
+    """The pairs this user still has to judge, best first.
 
-    Pass ``anchor_id`` to keep swiping candidates for one garment. Omit it to
-    let the server pick the garment with the most work left. Pairs the user
-    skipped come last, so everything unseen is offered before anything they
-    already put off once.
+    One ordering serves both endpoints: the swipe screen asks for the head of
+    this queue, and the app asks for a stretch of it to carry offline. Because
+    both come from here, what someone swipes through without a connection is
+    exactly what the server would have handed them one at a time.
     """
     require_view(db, wardrobe_id, user)
     items = _wardrobe_items(db, wardrobe_id)
     if len(items) < 2:
-        return None
+        return []
     by_id = {it.id: it for it in items}
     judged = _judged_pairs(db, user.id, set(by_id))
     skipped = _skipped_pairs(db, user.id, set(by_id))
@@ -138,38 +138,79 @@ def next_pair(
     def unskipped_count(anchor: Item, cands: list[Item]) -> int:
         return sum(1 for c in cands if not is_skipped(anchor, c))
 
+    def pairs_for(anchor: Item, cands: list[Item]) -> list[PairOut]:
+        return [
+            PairOut(
+                anchor=ItemOut.model_validate(anchor),
+                candidate=ItemOut.model_validate(c),
+                skipped=is_skipped(anchor, c),
+            )
+            for c in cands
+        ]
+
     if anchor_id is not None:
         anchor = by_id.get(anchor_id)
         if anchor is None:
             raise HTTPException(status_code=404, detail="Ankerstuk niet gevonden")
-        cands = candidates_for(anchor)
-        if not cands:
-            return None
-        return PairOut(
-            anchor=ItemOut.model_validate(anchor),
-            candidate=ItemOut.model_validate(cands[0]),
-            skipped=is_skipped(anchor, cands[0]),
-        )
+        return pairs_for(anchor, candidates_for(anchor))[:limit]
 
-    # No anchor: prefer the item with the most pairs the user has never seen,
-    # and only fall back to anchors that hold nothing but skipped pairs.
-    best_anchor = None
-    best_cands: list[Item] = []
-    best_key = (-1, -1)
+    # No anchor: work through the garments with the most unseen pairs first,
+    # falling back to anchors that hold nothing but skipped pairs.
+    ranked = []
     for anchor in items:
         cands = candidates_for(anchor)
-        if not cands:
-            continue
-        key = (unskipped_count(anchor, cands), len(cands))
-        if key > best_key:
-            best_anchor, best_cands, best_key = anchor, cands, key
-    if best_anchor is None or not best_cands:
-        return None
-    return PairOut(
-        anchor=ItemOut.model_validate(best_anchor),
-        candidate=ItemOut.model_validate(best_cands[0]),
-        skipped=is_skipped(best_anchor, best_cands[0]),
-    )
+        if cands:
+            ranked.append(((unskipped_count(anchor, cands), len(cands)), anchor, cands))
+    ranked.sort(key=lambda row: row[0], reverse=True)
+
+    queue: list[PairOut] = []
+    seen: set[frozenset[int]] = set()
+    for _key, anchor, cands in ranked:
+        for pair in pairs_for(anchor, cands):
+            # The same two garments rank under both of them; offer them once.
+            key = frozenset((pair.anchor.id, pair.candidate.id))
+            if key in seen:
+                continue
+            seen.add(key)
+            queue.append(pair)
+            if len(queue) >= limit:
+                return queue
+    return queue
+
+
+@router.get("/next", response_model=PairOut | None)
+def next_pair(
+    wardrobe_id: int,
+    anchor_id: int | None = None,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return the next pair for the current user to judge, within one wardrobe.
+
+    Pass ``anchor_id`` to keep swiping candidates for one garment. Omit it to
+    let the server pick the garment with the most work left. Pairs the user
+    skipped come last, so everything unseen is offered before anything they
+    already put off once.
+    """
+    queue = _pair_queue(db, wardrobe_id, user, anchor_id, limit=1)
+    return queue[0] if queue else None
+
+
+@router.get("/next/queue", response_model=list[PairOut])
+def next_pairs(
+    wardrobe_id: int,
+    anchor_id: int | None = None,
+    limit: int = 25,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """A stretch of the queue at once, so swiping survives a lost connection.
+
+    The app keeps these in hand and works through them locally; verdicts given
+    without a connection are queued by the service worker and replayed later.
+    Capped because the point is a pocketful of pairs, not the whole wardrobe.
+    """
+    return _pair_queue(db, wardrobe_id, user, anchor_id, limit=max(1, min(limit, 100)))
 
 
 @router.post("", status_code=204)

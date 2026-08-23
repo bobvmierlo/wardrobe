@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { api, photoUrl } from "../api";
+import { api, OfflineError, photoUrl } from "../api";
 import SwipeCard, { type SwipeCardHandle } from "../components/SwipeCard";
 import AppFooter from "../components/AppFooter";
 import JudgedPairList from "../components/JudgedPairList";
 import SuggestionList from "../components/SuggestionList";
 import ImageModal, { zoomPhoto, type ZoomPhoto } from "../components/ImageModal";
 import WardrobeSwitcher from "../components/WardrobeSwitcher";
+import { useOnline } from "../online";
+import { addPending, listPending, pairKey, settlePending, type PendingVerdict } from "../pending";
 import { useWardrobe } from "../wardrobe";
 import type { JudgedPair, OutfitSuggestion, Pair, Stats, Verdict } from "../types";
 
@@ -42,7 +44,9 @@ export default function Combine() {
   const initialAnchor = location.state?.anchorId;
   const { current } = useWardrobe();
 
-  const [pair, setPair] = useState<Pair | null>(null);
+  // A stretch of the queue, fetched ahead. The screen shows its head; having
+  // the rest in hand is what lets someone keep swiping through a tunnel.
+  const [queue, setQueue] = useState<Pair[]>([]);
   const [loading, setLoading] = useState(true);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +62,13 @@ export default function Combine() {
   // next to each other.
   const [zoom, setZoom] = useState<ZoomPhoto[] | null>(null);
   const [view, setView] = useState<CombineView>(storedView);
+  // Verdicts the service worker is holding until there is a connection again.
+  const [pending, setPending] = useState<PendingVerdict[]>([]);
+  const online = useOnline();
   const cardRef = useRef<SwipeCardHandle>(null);
+
+  const pair = queue[0] ?? null;
+  const pendingKeys = new Set(pending.map((p) => pairKey(p.a, p.b)));
 
   function chooseView(next: CombineView) {
     setView(next);
@@ -96,25 +106,50 @@ export default function Combine() {
     }
   }
 
-  async function loadNext(anchorId?: number) {
+  /** Fetch a fresh stretch of the queue, replacing whatever we were holding. */
+  async function loadQueue(anchorId?: number) {
     if (!current) return;
     setLoading(true);
     setError(null);
     try {
-      let next = await api.nextPair(current.id, anchorId);
+      let next = await api.pairQueue(current.id, anchorId);
       // Current anchor exhausted → let the server pick a fresh anchor.
-      if (!next && anchorId != null) next = await api.nextPair(current.id);
-      if (next) {
-        setPair(next);
-        setDone(false);
-      } else {
-        setPair(null);
-        setDone(true);
-      }
+      if (next.length === 0 && anchorId != null) next = await api.pairQueue(current.id);
+      // A pair judged while offline is still on the server's list until the
+      // queued verdict lands; do not offer it a second time.
+      const held = listPending(current.id).map((p) => pairKey(p.a, p.b));
+      const fresh = next.filter((p) => !held.includes(pairKey(p.anchor.id, p.candidate.id)));
+      setQueue(fresh);
+      setDone(fresh.length === 0);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Laden mislukt");
+      // Offline with pairs still in hand is not an error — that is the point.
+      if (e instanceof OfflineError) {
+        if (queue.length === 0) setError("Geen verbinding, en geen paren in voorraad.");
+      } else {
+        setError(e instanceof Error ? e.message : "Laden mislukt");
+      }
     } finally {
       setLoading(false);
+    }
+  }
+
+  /** Quietly extend the queue when it runs low, without moving the top card. */
+  async function topUp(anchorId?: number) {
+    if (!current || !online || queue.length > 5) return;
+    try {
+      const fresh = await api.pairQueue(current.id, anchorId);
+      setQueue((held) => {
+        const have = new Set(held.map((p) => pairKey(p.anchor.id, p.candidate.id)));
+        const extra = fresh.filter((p) => {
+          const key = pairKey(p.anchor.id, p.candidate.id);
+          return !have.has(key) && !pendingKeys.has(key);
+        });
+        const grown = [...held, ...extra];
+        if (grown.length > 0) setDone(false);
+        return grown;
+      });
+    } catch {
+      /* the queue in hand is what matters; topping up can wait */
     }
   }
 
@@ -122,19 +157,64 @@ export default function Combine() {
     if (!current) return;
     setLast(null);
     setLastAccepted(null);
+    setPending(listPending(current.id));
     refreshStats();
     refreshJudged();
     // Only honour the passed anchor on the wardrobe it came from.
-    loadNext(initialAnchor);
+    loadQueue(initialAnchor);
     // Load the system's own outfit ideas so they're ready to show alongside
     // (and after) the manual swiping.
     refreshSuggestions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.id]);
 
+  /** Send what was decided offline, now that there is a connection again.
+   *
+   * The service worker will replay these too — that is what carries them when
+   * the app is closed. But its replay waits for the browser to announce that
+   * connectivity returned, which does not happen when it was the *server* that
+   * was away. So with the app open we simply send them ourselves; the API
+   * stores one verdict per pair per person, so arriving twice changes nothing.
+   */
+  async function flushPending() {
+    if (!current) return;
+    for (const entry of listPending(current.id)) {
+      try {
+        if (entry.verdict === "skip") await api.skipPair(entry.a, entry.b);
+        else await api.submitVerdict(entry.a, entry.b, entry.verdict);
+      } catch {
+        return; // still nothing there; keep the rest for the next attempt
+      }
+      setPending(settlePending(current.id, new Set([pairKey(entry.a, entry.b)])));
+    }
+    try {
+      const landed = await api.judgedPairs(current.id);
+      setJudged(landed);
+      // Anything the service worker managed to replay on its own settles here.
+      setPending(
+        settlePending(current.id, new Set(landed.map((j) => pairKey(j.item_a.id, j.item_b.id))))
+      );
+      refreshStats();
+      refreshSuggestions();
+    } catch {
+      /* the sending is what mattered; the numbers can catch up later */
+    }
+  }
+
+  // Back online with decisions still in hand: send them.
+  useEffect(() => {
+    if (!online || !current || pending.length === 0) return;
+    const timer = window.setTimeout(flushPending, 1200);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online, current?.id, pending.length]);
+
   async function handleDecide(verdict: Verdict) {
-    if (!pair) return;
+    if (!pair || !current) return;
     const decided = pair;
+    // The card leaves the moment you swipe, connection or no connection.
+    setQueue((held) => held.slice(1));
+    setError(null);
     try {
       await api.submitVerdict(decided.anchor.id, decided.candidate.id, verdict);
       setLast({ pair: decided, verdict });
@@ -143,23 +223,49 @@ export default function Combine() {
       // A verdict can turn an outfit into a combination, which removes it from
       // the suggestions — so those are stale now.
       refreshSuggestions();
-      await loadNext(decided.anchor.id);
+      topUp(decided.anchor.id);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Opslaan mislukt");
+      if (e instanceof OfflineError) {
+        // Handed to the service worker; it will replay this when there is a
+        // connection, even if the app is closed by then. Undoing needs the
+        // server, so no undo bar until it has landed.
+        setPending(
+          addPending(current.id, {
+            a: decided.anchor.id,
+            b: decided.candidate.id,
+            verdict,
+          })
+        );
+        setLast(null);
+      } else {
+        setQueue((held) => [decided, ...held]); // put the card back
+        setError(e instanceof Error ? e.message : "Opslaan mislukt");
+      }
     }
   }
 
   /** Put the current pair aside: no verdict, it returns at the end of the queue. */
   async function handleSkip() {
-    if (!pair) return;
+    if (!pair || !current) return;
     const skipped = pair;
+    // Locally it goes to the back, which is what the server does with it too.
+    setQueue((held) => [...held.slice(1), { ...skipped, skipped: true }]);
+    setLast(null); // nothing was decided, so there is nothing to undo
     try {
       await api.skipPair(skipped.anchor.id, skipped.candidate.id);
-      setLast(null); // nothing was decided, so there is nothing to undo
       refreshStats();
-      await loadNext(skipped.anchor.id);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Overslaan mislukt");
+      if (e instanceof OfflineError) {
+        setPending(
+          addPending(current.id, {
+            a: skipped.anchor.id,
+            b: skipped.candidate.id,
+            verdict: "skip",
+          })
+        );
+      } else {
+        setError(e instanceof Error ? e.message : "Overslaan mislukt");
+      }
     }
   }
 
@@ -173,7 +279,7 @@ export default function Combine() {
       refreshStats();
       refreshJudged();
       refreshSuggestions();
-      await loadNext(p.anchor.id);
+      await loadQueue(p.anchor.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ongedaan maken mislukt");
     }
@@ -186,7 +292,7 @@ export default function Combine() {
     if (last && samePair(last.pair, judgedPair)) setLast(null);
     await Promise.all([refreshStats(), refreshJudged(), refreshSuggestions()]);
     // Nothing was left to swipe, but there is now.
-    if (!pair) await loadNext();
+    if (!pair) await loadQueue();
   }
 
   async function acceptSuggestion(suggestion: OutfitSuggestion) {
@@ -202,7 +308,7 @@ export default function Combine() {
       await api.undoSuggestion(lastAccepted.items.map((it) => it.id));
       setLastAccepted(null);
       await Promise.all([refreshStats(), refreshJudged(), refreshSuggestions()]);
-      if (!pair) await loadNext();
+      if (!pair) await loadQueue();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ongedaan maken mislukt");
     }
@@ -246,15 +352,31 @@ export default function Combine() {
 
         {error && <div className="error" style={{ width: "100%" }}>{error}</div>}
 
+        {pending.length > 0 && (
+          <div className="pending-bar" role="status">
+            <span aria-hidden="true">⏳</span>
+            <span>
+              {pending.length} {pending.length === 1 ? "oordeel wacht" : "oordelen wachten"} op
+              verbinding. {online ? "Ze worden nu verstuurd." : "Ze worden verstuurd zodra je weer online bent — ook als je de app sluit."}
+            </span>
+          </div>
+        )}
+
         {last && (
           <div className="undo-bar">
             <span>
               {last.pair.anchor.name} + {last.pair.candidate.name}:{" "}
               <strong>{last.verdict === "yes" ? "past bij elkaar" : "past niet"}</strong>
             </span>
-            <button className="btn-ghost btn-small" onClick={undoLast}>
-              ↩ Ongedaan maken
-            </button>
+            {online ? (
+              <button className="btn-ghost btn-small" onClick={undoLast}>
+                ↩ Ongedaan maken
+              </button>
+            ) : (
+              <span className="muted" style={{ fontSize: "0.75rem" }}>
+                Ongedaan maken kan pas weer online
+              </span>
+            )}
           </div>
         )}
 
@@ -263,7 +385,15 @@ export default function Combine() {
         ) : done || !pair ? (
           <div className="empty">
             <div className="big">🎉</div>
-            {stats && stats.item_count < 2 ? (
+            {!online ? (
+              <>
+                <p>Je hebt alle paren gehad die je in voorraad had.</p>
+                <p className="muted">
+                  Zodra je weer verbinding hebt, haalt de app nieuwe paren op — en worden je
+                  oordelen verstuurd.
+                </p>
+              </>
+            ) : stats && stats.item_count < 2 ? (
               <>
                 <p>Voeg minstens 2 kledingstukken toe om te kunnen combineren.</p>
               </>
