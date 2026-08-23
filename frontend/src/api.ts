@@ -1,3 +1,4 @@
+import { reportOffline } from "./online";
 import type {
   AuditPage,
   BackupPreview,
@@ -43,12 +44,33 @@ class ApiError extends Error {
   }
 }
 
+/** The request never reached the server — no connection, or it is down.
+ *
+ * Kept apart from :class:`ApiError` on purpose. "The server says no" and "the
+ * server said nothing" call for opposite reactions: a 401 means the session is
+ * really gone, while a failed connection means try again later — and used to
+ * cost people their login the first time they opened the app on the train.
+ */
+class OfflineError extends Error {
+  constructor(message = "Geen verbinding met de server") {
+    super(message);
+  }
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   const token = getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
-  const res = await fetch(path, { ...options, headers });
+  let res: Response;
+  try {
+    res = await fetch(path, { ...options, headers });
+  } catch {
+    // fetch only rejects when the request never completed: offline, DNS
+    // failure, the server refusing the connection. Never a status code.
+    reportOffline();
+    throw new OfflineError();
+  }
   if (res.status === 401) {
     setToken(null);
     // Force a re-login on session expiry — except on the endpoints that are
@@ -84,7 +106,13 @@ async function download(path: string, fallbackName: string): Promise<void> {
   const token = getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
-  const res = await fetch(path, { headers });
+  let res: Response;
+  try {
+    res = await fetch(path, { headers });
+  } catch {
+    reportOffline();
+    throw new OfflineError("Downloaden lukt niet zonder verbinding");
+  }
   if (!res.ok) {
     let detail = `Downloaden mislukt (${res.status})`;
     try {
@@ -291,6 +319,11 @@ export const api = {
     request<OutfitSuggestion[]>(`/api/matches/suggestions?wardrobe_id=${wardrobeId}`),
   suggestionsFor: (itemId: number) =>
     request<OutfitSuggestion[]>(`/api/matches/suggestions/${itemId}`),
+  pairQueue: (wardrobeId: number, anchorId?: number, limit = 25) =>
+    request<Pair[]>(
+      `/api/matches/next/queue?wardrobe_id=${wardrobeId}&limit=${limit}` +
+        (anchorId != null ? `&anchor_id=${anchorId}` : "")
+    ),
   stats: (wardrobeId: number) =>
     request<Stats>(`/api/matches/stats?wardrobe_id=${wardrobeId}`),
 
@@ -346,4 +379,4 @@ export function photoUrl(item: Item, thumb = false): string | null {
   return name ? `/uploads/${name}` : null;
 }
 
-export { ApiError };
+export { ApiError, OfflineError };
