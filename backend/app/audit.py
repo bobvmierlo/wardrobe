@@ -48,6 +48,10 @@ ACTION_LABELS: dict[str, str] = {
     "size.delete": "Maat verwijderd",
     "color_rule.create": "Kleurregel toegevoegd",
     "color_rule.delete": "Kleurregel verwijderd",
+    "backup.export": "Kast geëxporteerd",
+    "backup.export_full": "Volledige back-up gemaakt",
+    "backup.snapshot": "Momentopname gedownload",
+    "backup.restore": "Back-up teruggezet",
 }
 
 

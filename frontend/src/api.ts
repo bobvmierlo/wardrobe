@@ -1,5 +1,6 @@
 import type {
   AuditPage,
+  BackupPreview,
   Category,
   ColorLogic,
   ColorRule,
@@ -13,6 +14,8 @@ import type {
   OutfitSuggestion,
   Pair,
   RejectedPartner,
+  RestoreResult,
+  RestoreTarget,
   ScrapeResult,
   SizeOption,
   Stats,
@@ -67,6 +70,44 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
+}
+
+
+/** Download a file the API guards with a bearer token.
+ *
+ * A plain link cannot carry the Authorization header, so the response is
+ * fetched, turned into a blob and handed to a throwaway <a download>. The
+ * filename comes from Content-Disposition, which is what the server chose.
+ */
+async function download(path: string, fallbackName: string): Promise<void> {
+  const headers = new Headers();
+  const token = getToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+
+  const res = await fetch(path, { headers });
+  if (!res.ok) {
+    let detail = `Downloaden mislukt (${res.status})`;
+    try {
+      const body = await res.json();
+      if (body?.detail) detail = String(body.detail);
+    } catch {
+      /* a non-JSON error body tells us nothing extra */
+    }
+    throw new ApiError(res.status, detail);
+  }
+
+  const disposition = res.headers.get("Content-Disposition") || "";
+  const match = /filename="?([^";]+)"?/.exec(disposition);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = match ? match[1] : fallbackName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  // Revoking immediately can cut the download short in Safari.
+  window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
 export const api = {
@@ -276,6 +317,25 @@ export const api = {
 
   // ---- webshop import ----
   scrape: (url: string) => request<ScrapeResult>(`/api/import/scrape?url=${encodeURIComponent(url)}`),
+
+  // ---- back-up, export and restore ----
+  exportWardrobe: (wardrobeId: number) =>
+    download(`/api/backup/wardrobe/${wardrobeId}`, "kledingkast-export.zip"),
+  exportEverything: () => download("/api/backup/instance", "kledingkast-volledig.zip"),
+  exportSnapshot: () => download("/api/backup/snapshot", "kledingkast-momentopname.zip"),
+  restoreTargets: () => request<RestoreTarget[]>("/api/backup/wardrobes"),
+  inspectBackup: (file: File) => {
+    const body = new FormData();
+    body.set("file", file);
+    return request<BackupPreview>("/api/backup/inspect", { method: "POST", body });
+  },
+  restoreBackup: (file: File, wardrobeId: number, mode: "merge" | "replace") => {
+    const body = new FormData();
+    body.set("file", file);
+    body.set("wardrobe_id", String(wardrobeId));
+    body.set("mode", mode);
+    return request<RestoreResult>("/api/backup/restore", { method: "POST", body });
+  },
 
   // ---- app version (from backend/app/_version.py) ----
   version: () => request<{ version: string }>("/api/version"),

@@ -870,3 +870,36 @@ label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0 0 6px
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .rejected-by { font-size: 0.78rem; color: var(--no); margin-top: 2px; }
+
+/* ---- back-up & export ----
+   A card that does three different jobs (download, download-for-admins,
+   restore), so the sections are separated by a rule instead of running
+   together as one wall of buttons. */
+.rule {
+  border: none; border-top: 1px solid var(--border);
+  margin: 16px 0 14px;
+}
+.backup-heading {
+  margin: 0 0 8px; font-size: 0.78rem; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.backup-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Side by side where the labels fit; stacked on a phone, where splitting
+   "Volledige back-up" over two lines looks like two broken buttons. */
+.backup-actions .btn-ghost { flex: 1 1 100%; }
+@media (min-width: 560px) {
+  .backup-actions .btn-ghost { flex: 1 1 46%; }
+}
+.backup-hint { font-size: 0.8rem; margin: 8px 0 0; }
+.backup-label {
+  display: block; margin: 14px 0 6px; font-size: 0.8rem; color: var(--muted);
+}
+.backup-preview {
+  margin-top: 12px; padding: 12px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px;
+}
+.backup-counts {
+  list-style: none; margin: 10px 0 0; padding: 0;
+  display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.85rem;
+}
+.backup-counts strong { color: var(--primary); }

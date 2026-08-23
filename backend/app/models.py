@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
@@ -94,8 +95,19 @@ class Brand(Base):
 
 class Item(Base):
     __tablename__ = "items"
+    # Unique per kast rather than globally: restoring someone's export into a
+    # second kast has to be able to sit next to the original, and "this garment
+    # in this kast" is what the uid actually identifies.
+    __table_args__ = (UniqueConstraint("wardrobe_id", "uid", name="uq_item_wardrobe_uid"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    #: Stable identity that survives an export/import round trip. The numeric
+    #: id means nothing once a backup lands in another installation, so every
+    #: garment carries a UUID that travels with it: re-importing the same file
+    #: updates the garment instead of duplicating it.
+    uid: Mapped[str] = mapped_column(
+        String(32), index=True, default=lambda: uuid.uuid4().hex
+    )
     name: Mapped[str] = mapped_column(String(120))
     category: Mapped[str] = mapped_column(String(60), index=True)
     brand_id: Mapped[int | None] = mapped_column(

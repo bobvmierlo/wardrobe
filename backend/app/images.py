@@ -47,6 +47,16 @@ def _store_bytes(raw: bytes) -> tuple[str, str]:
     return photo_name, thumb_name
 
 
+def store_image_bytes(raw: bytes) -> tuple[str, str]:
+    """Store raw image bytes, returning (photo_filename, thumb_filename).
+
+    Used when a photo arrives from inside a backup archive rather than from a
+    browser upload. It goes through the same processing as any upload, which
+    doubles as validation: bytes that are not a real image never reach disk.
+    """
+    return _store_bytes(raw)
+
+
 def save_upload(file: UploadFile) -> tuple[str, str]:
     """Store an uploaded image, returning (photo_filename, thumb_filename)."""
     return _store_bytes(file.file.read())
