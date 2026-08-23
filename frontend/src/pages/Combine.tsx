@@ -5,10 +5,24 @@ import SwipeCard, { type SwipeCardHandle } from "../components/SwipeCard";
 import AppFooter from "../components/AppFooter";
 import JudgedPairList from "../components/JudgedPairList";
 import SuggestionList from "../components/SuggestionList";
-import ImageModal from "../components/ImageModal";
+import ImageModal, { zoomPhoto, type ZoomPhoto } from "../components/ImageModal";
 import WardrobeSwitcher from "../components/WardrobeSwitcher";
 import { useWardrobe } from "../wardrobe";
 import type { JudgedPair, OutfitSuggestion, Pair, Stats, Verdict } from "../types";
+
+/** How the pair is shown: one card at a time, or both photos at equal size. */
+type CombineView = "deck" | "side";
+
+const VIEW_KEY = "wardrobe.combine.view";
+
+/** The view chosen last time — comparing is a habit, not a per-pair decision. */
+function storedView(): CombineView {
+  try {
+    return localStorage.getItem(VIEW_KEY) === "side" ? "side" : "deck";
+  } catch {
+    return "deck";
+  }
+}
 
 /** The pair the user last decided on, so a mistake can be taken back at once. */
 interface LastDecision {
@@ -40,8 +54,20 @@ export default function Combine() {
   // The outfit just adopted from the suggestions, so it can be confirmed and
   // taken back — it vanishes from the list the moment it becomes a combination.
   const [lastAccepted, setLastAccepted] = useState<OutfitSuggestion | null>(null);
-  const [zoom, setZoom] = useState<string | null>(null);
+  // The photos currently blown up full screen: one garment, or both of them
+  // next to each other.
+  const [zoom, setZoom] = useState<ZoomPhoto[] | null>(null);
+  const [view, setView] = useState<CombineView>(storedView);
   const cardRef = useRef<SwipeCardHandle>(null);
+
+  function chooseView(next: CombineView) {
+    setView(next);
+    try {
+      localStorage.setItem(VIEW_KEY, next);
+    } catch {
+      /* private mode: the choice just does not outlive this visit */
+    }
+  }
 
   async function refreshStats() {
     if (!current) return;
@@ -182,8 +208,18 @@ export default function Combine() {
     }
   }
 
+  /** Blow both garments up to the same size, next to each other — colours are
+   *  impossible to judge honestly while one of the two is a 54px thumbnail. */
+  function openCompare() {
+    if (!pair) return;
+    setZoom([zoomPhoto(pair.anchor, "Past dit bij"), zoomPhoto(pair.candidate, "Combineert dit?")]);
+  }
+
   const anchor = pair?.anchor;
   const anchorSrc = anchor ? photoUrl(anchor, true) : null;
+  // The side-by-side panel is as big as the swipe card, so it needs the full
+  // photo rather than the 400px thumbnail.
+  const anchorPhoto = anchor ? photoUrl(anchor) ?? anchorSrc : null;
   const pct = stats && stats.total_pairs > 0 ? Math.round((stats.judged_by_me / stats.total_pairs) * 100) : 0;
 
   return (
@@ -240,31 +276,103 @@ export default function Combine() {
           </div>
         ) : (
           <>
-            <div className="anchor-band">
-              {anchorSrc ? (
+            <div className="view-toggle">
+              <span className="muted">Weergave</span>
+              <div className="seg seg-inline">
                 <button
-                  type="button"
-                  className="anchor-thumb"
-                  onClick={() => setZoom(photoUrl(anchor!) || anchorSrc)}
-                  aria-label={`Vergroot foto van ${anchor!.name}`}
+                  className={`seg-btn ${view === "deck" ? "active" : ""}`}
+                  onClick={() => chooseView("deck")}
+                  aria-pressed={view === "deck"}
                 >
-                  <img src={anchorSrc} alt={anchor!.name} width={54} height={54} decoding="async" />
-                  <span className="zoom-badge" aria-hidden="true">⤢</span>
+                  Eén kaart
                 </button>
-              ) : (
-                <div className="noimg-sm">👕</div>
-              )}
-              <div>
-                <div className="muted" style={{ fontSize: "0.75rem" }}>Past dit bij…</div>
-                <div style={{ fontWeight: 700 }}>{anchor!.name}</div>
-                <div className="muted" style={{ fontSize: "0.8rem" }}>{anchor!.category}</div>
+                <button
+                  className={`seg-btn ${view === "side" ? "active" : ""}`}
+                  onClick={() => chooseView("side")}
+                  aria-pressed={view === "side"}
+                >
+                  ⇄ Naast elkaar
+                </button>
               </div>
-              {pair.skipped && <span className="pill skipped">⏭ Eerder overgeslagen</span>}
             </div>
 
-            <div className="deck">
-              <SwipeCard key={pair.candidate.id} ref={cardRef} item={pair.candidate} onDecide={handleDecide} />
-            </div>
+            {view === "side" ? (
+              <>
+                {pair.skipped && <span className="pill skipped">⏭ Eerder overgeslagen</span>}
+                <div className="combine-side">
+                  <button
+                    type="button"
+                    className="compare-panel"
+                    onClick={openCompare}
+                    aria-label={`Bekijk ${anchor!.name} en ${pair.candidate.name} groot naast elkaar`}
+                    title="Groot bekijken"
+                  >
+                    <span className="panel-photo">
+                      {anchorPhoto ? (
+                        <img src={anchorPhoto} alt={anchor!.name} decoding="async" />
+                      ) : (
+                        <span className="noimg-lg">👕</span>
+                      )}
+                      <span className="lbl">Past dit bij</span>
+                      <span className="zoom-badge" aria-hidden="true">⤢</span>
+                    </span>
+                    <span className="panel-cap">
+                      <span className="name">{anchor!.name}</span>
+                      <span className="sub">
+                        {anchor!.category}
+                        {anchor!.brand ? ` · ${anchor!.brand}` : ""}
+                        {anchor!.color ? ` · ${anchor!.color}` : ""}
+                      </span>
+                    </span>
+                  </button>
+
+                  <div className="deck">
+                    <SwipeCard
+                      key={pair.candidate.id}
+                      ref={cardRef}
+                      item={pair.candidate}
+                      onDecide={handleDecide}
+                      onZoom={openCompare}
+                    />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="anchor-band">
+                  {anchorSrc ? (
+                    <button
+                      type="button"
+                      className="anchor-thumb"
+                      onClick={openCompare}
+                      aria-label={`Bekijk ${anchor!.name} en ${pair.candidate.name} groot naast elkaar`}
+                      title="Naast elkaar bekijken"
+                    >
+                      <img src={anchorSrc} alt={anchor!.name} width={54} height={54} decoding="async" />
+                      <span className="zoom-badge" aria-hidden="true">⤢</span>
+                    </button>
+                  ) : (
+                    <div className="noimg-sm">👕</div>
+                  )}
+                  <div>
+                    <div className="muted" style={{ fontSize: "0.75rem" }}>Past dit bij…</div>
+                    <div style={{ fontWeight: 700 }}>{anchor!.name}</div>
+                    <div className="muted" style={{ fontSize: "0.8rem" }}>{anchor!.category}</div>
+                  </div>
+                  {pair.skipped && <span className="pill skipped">⏭ Eerder overgeslagen</span>}
+                </div>
+
+                <div className="deck">
+                  <SwipeCard
+                    key={pair.candidate.id}
+                    ref={cardRef}
+                    item={pair.candidate}
+                    onDecide={handleDecide}
+                    onZoom={openCompare}
+                  />
+                </div>
+              </>
+            )}
 
             <div className="swipe-actions">
               <button className="circle-btn no" onClick={() => cardRef.current?.swipe("no")} aria-label="Combineert niet">
@@ -280,6 +388,9 @@ export default function Combine() {
             <p className="muted center" style={{ fontSize: "0.8rem" }}>
               Swipe naar rechts als het combineert, naar links als het niet past.
               Twijfel je? Sla over — dit paar komt achteraan de rij weer terug.
+              {view === "side"
+                ? " Tik op een foto om beide schermvullend naast elkaar te zetten."
+                : " Tik op ⤢ om beide stukken even groot naast elkaar te zien."}
             </p>
           </>
         )}
@@ -338,7 +449,48 @@ export default function Combine() {
         <AppFooter />
       </div>
 
-      {zoom && <ImageModal src={zoom} alt="Kledingstuk" onClose={() => setZoom(null)} />}
+      {zoom && (
+        <ImageModal
+          photos={zoom}
+          onClose={() => setZoom(null)}
+          actions={
+            pair && zoom.length > 1 ? (
+              <>
+                <button
+                  className="circle-btn no"
+                  onClick={() => {
+                    setZoom(null);
+                    handleDecide("no");
+                  }}
+                  aria-label="Combineert niet"
+                >
+                  ✕
+                </button>
+                <button
+                  className="circle-btn skip"
+                  onClick={() => {
+                    setZoom(null);
+                    handleSkip();
+                  }}
+                  aria-label="Sla dit paar over"
+                >
+                  ⏭
+                </button>
+                <button
+                  className="circle-btn yes"
+                  onClick={() => {
+                    setZoom(null);
+                    handleDecide("yes");
+                  }}
+                  aria-label="Combineert goed"
+                >
+                  ♥
+                </button>
+              </>
+            ) : undefined
+          }
+        />
+      )}
     </>
   );
 }

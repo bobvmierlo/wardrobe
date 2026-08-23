@@ -9,9 +9,15 @@ welke stukken bij elkaar passen — via een **Tinder-achtige swipe**.
 - 💞 **Combineren** – swipe per kledingstuk of het bij een ander past. Rechts = past,
   links = past niet, en **overslaan** als je er nog niet uit bent (dat paar komt
   achteraan de rij weer terug). Vergist? Elke beoordeling is **ongedaan te maken**.
+- ⇄ **Naast elkaar vergelijken** – zet beide stukken even groot naast elkaar in
+  plaats van één grote kaart met een klein duimnageltje ernaast. Die keuze onthoudt
+  de app. Eén tik op ⤢ (of op een foto) zet ze schermvullend naast elkaar — daar
+  kun je meteen ✕, ⏭ of ♥ kiezen, en wisselen tussen naast en onder elkaar.
 - ✨ **Outfits** – bekijk per stuk alle goedgekeurde combinaties, met wie ze goedkeurde.
   Suggesties van het systeem kun je in één tik **opslaan als combinatie**. Op een
-  kledingstuk zie je ook wat er juist **niet** bij past, en wie dat vond.
+  kledingstuk zie je ook wat er juist **niet** bij past, en wie dat vond. Elke foto
+  is met ⤢ **groot te bekijken** — een suggestie opent als hele outfit, een
+  goedgekeurde combinatie naast het gekozen stuk.
 - 🚪 **Eigen kast per gebruiker** – iedereen heeft z'n eigen kledingkast.
 - 🤝 **Delen** – nodig iemand uit voor je kast als **bewerker** (mag alles aanpassen)
   of **kijker** (alleen inzage, maar mag wél meestemmen op combinaties). Heeft diegene

@@ -199,7 +199,7 @@ export default function ItemDetail() {
               {partners.length === 0 ? (
                 <p className="muted">Nog geen goedgekeurde combinaties. Ga naar Combineer om te swipen.</p>
               ) : (
-                <PartnerGrid partners={partners} onUndo={undoCombination} />
+                <PartnerGrid partners={partners} anchor={item} onUndo={undoCombination} />
               )}
             </div>
 
