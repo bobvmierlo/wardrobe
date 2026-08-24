@@ -7,7 +7,7 @@ from .. import audit
 from ..access import require_view
 from ..database import get_db
 from ..deps import get_current_user
-from ..matching import can_combine, is_cross_group, seasons_compatible
+from ..matching import can_combine, is_cross_group, is_upper, seasons_compatible
 from ..models import Item, Match, MatchSkip, User, as_utc, utcnow
 from ..routers.color_rules import load_pairs
 from ..schemas import (
@@ -138,41 +138,52 @@ def _pair_queue(
     def unskipped_count(anchor: Item, cands: list[Item]) -> int:
         return sum(1 for c in cands if not is_skipped(anchor, c))
 
-    def pairs_for(anchor: Item, cands: list[Item]) -> list[PairOut]:
-        return [
-            PairOut(
-                anchor=ItemOut.model_validate(anchor),
-                candidate=ItemOut.model_validate(c),
-                skipped=is_skipped(anchor, c),
-            )
-            for c in cands
-        ]
+    def as_pair(anchor: Item, candidate: Item) -> PairOut:
+        """One pair, always the same way round: bovenstuk first, onderstuk second.
+
+        Which of the two drove the queue is a detail of *finding* the pair; the
+        screen shows the bovenstuk on the left and the onderstuk on the right,
+        every single time. Anchoring on a broek therefore puts that broek on the
+        right — the garment stays the same, only the side is fixed. Because the
+        order is decided here rather than by which item happened to be the
+        anchor, the same two garments can never come by twice with the sides
+        swapped. ``can_combine`` guarantees exactly one of the two is upper wear.
+        """
+        top, bottom = (
+            (anchor, candidate) if is_upper(anchor.category) else (candidate, anchor)
+        )
+        return PairOut(
+            anchor=ItemOut.model_validate(top),
+            candidate=ItemOut.model_validate(bottom),
+            skipped=is_skipped(anchor, candidate),
+        )
 
     if anchor_id is not None:
         anchor = by_id.get(anchor_id)
         if anchor is None:
             raise HTTPException(status_code=404, detail="Ankerstuk niet gevonden")
-        return pairs_for(anchor, candidates_for(anchor))[:limit]
-
-    # No anchor: work through the garments with the most unseen pairs first,
-    # falling back to anchors that hold nothing but skipped pairs.
-    ranked = []
-    for anchor in items:
-        cands = candidates_for(anchor)
-        if cands:
-            ranked.append(((unskipped_count(anchor, cands), len(cands)), anchor, cands))
-    ranked.sort(key=lambda row: row[0], reverse=True)
+        ranked = [(anchor, candidates_for(anchor))]
+    else:
+        # No anchor: work through the garments with the most unseen pairs first,
+        # falling back to anchors that hold nothing but skipped pairs.
+        scored = []
+        for anchor in items:
+            cands = candidates_for(anchor)
+            if cands:
+                scored.append(((unskipped_count(anchor, cands), len(cands)), anchor, cands))
+        scored.sort(key=lambda row: row[0], reverse=True)
+        ranked = [(anchor, cands) for _key, anchor, cands in scored]
 
     queue: list[PairOut] = []
     seen: set[frozenset[int]] = set()
-    for _key, anchor, cands in ranked:
-        for pair in pairs_for(anchor, cands):
+    for anchor, cands in ranked:
+        for candidate in cands:
             # The same two garments rank under both of them; offer them once.
-            key = frozenset((pair.anchor.id, pair.candidate.id))
+            key = frozenset((anchor.id, candidate.id))
             if key in seen:
                 continue
             seen.add(key)
-            queue.append(pair)
+            queue.append(as_pair(anchor, candidate))
             if len(queue) >= limit:
                 return queue
     return queue

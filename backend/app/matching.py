@@ -34,6 +34,16 @@ def is_cross_group(cat_a: str, cat_b: str) -> bool:
 _UPPER_GROUPS: set[str] = {"top", "outerwear"}
 
 
+def is_upper(category: str) -> bool:
+    """Whether this is bovenkleding: a top, or a jacket/blazer."""
+    return group_of(category) in _UPPER_GROUPS
+
+
+def is_bottom(category: str) -> bool:
+    """Whether this is een onderstuk: broek, jeans, rok, ..."""
+    return group_of(category) == "bottom"
+
+
 def can_combine(cat_a: str, cat_b: str) -> bool:
     """Whether two garments may be offered as a pair on the swipe screen.
 
@@ -43,8 +53,7 @@ def can_combine(cat_a: str, cat_b: str) -> bool:
     wear. This rules out polo-with-polo, broek-with-broek, jacket-with-top and
     everything else (shoes, accessories, ...).
     """
-    ga, gb = group_of(cat_a), group_of(cat_b)
-    return (ga in _UPPER_GROUPS and gb == "bottom") or (gb in _UPPER_GROUPS and ga == "bottom")
+    return (is_upper(cat_a) and is_bottom(cat_b)) or (is_upper(cat_b) and is_bottom(cat_a))
 
 
 _ALL_SEASONS = "alle seizoenen"
