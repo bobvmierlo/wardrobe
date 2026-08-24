@@ -358,8 +358,14 @@ gebruikt is kun je 'm altijd **intrekken**.
   ontbrekende combinatie te verklaren in plaats van onzichtbaar. Afgekeurde
   paren blijven bewust weg bij Outfits: dat scherm gaat over wat wél kan.
   Je kunt alleen je **eigen** "nee" intrekken — die van een ander is niet aan jou.
-- De swipe toont eerst **cross-categorie**-paren (bv. polo × broek) omdat die
-  het nuttigst zijn; twee stukken uit dezelfde groep komen later.
+- De swipe legt alleen **bovenkleding naast een onderstuk** (bv. polo × broek):
+  twee broeken of een polo met een trui zijn geen outfit, dus die komen niet
+  langs.
+- Een paar staat er altijd hetzelfde bij: het **bovenstuk links** (in de
+  weergave "Eén kaart": bovenaan) en het **onderstuk rechts**, ook als je vanaf
+  een broek bent gaan combineren — dan staat die broek rechts. Vergelijken gaat
+  makkelijker als de kanten niet wisselen, en dezelfde combinatie kan zo nooit
+  een tweede keer langskomen met de kanten omgedraaid.
 
 ### Suggesties opslaan als combinatie
 

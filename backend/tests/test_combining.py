@@ -279,3 +279,59 @@ def test_the_rejected_list_respects_wardrobe_access(client):
     outsider, _, _ = setup_wardrobe(client, ("Losse jas", "Jas", "grijs"))
     assert client.get(f"/api/matches/rejected/{top}", headers=h(outsider)).status_code == 403
     assert client.get("/api/matches/rejected/999999", headers=h(token)).status_code == 404
+
+
+def pair_queue(client, token, wardrobe_id, anchor_id=None):
+    params = {"wardrobe_id": wardrobe_id}
+    if anchor_id is not None:
+        params["anchor_id"] = anchor_id
+    r = client.get("/api/matches/next/queue", headers=h(token), params=params)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_the_pair_is_always_bovenstuk_left_and_onderstuk_right(client):
+    """Left and right never swap, whichever garment the queue is anchored on."""
+    token, wid, (polo, trui, broek, rok) = setup_wardrobe(
+        client,
+        ("Polo", "Polo", "wit"),
+        ("Trui", "Trui", "grijs"),
+        ("Broek", "Broek", "navy"),
+        ("Rok", "Rok", "zwart"),
+    )
+    uppers, bottoms = {polo, trui}, {broek, rok}
+
+    for anchor in (None, polo, broek):
+        queue = pair_queue(client, token, wid, anchor)
+        assert queue, f"geen paren voor anker {anchor}"
+        for p in queue:
+            assert p["anchor"]["id"] in uppers, p
+            assert p["candidate"]["id"] in bottoms, p
+        if anchor is not None:
+            # Anchoring on a broek keeps that broek in every pair — on the right.
+            assert all(anchor in (p["anchor"]["id"], p["candidate"]["id"]) for p in queue)
+
+
+def test_a_combination_is_never_offered_twice_the_other_way_round(client):
+    token, wid, _ids = setup_wardrobe(
+        client,
+        ("Polo", "Polo", "wit"),
+        ("Overhemd", "Overhemd", "blauw"),
+        ("Broek", "Broek", "navy"),
+        ("Jeans", "Jeans", "denim"),
+    )
+    queue = pair_queue(client, token, wid)
+    # Two tops with two bottoms is four combinations, each offered once.
+    assert len(queue) == 4
+    keys = [frozenset((p["anchor"]["id"], p["candidate"]["id"])) for p in queue]
+    assert len(set(keys)) == len(keys)
+
+
+def test_the_next_pair_of_a_bottom_anchor_puts_the_bottom_on_the_right(client):
+    token, wid, (broek, trui) = setup_wardrobe(
+        client, ("Broek", "Broek", "navy"), ("Trui", "Trui", "grijs")
+    )
+    p = next_pair(client, token, wid, broek)
+    assert p is not None
+    assert p["anchor"]["id"] == trui
+    assert p["candidate"]["id"] == broek

@@ -140,8 +140,12 @@ export interface OutfitSuggestion {
   already_combined: boolean;
 }
 
+/** Two garments to judge. Always the same way round, whichever garment the
+ *  queue was anchored on: the bovenstuk left, the onderstuk right. */
 export interface Pair {
+  /** The bovenstuk: shown on the left. */
   anchor: Item;
+  /** The onderstuk: the card being swiped, on the right. */
   candidate: Item;
   /** True when this pair was skipped earlier and has come back around. */
   skipped: boolean;

@@ -62,6 +62,10 @@ export default function Combine() {
   // next to each other.
   const [zoom, setZoom] = useState<ZoomPhoto[] | null>(null);
   const [view, setView] = useState<CombineView>(storedView);
+  // The garment the queue is anchored on, when one was asked for. The pairs
+  // themselves no longer say which garment that was — they always come back
+  // bovenstuk-first — so topping up and reloading go by this.
+  const [queueAnchor, setQueueAnchor] = useState<number | undefined>(initialAnchor);
   // Verdicts the service worker is holding until there is a connection again.
   const [pending, setPending] = useState<PendingVerdict[]>([]);
   const online = useOnline();
@@ -113,12 +117,24 @@ export default function Combine() {
     setError(null);
     try {
       let next = await api.pairQueue(current.id, anchorId);
+      let used = anchorId;
       // Current anchor exhausted → let the server pick a fresh anchor.
-      if (next.length === 0 && anchorId != null) next = await api.pairQueue(current.id);
+      if (next.length === 0 && anchorId != null) {
+        next = await api.pairQueue(current.id);
+        used = undefined;
+      }
+      setQueueAnchor(used);
       // A pair judged while offline is still on the server's list until the
-      // queued verdict lands; do not offer it a second time.
-      const held = listPending(current.id).map((p) => pairKey(p.a, p.b));
-      const fresh = next.filter((p) => !held.includes(pairKey(p.anchor.id, p.candidate.id)));
+      // queued verdict lands; do not offer it a second time. And however the
+      // queue was put together, one combination is worth judging once: never
+      // hold the same two garments twice, in whichever order they arrive.
+      const held = new Set(listPending(current.id).map((p) => pairKey(p.a, p.b)));
+      const fresh = next.filter((p) => {
+        const key = pairKey(p.anchor.id, p.candidate.id);
+        if (held.has(key)) return false;
+        held.add(key);
+        return true;
+      });
       setQueue(fresh);
       setDone(fresh.length === 0);
     } catch (e) {
@@ -134,10 +150,10 @@ export default function Combine() {
   }
 
   /** Quietly extend the queue when it runs low, without moving the top card. */
-  async function topUp(anchorId?: number) {
+  async function topUp(fallbackAnchor?: number) {
     if (!current || !online || queue.length > 5) return;
     try {
-      const fresh = await api.pairQueue(current.id, anchorId);
+      const fresh = await api.pairQueue(current.id, queueAnchor ?? fallbackAnchor);
       setQueue((held) => {
         const have = new Set(held.map((p) => pairKey(p.anchor.id, p.candidate.id)));
         const extra = fresh.filter((p) => {
@@ -279,7 +295,7 @@ export default function Combine() {
       refreshStats();
       refreshJudged();
       refreshSuggestions();
-      await loadQueue(p.anchor.id);
+      await loadQueue(queueAnchor ?? p.anchor.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ongedaan maken mislukt");
     }
@@ -318,7 +334,7 @@ export default function Combine() {
    *  impossible to judge honestly while one of the two is a 54px thumbnail. */
   function openCompare() {
     if (!pair) return;
-    setZoom([zoomPhoto(pair.anchor, "Past dit bij"), zoomPhoto(pair.candidate, "Combineert dit?")]);
+    setZoom([zoomPhoto(pair.anchor, "Bovenstuk"), zoomPhoto(pair.candidate, "Onderstuk")]);
   }
 
   const anchor = pair?.anchor;
@@ -443,7 +459,7 @@ export default function Combine() {
                       ) : (
                         <span className="noimg-lg">👕</span>
                       )}
-                      <span className="lbl">Past dit bij</span>
+                      <span className="lbl">Bovenstuk</span>
                       <span className="zoom-badge" aria-hidden="true">⤢</span>
                     </span>
                     <span className="panel-cap">
@@ -485,7 +501,7 @@ export default function Combine() {
                     <div className="noimg-sm">👕</div>
                   )}
                   <div>
-                    <div className="muted" style={{ fontSize: "0.75rem" }}>Past dit bij…</div>
+                    <div className="muted" style={{ fontSize: "0.75rem" }}>Bovenstuk</div>
                     <div style={{ fontWeight: 700 }}>{anchor!.name}</div>
                     <div className="muted" style={{ fontSize: "0.8rem" }}>{anchor!.category}</div>
                   </div>
@@ -516,6 +532,9 @@ export default function Combine() {
               </button>
             </div>
             <p className="muted center" style={{ fontSize: "0.8rem" }}>
+              {view === "side"
+                ? "Links staat altijd het bovenstuk, rechts het onderstuk. "
+                : "Bovenaan staat altijd het bovenstuk, op de kaart het onderstuk. "}
               Swipe naar rechts als het combineert, naar links als het niet past.
               Twijfel je? Sla over — dit paar komt achteraan de rij weer terug.
               {view === "side"

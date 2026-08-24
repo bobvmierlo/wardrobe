@@ -169,7 +169,14 @@ class MatchCreate(BaseModel):
 
 
 class PairOut(BaseModel):
-    """A pair of items presented for judging in the swipe screen."""
+    """A pair of items presented for judging in the swipe screen.
+
+    Always the same way round: ``anchor`` is the bovenstuk (shown on the left)
+    and ``candidate`` the onderstuk (the card being swiped, on the right), no
+    matter which of the two the queue was anchored on. Comparing is easier when
+    the sides never move, and it means the same two garments cannot show up a
+    second time with the sides swapped.
+    """
     anchor: ItemOut
     candidate: ItemOut
     # True when this pair was skipped earlier and has come back around.
