@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import ItemForm from "../components/ItemForm";
+import BottomNav from "../components/BottomNav";
 import AppFooter from "../components/AppFooter";
 import { useWardrobe } from "../wardrobe";
 
@@ -35,6 +36,7 @@ export default function AddItem() {
         )}
         <AppFooter />
       </div>
+      <BottomNav desktopOnly />
     </div>
   );
 }

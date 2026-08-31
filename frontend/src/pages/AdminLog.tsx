@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import AppFooter from "../components/AppFooter";
+import BottomNav from "../components/BottomNav";
 import type { AuditEntry, AuditPage, LogEntry, User } from "../types";
 
 type Tab = "audit" | "system";
@@ -252,6 +253,7 @@ export default function AdminLog() {
 
         <AppFooter />
       </div>
+      <BottomNav desktopOnly />
     </div>
   );
 }

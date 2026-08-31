@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, photoUrl } from "../api";
 import ItemForm from "../components/ItemForm";
 import AppFooter from "../components/AppFooter";
+import BottomNav from "../components/BottomNav";
 import PartnerGrid from "../components/PartnerGrid";
 import RejectedGrid from "../components/RejectedGrid";
 import SuggestionList from "../components/SuggestionList";
@@ -139,107 +140,115 @@ export default function ItemDetail() {
             }}
           />
         ) : (
-          <div className="stack">
-            {src ? (
-              <img className="detail-photo" src={src} alt={item.name} />
-            ) : (
-              <div className="detail-photo noimg" style={{ display: "flex", alignItems: "center", justifyContent: "center", fontSize: "3rem", height: 220 }}>
-                👕
-              </div>
-            )}
-
-            <div className="row spread">
-              <h2 style={{ margin: 0 }}>
-                {item.is_favorite && <span style={{ color: "var(--fav)" }}>★ </span>}
-                {item.name}
-              </h2>
-              <span className="pill">{item.category}</span>
-            </div>
-
-            <div>
-              {item.brand && (
-                <div className="kv">
-                  <span className="k">Merk</span>
-                  <span>{item.brand}</span>
-                </div>
-              )}
-              {item.color && (
-                <div className="kv">
-                  <span className="k">Kleur</span>
-                  <span>{item.color}</span>
-                </div>
-              )}
-              {item.size && (
-                <div className="kv">
-                  <span className="k">Maat</span>
-                  <span>{item.size}</span>
-                </div>
-              )}
-              {item.seasons.length > 0 && (
-                <div className="kv">
-                  <span className="k">Seizoen</span>
-                  <span>{item.seasons.join(", ")}</span>
-                </div>
-              )}
-              {item.notes && (
-                <div className="kv">
-                  <span className="k">Notities</span>
-                  <span style={{ textAlign: "right", maxWidth: "60%" }}>{item.notes}</span>
-                </div>
-              )}
-            </div>
-
-            <div>
-              <div className="row spread" style={{ marginBottom: 10 }}>
-                <h3 style={{ margin: 0 }}>Combineert met</h3>
-                <Link to="/combine" state={{ anchorId: item.id }} className="pill">
-                  Combineer →
-                </Link>
-              </div>
-              {partners.length === 0 ? (
-                <p className="muted">Nog geen goedgekeurde combinaties. Ga naar Combineer om te swipen.</p>
+          // Two halves that stack on a phone and stand side by side on a wide
+          // screen: the garment itself on the left, everything it is part of on
+          // the right. Same order either way, so nothing moves about.
+          <div className="stack detail-cols">
+            <div className="stack detail-main">
+              {src ? (
+                <img className="detail-photo" src={src} alt={item.name} />
               ) : (
-                <PartnerGrid partners={partners} anchor={item} onUndo={undoCombination} />
+                <div className="detail-photo noimg" style={{ display: "flex", alignItems: "center", justifyContent: "center", fontSize: "3rem", height: 220 }}>
+                  👕
+                </div>
+              )}
+
+              <div className="row spread">
+                <h2 style={{ margin: 0 }}>
+                  {item.is_favorite && <span style={{ color: "var(--fav)" }}>★ </span>}
+                  {item.name}
+                </h2>
+                <span className="pill">{item.category}</span>
+              </div>
+
+              <div>
+                {item.brand && (
+                  <div className="kv">
+                    <span className="k">Merk</span>
+                    <span>{item.brand}</span>
+                  </div>
+                )}
+                {item.color && (
+                  <div className="kv">
+                    <span className="k">Kleur</span>
+                    <span>{item.color}</span>
+                  </div>
+                )}
+                {item.size && (
+                  <div className="kv">
+                    <span className="k">Maat</span>
+                    <span>{item.size}</span>
+                  </div>
+                )}
+                {item.seasons.length > 0 && (
+                  <div className="kv">
+                    <span className="k">Seizoen</span>
+                    <span>{item.seasons.join(", ")}</span>
+                  </div>
+                )}
+                {item.notes && (
+                  <div className="kv">
+                    <span className="k">Notities</span>
+                    <span style={{ textAlign: "right", maxWidth: "60%" }}>{item.notes}</span>
+                  </div>
+                )}
+              </div>
+
+            </div>
+            <div className="stack detail-side">
+              <div>
+                <div className="row spread" style={{ marginBottom: 10 }}>
+                  <h3 style={{ margin: 0 }}>Combineert met</h3>
+                  <Link to="/combine" state={{ anchorId: item.id }} className="pill">
+                    Combineer →
+                  </Link>
+                </div>
+                {partners.length === 0 ? (
+                  <p className="muted">Nog geen goedgekeurde combinaties. Ga naar Combineer om te swipen.</p>
+                ) : (
+                  <PartnerGrid partners={partners} anchor={item} onUndo={undoCombination} />
+                )}
+              </div>
+
+              {rejected.length > 0 && (
+                <div>
+                  <h3 style={{ margin: "0 0 4px" }}>Past niet bij</h3>
+                  <p className="muted" style={{ marginTop: 0, fontSize: "0.82rem" }}>
+                    Afgekeurd, dus deze staan niet bij Outfits. Eén "nee" blokkeert een
+                    combinatie, ook als iemand anders 'm goedkeurde.
+                  </p>
+                  <RejectedGrid rejected={rejected} onUndo={undoRejection} />
+                </div>
+              )}
+
+              {suggestions.length > 0 && (
+                <div>
+                  <h3 style={{ margin: "0 0 4px" }}>✨ Suggesties van het systeem</h3>
+                  <p className="muted" style={{ marginTop: 0, fontSize: "0.82rem" }}>
+                    Automatisch samengesteld op kleur en seizoen, met dit stuk erin. Wat je al
+                    hebt beoordeeld staat er niet tussen.
+                  </p>
+                  <SuggestionList suggestions={suggestions} onAccept={acceptSuggestion} />
+                </div>
+              )}
+
+              {canEdit && (
+                <>
+                  <button className="btn-ghost btn-block" onClick={duplicate}>
+                    ⧉ Dupliceren
+                  </button>
+
+                  <button className="btn-danger btn-block" onClick={remove}>
+                    Verwijderen
+                  </button>
+                </>
               )}
             </div>
-
-            {rejected.length > 0 && (
-              <div>
-                <h3 style={{ margin: "0 0 4px" }}>Past niet bij</h3>
-                <p className="muted" style={{ marginTop: 0, fontSize: "0.82rem" }}>
-                  Afgekeurd, dus deze staan niet bij Outfits. Eén "nee" blokkeert een
-                  combinatie, ook als iemand anders 'm goedkeurde.
-                </p>
-                <RejectedGrid rejected={rejected} onUndo={undoRejection} />
-              </div>
-            )}
-
-            {suggestions.length > 0 && (
-              <div>
-                <h3 style={{ margin: "0 0 4px" }}>✨ Suggesties van het systeem</h3>
-                <p className="muted" style={{ marginTop: 0, fontSize: "0.82rem" }}>
-                  Automatisch samengesteld op kleur en seizoen, met dit stuk erin. Wat je al
-                  hebt beoordeeld staat er niet tussen.
-                </p>
-                <SuggestionList suggestions={suggestions} onAccept={acceptSuggestion} />
-              </div>
-            )}
-
-            {canEdit && (
-              <>
-                <button className="btn-ghost btn-block" onClick={duplicate}>
-                  ⧉ Dupliceren
-                </button>
-
-                <button className="btn-danger btn-block" onClick={remove}>
-                  Verwijderen
-                </button>
-              </>
-            )}
           </div>
         )}
         <AppFooter />
       </div>
+      <BottomNav desktopOnly />
     </div>
   );
 }
