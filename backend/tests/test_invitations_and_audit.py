@@ -57,12 +57,12 @@ def test_a_stranger_registers_through_the_link_and_lands_in_the_kast(client):
 
 
 def test_registration_is_closed_without_a_valid_invitation(client):
-    # There is no open sign-up endpoint at all…
+    # Self-registration is off unless a beheerder opens it…
     r = client.post(
         "/api/auth/register",
         json={"username": "sneak", "display_name": "Sneak", "password": "pw123456"},
     )
-    assert r.status_code in (404, 405), r.text
+    assert r.status_code == 403, r.text
     # …and a made-up token is refused.
     r = client.post(
         "/api/invitations/geen-echte-token/register",

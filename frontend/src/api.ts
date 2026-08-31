@@ -1,6 +1,7 @@
 import { reportOffline } from "./online";
 import type {
   AuditPage,
+  AuthConfig,
   BackupPreview,
   Category,
   ColorLogic,
@@ -156,6 +157,21 @@ export const api = {
       body: JSON.stringify({ new_password }),
     }),
 
+  // ---- the front door (readable while logged out) ----
+  authConfig: () => request<AuthConfig>("/api/auth/config"),
+  setSelfRegistration: (self_registration: boolean) =>
+    request<AuthConfig>("/api/auth/config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ self_registration }),
+    }),
+  register: (data: { username: string; display_name: string; password: string }) =>
+    request<{ access_token: string; user: User }>("/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+
   // ---- users ----
   listUsers: () => request<User[]>("/api/users"),
   createUser: (data: { username: string; display_name: string; password: string; is_admin: boolean }) =>
@@ -199,6 +215,14 @@ export const api = {
     data: { role: MemberRole; label?: string | null; expires_days?: number | null },
   ) =>
     request<Invitation>(`/api/wardrobes/${wardrobeId}/invitations`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+  // Account links (beheerder): a login for someone new, no kast shared.
+  listAccountInvitations: () => request<Invitation[]>("/api/invitations/account"),
+  createAccountInvitation: (data: { label?: string | null; expires_days?: number | null }) =>
+    request<Invitation>("/api/invitations/account", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),

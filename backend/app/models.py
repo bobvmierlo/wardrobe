@@ -251,11 +251,15 @@ class Invitation(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     # URL-safe random secret; the only thing that proves you were invited.
     token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    wardrobe_id: Mapped[int] = mapped_column(
-        ForeignKey("wardrobes.id", ondelete="CASCADE"), index=True
+    # The kast the link gives access to, or NULL for an account invitation: one
+    # handed out by a beheerder that only creates an account (with its own
+    # kast) and shares nothing.
+    wardrobe_id: Mapped[int | None] = mapped_column(
+        ForeignKey("wardrobes.id", ondelete="CASCADE"), index=True, nullable=True
     )
-    wardrobe: Mapped["Wardrobe"] = relationship()
+    wardrobe: Mapped["Wardrobe | None"] = relationship()
     # ROLE_EDITOR | ROLE_VIEWER — the role the invitee gets on acceptance.
+    # Meaningless (and ignored) for an account invitation.
     role: Mapped[str] = mapped_column(String(10), default=ROLE_VIEWER)
     # Free-text reminder of who this link was meant for (name or e-mail).
     label: Mapped[str | None] = mapped_column(String(120), nullable=True)
@@ -273,6 +277,11 @@ class Invitation(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     @property
+    def kind(self) -> str:
+        """"account" (a new login) | "wardrobe" (access to an existing kast)."""
+        return "wardrobe" if self.wardrobe_id is not None else "account"
+
+    @property
     def status(self) -> str:
         """"revoked" | "accepted" | "expired" | "open" — never two at once."""
         if self.revoked_at is not None:
@@ -282,6 +291,24 @@ class Invitation(Base):
         if self.expires_at is not None and as_utc(self.expires_at) < utcnow():
             return "expired"
         return "open"
+
+
+class AppSetting(Base):
+    """One admin-tunable setting, stored as text under a stable key.
+
+    A table rather than an environment variable because these are toggled from
+    inside the app: a beheerder flipping self-registration should not have to
+    edit a compose file and restart the container. Values are strings so a new
+    setting never needs a migration; :mod:`app.app_settings` does the parsing.
+    """
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(50), primary_key=True)
+    value: Mapped[str] = mapped_column(String(200), default="")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, onupdate=utcnow
+    )
 
 
 class AuditLog(Base):

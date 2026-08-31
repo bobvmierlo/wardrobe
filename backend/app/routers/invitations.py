@@ -1,14 +1,17 @@
 """Invitation links.
 
-Sharing a kast used to require the other person to already have an account,
-which they could only get from an admin. An invitation link closes that gap
-without opening the front door: the owner creates a link, sends it however they
-like, and the holder either signs in and accepts it, or registers an account
-*through that link*.
+Two kinds of link, redeemed through the same page:
 
-Self-service registration stays disabled — :func:`register_via_invitation` is
-the only path to a new account besides an admin creating one, and it refuses
-anything but a valid, unused, unexpired token.
+* a **kast invitation**, made by the owner of a kast, which grants access to
+  that kast — the holder signs in and accepts it, or registers an account
+  *through that link* and lands in the kast straight away;
+* an **account invitation**, made by a beheerder, which shares no kast at all
+  and only lets the holder create a login of their own (with, as always, a kast
+  of their own).
+
+Both exist because the front door is shut by default: unless a beheerder opens
+self-registration (see :mod:`app.app_settings`), a valid, unused, unexpired
+token is the only self-service way to an account.
 """
 
 import secrets
@@ -20,13 +23,14 @@ from sqlalchemy.orm import Session
 from .. import audit
 from ..access import ROLE_OWNER, ensure_wardrobe, require_manage, role_for
 from ..database import get_db
-from ..deps import get_current_user
+from ..deps import get_current_user, require_admin
 from ..models import Invitation, User, Wardrobe, WardrobeMember, utcnow
 from ..schemas import (
+    AccountInvitationCreate,
     InvitationCreate,
     InvitationInfo,
     InvitationOut,
-    InvitationRegister,
+    RegistrationIn,
     Token,
     UserOut,
 )
@@ -34,17 +38,20 @@ from ..security import create_access_token, hash_password
 from .photos import set_photo_cookie
 
 router = APIRouter(prefix="/api/invitations", tags=["invitations"])
-# Creating and listing links belongs to a wardrobe, so those live under the
-# wardrobe path; redeeming one only needs the token.
+# Creating and listing kast links belongs to a wardrobe, so those live under
+# the wardrobe path; redeeming one only needs the token.
 wardrobe_router = APIRouter(prefix="/api/wardrobes", tags=["invitations"])
 
 
 def _to_out(inv: Invitation) -> InvitationOut:
+    account = inv.wardrobe_id is None
     return InvitationOut(
         id=inv.id,
         token=inv.token,
+        kind=inv.kind,
+        wardrobe_name=None if account else (inv.wardrobe.name if inv.wardrobe else None),
         path=f"/invite/{inv.token}",
-        role=inv.role,
+        role=None if account else inv.role,
         label=inv.label,
         status=inv.status,
         created_at=inv.created_at,
@@ -74,7 +81,15 @@ def _usable(db: Session, token: str) -> Invitation:
 
 
 def _redeem(db: Session, inv: Invitation, user: User) -> None:
-    """Grant the invited role and mark the link used. Caller commits."""
+    """Grant the invited role and mark the link used. Caller commits.
+
+    An account invitation has no kast to grant anything on, so for that one
+    "redeeming" is only the marking.
+    """
+    if inv.wardrobe_id is None:
+        inv.accepted_at = utcnow()
+        inv.accepted_by_id = user.id
+        return
     member = (
         db.query(WardrobeMember)
         .filter(
@@ -93,6 +108,14 @@ def _redeem(db: Session, inv: Invitation, user: User) -> None:
         )
     inv.accepted_at = utcnow()
     inv.accepted_by_id = user.id
+
+
+def _wardrobe_of(db: Session, inv: Invitation) -> Wardrobe:
+    """The kast a link grants access to, or 404 if it has since been deleted."""
+    wardrobe = db.get(Wardrobe, inv.wardrobe_id)
+    if wardrobe is None:
+        raise HTTPException(status_code=404, detail="Deze uitnodiging bestaat niet (meer)")
+    return wardrobe
 
 
 @wardrobe_router.post(
@@ -152,6 +175,63 @@ def list_invitations(
     return [_to_out(inv) for inv in rows]
 
 
+# NOTE: the two account routes below must stay above ``GET /{token}`` — a
+# literal path only wins from a path parameter when it is declared first, and
+# "account" is a perfectly valid token as far as the router is concerned.
+@router.post("/account", response_model=InvitationOut, status_code=201)
+def create_account_invitation(
+    body: AccountInvitationCreate,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Create a one-time link to a brand-new account. Beheerders only.
+
+    Unlike a kast link this shares nothing: the holder picks their own name,
+    username and password and ends up with an ordinary account and their own
+    empty kast. It is how you let someone in while self-registration stays
+    closed.
+    """
+    inv = Invitation(
+        token=secrets.token_urlsafe(32),
+        wardrobe_id=None,
+        label=(body.label or "").strip() or None,
+        created_by_id=admin.id,
+        expires_at=(
+            utcnow() + timedelta(days=body.expires_days)
+            if body.expires_days is not None
+            else None
+        ),
+    )
+    db.add(inv)
+    db.commit()
+    db.refresh(inv)
+
+    audit.record(
+        db,
+        "invitation.create_account",
+        f"Accountuitnodiging gemaakt voor {inv.label or 'onbekende ontvanger'}",
+        user=admin,
+        entity_type="invitation",
+        entity_id=inv.id,
+    )
+    return _to_out(inv)
+
+
+@router.get("/account", response_model=list[InvitationOut])
+def list_account_invitations(
+    _: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Every account link ever handed out, newest first. Beheerders only."""
+    rows = (
+        db.query(Invitation)
+        .filter(Invitation.wardrobe_id.is_(None))
+        .order_by(Invitation.created_at.desc())
+        .all()
+    )
+    return [_to_out(inv) for inv in rows]
+
+
 @router.delete("/{invitation_id}", status_code=204)
 def revoke_invitation(
     invitation_id: int,
@@ -162,7 +242,13 @@ def revoke_invitation(
     inv = db.get(Invitation, invitation_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Uitnodiging niet gevonden")
-    require_manage(db, inv.wardrobe_id, user)
+    if inv.wardrobe_id is None:
+        # An account link has no kast, so no owner either: only a beheerder
+        # can take it back.
+        if not user.is_admin:
+            raise HTTPException(status_code=403, detail="Alleen voor beheerders")
+    else:
+        require_manage(db, inv.wardrobe_id, user)
     if inv.revoked_at is None:
         inv.revoked_at = utcnow()
         db.commit()
@@ -185,10 +271,16 @@ def invitation_info(token: str, db: Session = Depends(get_db)):
     nothing beyond the kast's name, its owner and the offered role.
     """
     inv = _usable(db, token)
-    wardrobe = db.get(Wardrobe, inv.wardrobe_id)
-    if wardrobe is None:
-        raise HTTPException(status_code=404, detail="Deze uitnodiging bestaat niet (meer)")
+    if inv.wardrobe_id is None:
+        return InvitationInfo(
+            kind="account",
+            label=inv.label,
+            status=inv.status,
+            expires_at=inv.expires_at,
+        )
+    wardrobe = _wardrobe_of(db, inv)
     return InvitationInfo(
+        kind="wardrobe",
         wardrobe_name=wardrobe.name,
         owner_name=wardrobe.owner.display_name,
         role=inv.role,
@@ -206,9 +298,15 @@ def accept_invitation(
 ):
     """Redeem a link as the signed-in user."""
     inv = _usable(db, token)
-    wardrobe = db.get(Wardrobe, inv.wardrobe_id)
-    if wardrobe is None:
-        raise HTTPException(status_code=404, detail="Deze uitnodiging bestaat niet (meer)")
+    if inv.wardrobe_id is None:
+        # Nothing to accept: an account link only creates a login, and this
+        # person already has one. Say so instead of quietly burning the link.
+        raise HTTPException(
+            status_code=400,
+            detail="Deze uitnodiging is bedoeld om een nieuw account mee aan te maken —"
+            " je hebt er al één",
+        )
+    wardrobe = _wardrobe_of(db, inv)
     if role_for(db, wardrobe, user) == ROLE_OWNER:
         raise HTTPException(
             status_code=400, detail="Dit is je eigen kast — je hebt al volledige toegang"
@@ -231,20 +329,18 @@ def accept_invitation(
 @router.post("/{token}/register", response_model=Token, status_code=201)
 def register_via_invitation(
     token: str,
-    body: InvitationRegister,
+    body: RegistrationIn,
     response: Response,
     db: Session = Depends(get_db),
 ):
     """Create an account *through* an invitation link and redeem it.
 
-    The only self-service way to an account: without a valid token there is no
-    registration endpoint at all. The new user is signed in straight away, so
-    they land in the shared kast instead of on a login screen.
+    Works for both kinds of link, and the newcomer is signed in straight away
+    either way: with a kast link they land in the shared kast, with an account
+    link in their own.
     """
     inv = _usable(db, token)
-    wardrobe = db.get(Wardrobe, inv.wardrobe_id)
-    if wardrobe is None:
-        raise HTTPException(status_code=404, detail="Deze uitnodiging bestaat niet (meer)")
+    wardrobe = None if inv.wardrobe_id is None else _wardrobe_of(db, inv)
 
     username = body.username.strip().lower()
     if db.query(User).filter(User.username == username).first():
@@ -271,8 +367,12 @@ def register_via_invitation(
     audit.record(
         db,
         "user.register",
-        f"{user.display_name} (@{user.username}) registreerde via de uitnodiging"
-        f" voor '{wardrobe.name}' (rol: {inv.role})",
+        f"{user.display_name} (@{user.username}) registreerde via een uitnodiging"
+        + (
+            f" voor '{wardrobe.name}' (rol: {inv.role})"
+            if wardrobe is not None
+            else " voor een nieuw account"
+        ),
         user=user,
         wardrobe_id=inv.wardrobe_id,
         entity_type="user",

@@ -9,10 +9,14 @@ type Mode = "choose" | "register" | "login";
 /**
  * The page an invitation link opens — reachable without being signed in.
  *
- * Three ways in, depending on who is holding the link: an already signed-in
- * user accepts with one tap; someone with an account signs in first; a
- * newcomer registers right here. That last one is the *only* self-service way
- * to an account — there is no open sign-up elsewhere in the app.
+ * It serves both kinds of link. A **kast** link has three ways in, depending on
+ * who is holding it: an already signed-in user accepts with one tap; someone
+ * with an account signs in first; a newcomer registers right here. An
+ * **account** link has only that last one — it shares no kast, it just lets one
+ * person in.
+ *
+ * Registering here is the way to an account whenever a beheerder keeps
+ * self-registration closed, which is the default.
  */
 export default function Invite() {
   const { token = "" } = useParams();
@@ -38,7 +42,12 @@ export default function Invite() {
   useEffect(() => {
     api
       .invitationInfo(token)
-      .then(setInfo)
+      .then((loaded) => {
+        setInfo(loaded);
+        // An account link has nothing to choose between: registering is the
+        // only thing it does.
+        if (loaded.kind === "account") setMode("register");
+      })
       .catch((e) => setError(e instanceof Error ? e.message : "Uitnodiging laden mislukt"))
       .finally(() => setLoading(false));
   }, [token]);
@@ -85,7 +94,9 @@ export default function Invite() {
     setBusy(true);
     try {
       await login(loginName.trim(), loginPassword);
-      await api.acceptInvitation(token);
+      // An account link grants no access to accept — signing in is all there
+      // is to do with it.
+      if (info?.kind !== "account") await api.acceptInvitation(token);
       await refresh();
       navigate("/", { replace: true });
     } catch (e) {
@@ -119,6 +130,8 @@ export default function Invite() {
     );
   }
 
+  const account = info.kind === "account";
+
   return (
     <div className="login-wrap">
       <div className="login-card">
@@ -126,21 +139,47 @@ export default function Invite() {
           <div className="logo">👕</div>
           <h1>Je bent uitgenodigd</h1>
           <div className="muted">
-            <strong>{info.owner_name}</strong> deelt de kast{" "}
-            <strong>{info.wardrobe_name}</strong> met je
+            {account ? (
+              <>Maak je eigen account aan voor deze <strong>Kledingkast</strong></>
+            ) : (
+              <>
+                <strong>{info.owner_name}</strong> deelt de kast{" "}
+                <strong>{info.wardrobe_name}</strong> met je
+              </>
+            )}
           </div>
         </div>
 
         <p className="muted" style={{ fontSize: "0.85rem" }}>
-          Je krijgt de rol <strong>{ROLE_LABELS[info.role]}</strong>.{" "}
-          {info.role === "editor"
-            ? "Je mag kledingstukken toevoegen en aanpassen, en meestemmen over combinaties."
-            : "Je mag alles bekijken en meestemmen over combinaties."}
+          {account ? (
+            <>
+              Je kiest zelf je naam, gebruikersnaam en wachtwoord. Daarna heb je een
+              eigen kast om je kleding in te zetten.
+            </>
+          ) : (
+            <>
+              Je krijgt de rol <strong>{info.role ? ROLE_LABELS[info.role] : "kijker"}</strong>.{" "}
+              {info.role === "editor"
+                ? "Je mag kledingstukken toevoegen en aanpassen, en meestemmen over combinaties."
+                : "Je mag alles bekijken en meestemmen over combinaties."}
+            </>
+          )}
         </p>
 
         {error && <div className="error">{error}</div>}
 
-        {user ? (
+        {user && account ? (
+          <div className="stack">
+            <div className="notice">
+              Je bent al ingelogd als <strong>{user.display_name}</strong>. Deze
+              uitnodiging is bedoeld voor iemand zonder account — geef 'm door, of log
+              uit om er zelf een nieuw account mee te maken.
+            </div>
+            <button className="btn-primary btn-block" onClick={() => navigate("/", { replace: true })}>
+              Naar mijn kast
+            </button>
+          </div>
+        ) : user ? (
           <div className="stack">
             <div className="notice">
               Je bent ingelogd als <strong>{user.display_name}</strong>.
@@ -174,10 +213,14 @@ export default function Invite() {
               <input type="password" value={password2} onChange={(e) => setPassword2(e.target.value)} autoComplete="new-password" required />
             </div>
             <button className="btn-primary btn-block" disabled={busy}>
-              {busy ? "Bezig…" : "Account aanmaken en accepteren"}
+              {busy ? "Bezig…" : account ? "Account aanmaken" : "Account aanmaken en accepteren"}
             </button>
-            <button type="button" className="btn-ghost btn-block" onClick={() => setMode("choose")}>
-              Terug
+            <button
+              type="button"
+              className="btn-ghost btn-block"
+              onClick={() => setMode(account ? "login" : "choose")}
+            >
+              {account ? "Ik heb al een account" : "Terug"}
             </button>
           </form>
         ) : mode === "login" ? (
@@ -204,10 +247,14 @@ export default function Invite() {
               />
             </div>
             <button className="btn-primary btn-block" disabled={busy}>
-              {busy ? "Bezig…" : "Inloggen en accepteren"}
+              {busy ? "Bezig…" : account ? "Inloggen" : "Inloggen en accepteren"}
             </button>
-            <button type="button" className="btn-ghost btn-block" onClick={() => setMode("choose")}>
-              Terug
+            <button
+              type="button"
+              className="btn-ghost btn-block"
+              onClick={() => setMode(account ? "register" : "choose")}
+            >
+              {account ? "Toch een nieuw account aanmaken" : "Terug"}
             </button>
           </form>
         ) : (

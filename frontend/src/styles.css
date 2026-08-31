@@ -316,6 +316,12 @@ label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0 0 6px
   padding: 28px 22px;
 }
 .brand { text-align: center; margin-bottom: 22px; }
+/* Below the login form: what to do when you have no account. */
+.login-foot {
+  margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 10px; text-align: center;
+}
+.login-foot .notice { text-align: left; }
 .brand .logo { font-size: 2.6rem; }
 .brand h1 { margin: 6px 0 2px; font-size: 1.5rem; }
 
@@ -825,6 +831,25 @@ label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0 0 6px
 .status-badge.open { background: color-mix(in srgb, var(--primary) 22%, transparent); color: var(--primary); border-color: transparent; }
 .status-badge.accepted { background: color-mix(in srgb, var(--yes) 20%, transparent); color: var(--yes); border-color: transparent; }
 .status-badge.expired, .status-badge.revoked { color: var(--muted); }
+
+/* A QR code is read by a camera, so it keeps its own black-on-white contrast
+   whatever the app's theme does, with a white frame standing in for the quiet
+   zone the standard asks for. */
+.qr-wrap {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  margin-top: 10px; text-align: center;
+}
+.qr {
+  display: block; border-radius: 10px; background: #fff;
+  width: 176px; height: 176px; max-width: 100%;
+}
+
+/* A setting that is simply on or off: the sentence explains it, the checkbox
+   at the end flips it. */
+.setting-toggle {
+  gap: 12px; cursor: pointer; padding: 10px 0;
+  border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+}
 
 /* ---- log screen (beheerder) ---- */
 .log-list { display: flex; flex-direction: column; gap: 8px; }
