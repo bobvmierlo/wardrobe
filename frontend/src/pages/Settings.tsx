@@ -6,7 +6,8 @@ import { useConfirm } from "../confirm";
 import { useWardrobe } from "../wardrobe";
 import AppFooter from "../components/AppFooter";
 import BackupCard from "../components/BackupCard";
-import { INVITATION_STATUS_LABELS, ROLE_LABELS, SIZE_KIND_LABELS, compareSizes, type Category, type ColorLogic, type Invitation, type MemberRole, type SizeKind, type SizeOption, type User, type WardrobeMember } from "../types";
+import InvitationLinks from "../components/InvitationLinks";
+import { ROLE_LABELS, SIZE_KIND_LABELS, compareSizes, type Category, type ColorLogic, type Invitation, type MemberRole, type SizeKind, type SizeOption, type User, type WardrobeMember } from "../types";
 
 export default function Settings() {
   const { user, logout } = useAuth();
@@ -30,7 +31,12 @@ export default function Settings() {
   const [linkLabel, setLinkLabel] = useState("");
   const [linkRole, setLinkRole] = useState<MemberRole>("viewer");
   const [linkDays, setLinkDays] = useState("14");
-  const [copied, setCopied] = useState<number | null>(null);
+
+  // the front door (admin): self-registration, and links to a new account
+  const [selfRegistration, setSelfRegistration] = useState(false);
+  const [accountInvites, setAccountInvites] = useState<Invitation[]>([]);
+  const [accountLabel, setAccountLabel] = useState("");
+  const [accountDays, setAccountDays] = useState("14");
 
   // users (admin)
   const [users, setUsers] = useState<User[]>([]);
@@ -88,11 +94,23 @@ export default function Settings() {
       /* ignore */
     }
   }
+  async function loadFrontDoor() {
+    try {
+      setSelfRegistration((await api.authConfig()).self_registration);
+      setAccountInvites(await api.listAccountInvitations());
+    } catch {
+      /* ignore */
+    }
+  }
   useEffect(() => {
     loadUsers();
     loadCatalog();
     loadLogic();
   }, []);
+  const isAdmin = !!user?.is_admin;
+  useEffect(() => {
+    if (isAdmin) loadFrontDoor();
+  }, [isAdmin]);
   const ownWardrobeId = ownWardrobe?.id;
   useEffect(() => {
     if (!ownWardrobeId) return;
@@ -149,41 +167,22 @@ export default function Settings() {
     }
   }
 
-  /** The full link to share, built from the current origin. */
-  function inviteUrl(invitation: Invitation): string {
-    return `${window.location.origin}${invitation.path}`;
-  }
-
   async function createLink(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
     setMsg(null);
     if (!ownWardrobe) return;
     try {
-      const created = await api.createInvitation(ownWardrobe.id, {
+      await api.createInvitation(ownWardrobe.id, {
         role: linkRole,
         label: linkLabel.trim() || null,
         expires_days: linkDays ? Number(linkDays) : null,
       });
       setLinkLabel("");
-      setMsg("Uitnodigingslink gemaakt — kopieer 'm en stuur 'm door.");
+      setMsg("Uitnodigingslink gemaakt — kopieer 'm of laat de QR-code scannen.");
       await loadInvitations(ownWardrobe.id);
-      copyLink(created);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Link maken mislukt");
-    }
-  }
-
-  async function copyLink(invitation: Invitation) {
-    const url = inviteUrl(invitation);
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(invitation.id);
-      setTimeout(() => setCopied((id) => (id === invitation.id ? null : id)), 2000);
-    } catch {
-      // Clipboard access is blocked outside a secure context (plain http on
-      // your LAN, for instance) — the link is on screen to copy by hand.
-      setErr("Kopiëren lukte niet; selecteer de link en kopieer 'm handmatig.");
     }
   }
 
@@ -199,6 +198,56 @@ export default function Settings() {
     try {
       await api.revokeInvitation(invitation.id);
       await loadInvitations(ownWardrobe.id);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Intrekken mislukt");
+    }
+  }
+
+  /** Open or close self-registration for the whole installation. */
+  async function toggleSelfRegistration(open: boolean) {
+    setErr(null);
+    setMsg(null);
+    try {
+      const cfg = await api.setSelfRegistration(open);
+      setSelfRegistration(cfg.self_registration);
+      setMsg(
+        cfg.self_registration
+          ? "Iedereen kan nu zelf een account aanmaken op het inlogscherm."
+          : "Zelf registreren staat weer uit — alleen op uitnodiging.",
+      );
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Wijzigen mislukt");
+    }
+  }
+
+  async function createAccountLink(e: React.FormEvent) {
+    e.preventDefault();
+    setErr(null);
+    setMsg(null);
+    try {
+      await api.createAccountInvitation({
+        label: accountLabel.trim() || null,
+        expires_days: accountDays ? Number(accountDays) : null,
+      });
+      setAccountLabel("");
+      setMsg("Uitnodiging gemaakt — laat de QR-code scannen of stuur de link door.");
+      setAccountInvites(await api.listAccountInvitations());
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Uitnodiging maken mislukt");
+    }
+  }
+
+  async function revokeAccountLink(invitation: Invitation) {
+    const ok = await confirm({
+      title: "Deze uitnodiging intrekken?",
+      body: "De link en QR-code werken daarna niet meer. Wie er al een account mee maakte, houdt dat account.",
+      confirmLabel: "Intrekken",
+    });
+    if (!ok) return;
+    setErr(null);
+    try {
+      await api.revokeInvitation(invitation.id);
+      setAccountInvites(await api.listAccountInvitations());
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Intrekken mislukt");
     }
@@ -464,48 +513,18 @@ export default function Settings() {
 
           <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "16px 0" }} />
 
-          <h4 style={{ margin: "0 0 6px" }}>Uitnodigen met een link</h4>
+          <h4 style={{ margin: "0 0 6px" }}>Uitnodigen met een link of QR-code</h4>
           <p className="muted" style={{ fontSize: "0.82rem", marginTop: 0 }}>
-            Nog geen account? Stuur iemand een persoonlijke link. Daarmee kan diegene
-            zelf een account aanmaken en komt 'ie meteen in je kast. Zonder zo'n link
-            kan niemand zich registreren.
+            Nog geen account? Stuur iemand een persoonlijke link, of laat 'm de QR-code
+            scannen. Diegene kiest dan zelf naam, gebruikersnaam en wachtwoord, en komt
+            meteen in je kast.
           </p>
 
-          {invitations.length > 0 && (
-            <div className="stack" style={{ marginBottom: 12 }}>
-              {invitations.map((inv) => (
-                <div key={inv.id} className="invite-row">
-                  <div style={{ minWidth: 0 }}>
-                    <div>
-                      {inv.label || <span className="muted">Zonder omschrijving</span>}{" "}
-                      <span className={`status-badge ${inv.status}`}>
-                        {INVITATION_STATUS_LABELS[inv.status]}
-                      </span>
-                    </div>
-                    <div className="muted" style={{ fontSize: "0.78rem" }}>
-                      Rol: {ROLE_LABELS[inv.role]}
-                      {inv.accepted_by && ` · gebruikt door ${inv.accepted_by.display_name}`}
-                      {inv.status === "open" && inv.expires_at &&
-                        ` · geldig tot ${new Date(inv.expires_at).toLocaleDateString("nl-NL")}`}
-                    </div>
-                    {inv.status === "open" && (
-                      <div className="invite-link">
-                        <input readOnly value={inviteUrl(inv)} onFocus={(e) => e.target.select()} />
-                        <button className="btn-ghost btn-small" type="button" onClick={() => copyLink(inv)}>
-                          {copied === inv.id ? "✓ Gekopieerd" : "Kopieer"}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  {inv.status === "open" && (
-                    <button className="btn-danger btn-small" onClick={() => revokeLink(inv)}>
-                      Intrekken
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+          <InvitationLinks
+            invitations={invitations}
+            onRevoke={revokeLink}
+            onCopyFailed={setErr}
+          />
 
           <form onSubmit={createLink} className="row" style={{ gap: 8, flexWrap: "wrap" }}>
             <input
@@ -593,6 +612,66 @@ export default function Settings() {
                 <option value="accessory">One-size</option>
               </select>
               <button className="btn-primary" style={{ flex: "none" }}>Toevoegen</button>
+            </form>
+          </div>
+        )}
+
+        {user?.is_admin && (
+          <div className="card" style={{ padding: 16 }}>
+            <h3 style={{ marginTop: 0 }}>Toegang & registratie</h3>
+            <p className="muted" style={{ fontSize: "0.82rem", marginTop: 0 }}>
+              Standaard is deze Kledingkast <strong>alleen op uitnodiging</strong>: op het
+              inlogscherm kan niemand zichzelf aanmelden. Zet je het open, dan kan
+              iedereen die het adres kent een account maken.
+            </p>
+
+            <label className="row spread setting-toggle">
+              <span>
+                <span style={{ fontWeight: 600 }}>Zelf registreren toestaan</span>
+                <span className="muted" style={{ display: "block", fontSize: "0.8rem" }}>
+                  {selfRegistration
+                    ? "Aan — het inlogscherm biedt “account aanmaken” aan."
+                    : "Uit — het inlogscherm zegt dat het alleen op uitnodiging gaat."}
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                style={{ width: "auto" }}
+                checked={selfRegistration}
+                onChange={(e) => toggleSelfRegistration(e.target.checked)}
+              />
+            </label>
+
+            <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "16px 0" }} />
+
+            <h4 style={{ margin: "0 0 6px" }}>Iemand nieuw uitnodigen</h4>
+            <p className="muted" style={{ fontSize: "0.82rem", marginTop: 0 }}>
+              Maak een eenmalige link — of laat de QR-code scannen. Daarmee maakt precies
+              één iemand een account aan, met een naam, gebruikersnaam en wachtwoord naar
+              eigen keuze, en een eigen kast. Er wordt niets van jouw kast gedeeld.
+            </p>
+
+            <InvitationLinks
+              invitations={accountInvites}
+              onRevoke={revokeAccountLink}
+              onCopyFailed={setErr}
+              emptyText="Nog geen uitnodigingen gemaakt."
+            />
+
+            <form onSubmit={createAccountLink} className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+              <input
+                placeholder="Voor wie? (naam of e-mail)"
+                value={accountLabel}
+                onChange={(e) => setAccountLabel(e.target.value)}
+                style={{ flex: "1 1 45%" }}
+              />
+              <select value={accountDays} onChange={(e) => setAccountDays(e.target.value)} style={{ flex: "1 1 25%", width: "auto" }}>
+                <option value="7">7 dagen geldig</option>
+                <option value="14">14 dagen geldig</option>
+                <option value="30">30 dagen geldig</option>
+                <option value="">Nooit verlopen</option>
+              </select>
+              <button className="btn-primary" style={{ flex: "none" }}>Uitnodiging maken</button>
             </form>
           </div>
         )}

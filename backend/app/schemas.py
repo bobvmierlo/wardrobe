@@ -33,6 +33,26 @@ class Token(BaseModel):
     user: UserOut
 
 
+class RegistrationIn(BaseModel):
+    """The details a newcomer picks for themselves when creating an account.
+
+    Used both for self-registration (when a beheerder has opened it) and for
+    registering through an invitation link.
+    """
+    username: str = Field(min_length=2, max_length=50)
+    display_name: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=4, max_length=128)
+
+
+class AuthConfig(BaseModel):
+    """What the login screen needs to know before anyone has signed in.
+
+    Public on purpose, and deliberately thin: whether the front door is open,
+    nothing else about the installation.
+    """
+    self_registration: bool
+
+
 # ---- Items ----
 class ItemBase(BaseModel):
     name: str = Field(min_length=1, max_length=120)
@@ -234,15 +254,26 @@ class InvitationCreate(BaseModel):
     expires_days: int | None = Field(default=14, ge=1, le=365)
 
 
+class AccountInvitationCreate(BaseModel):
+    """A beheerder's link to a brand-new account, without sharing any kast."""
+    label: str | None = Field(default=None, max_length=120)
+    expires_days: int | None = Field(default=14, ge=1, le=365)
+
+
 class InvitationOut(BaseModel):
     """An invitation link as its creator sees it, token included."""
     id: int
     token: str
+    # "wardrobe" (access to an existing kast) | "account" (a new login only).
+    kind: str
+    wardrobe_name: str | None
     # Path to open in a browser, e.g. "/invite/abc123". The frontend turns it
     # into a full URL with its own origin, so the backend needs no base-URL
     # setting that could go stale behind a reverse proxy.
     path: str
-    role: str
+    # The role the link grants on the kast — None for an account invitation,
+    # which shares no kast to have a role on.
+    role: str | None
     label: str | None
     status: str  # "open" | "accepted" | "expired" | "revoked"
     created_at: datetime
@@ -255,21 +286,16 @@ class InvitationInfo(BaseModel):
     """What the (not yet logged-in) holder of a link is told about it.
 
     Deliberately thin: the wardrobe's name and owner, nothing about its
-    contents or its other members.
+    contents or its other members. An account invitation shares no kast at
+    all, so it leaves those empty.
     """
-    wardrobe_name: str
-    owner_name: str
-    role: str
+    kind: str  # "wardrobe" | "account"
+    wardrobe_name: str | None = None
+    owner_name: str | None = None
+    role: str | None = None
     label: str | None
     status: str
     expires_at: datetime | None
-
-
-class InvitationRegister(BaseModel):
-    """Sign up through an invitation link — the only way to get an account."""
-    username: str = Field(min_length=2, max_length=50)
-    display_name: str = Field(min_length=1, max_length=100)
-    password: str = Field(min_length=4, max_length=128)
 
 
 # ---- Logging & audit trail (admin) ----

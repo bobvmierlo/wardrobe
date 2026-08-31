@@ -21,7 +21,11 @@ welke stukken bij elkaar passen — via een **Tinder-achtige swipe**.
 - 🚪 **Eigen kast per gebruiker** – iedereen heeft z'n eigen kledingkast.
 - 🤝 **Delen** – nodig iemand uit voor je kast als **bewerker** (mag alles aanpassen)
   of **kijker** (alleen inzage, maar mag wél meestemmen op combinaties). Heeft diegene
-  nog geen account? Stuur een **uitnodigingslink** waarmee ze zich zelf registreren.
+  nog geen account? Stuur een **uitnodigingslink** of laat 'm de **QR-code** scannen;
+  daarmee registreren ze zichzelf.
+- 🔒 **Alleen op uitnodiging** – niemand kan zich zomaar aanmelden; dat zegt het
+  inlogscherm er ook bij. Een beheerder deelt een **uitnodiging (link of QR-code)**
+  uit voor een nieuw account, of zet **zelf registreren** met één schakelaar open.
 - 💾 **Back-up & export** – iedereen kan z'n eigen kast downloaden als Excel-bestand
   met de foto's erbij; een beheerder maakt een volledige back-up of een exacte
   momentopname, en kan een export weer terugzetten.
@@ -245,6 +249,7 @@ backend/            FastAPI-app (Python)
     access.py       kast-toegang & rollen (eigenaar/beheerder/bewerker/kijker)
     routers/        auth, users, wardrobes, items, matches, catalog, color_rules,
                     imports, invitations, admin_log
+    app_settings.py instellingen die een beheerder in de app omzet (zelf registreren)
     images.py       foto-verwerking (Pillow)
     matching.py     categorie-groepen voor slimme combinatie-suggesties
     audit.py        auditlog: wie deed wat (naar database én logregel)
@@ -254,7 +259,8 @@ frontend/           React + Vite (TypeScript)
                     Settings, AdminLog
   src/wardrobe.tsx  kast-context (welke kast is actief + je rol)
   src/components/   SwipeCard, ItemForm, BottomNav, WardrobeSwitcher, SuggestionList,
-                    JudgedPairList, PartnerGrid
+                    JudgedPairList, PartnerGrid, InvitationLinks, QrCode
+  src/qr.ts         QR-codes voor uitnodigingslinks (geen externe bibliotheek)
 Dockerfile          multi-stage build (frontend → python runtime)
 docker-compose.yml  container + datavolume
 deploy/             nginx-voorbeeldconfig
@@ -323,10 +329,14 @@ weigert 'ie het doorgegeven script met *"the input device is not a TTY"*.)
 
 ### Iemand uitnodigen die nog geen account heeft
 
-Registratie staat standaard dicht: niemand kan zichzelf zomaar aanmelden. Wél kun
-je vanaf **Instellingen → Mijn kast delen → Uitnodigen met een link** een
-persoonlijke link maken. Zet erbij voor wie 'ie is, kies de rol en hoe lang de
-link geldig blijft, en stuur 'm via WhatsApp/mail.
+Registratie staat standaard dicht: niemand kan zichzelf zomaar aanmelden, en het
+inlogscherm zegt dat er met zoveel woorden bij. Binnenkomen gaat dus op
+uitnodiging, en die bestaat in twee smaken.
+
+**Een uitnodiging voor je kast** maak je vanaf **Instellingen → Mijn kast delen →
+Uitnodigen met een link of QR-code**. Zet erbij voor wie 'ie is, kies de rol en
+hoe lang de link geldig blijft. Stuur 'm via WhatsApp/mail, of klik op
+**QR-code** en laat 'm scannen met de camera van de telefoon.
 
 Wie de link opent ziet van wie de kast is en welke rol 'ie krijgt, en kiest dan:
 
@@ -334,8 +344,26 @@ Wie de link opent ziet van wie de kast is en welke rol 'ie krijgt, en kiest dan:
 - **nog geen account** → ter plekke registreren; diegene komt direct in je kast
   terecht en krijgt daarnaast een eigen kast.
 
-Een link werkt **één keer** en verloopt daarna vanzelf. Zolang 'ie nog niet
-gebruikt is kun je 'm altijd **intrekken**.
+**Een uitnodiging voor alleen een account** maakt een beheerder onder
+**Instellingen → Toegang & registratie → Iemand nieuw uitnodigen**. Daarmee deelt
+er niets van jouw kast: precies één iemand maakt een account aan — naam,
+gebruikersnaam en wachtwoord naar eigen keuze — en krijgt een eigen lege kast.
+Ook hier hoort een QR-code bij, handig als diegene naast je staat.
+
+Een link werkt in beide gevallen **één keer** en verloopt daarna vanzelf. Zolang
+'ie nog niet gebruikt is kun je 'm altijd **intrekken**.
+
+### Zelf registreren open- of dichtzetten
+
+Wil je geen uitnodigingen meer uitdelen — bijvoorbeeld binnen een huishouden of
+vereniging waar iedereen er gewoon bij mag — dan zet een beheerder onder
+**Instellingen → Toegang & registratie** de schakelaar **Zelf registreren
+toestaan** aan. Het inlogscherm krijgt er dan een knop *Account aanmaken* bij, en
+iedereen die het adres kent kan een account maken. Uit staat 'ie weer met
+dezelfde schakelaar; de wissel komt in het logboek te staan.
+
+> Zet 'm alleen open als de app niet zomaar vanaf het internet te bereiken is,
+> of als je het niet erg vindt wie er binnenkomt.
 
 ---
 

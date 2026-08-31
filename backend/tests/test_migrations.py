@@ -230,3 +230,59 @@ def test_a_healthy_database_is_left_completely_alone(tmp_path):
     assert rows(tmp_path, "SELECT COUNT(*) FROM users") == [(2,)]
     assert rows(tmp_path, "SELECT COUNT(*) FROM items") == [(3,)]
     assert rows(tmp_path, "SELECT COUNT(*) FROM wardrobes WHERE owner_id = 2") == [(1,)]
+
+
+# The invitations table as it shipped while every link belonged to a kast:
+# wardrobe_id NOT NULL, which an account invitation cannot satisfy.
+OLD_INVITATIONS = """
+CREATE TABLE invitations (
+    id INTEGER NOT NULL PRIMARY KEY,
+    token VARCHAR(64) NOT NULL,
+    wardrobe_id INTEGER NOT NULL REFERENCES wardrobes(id) ON DELETE CASCADE,
+    role VARCHAR(10) NOT NULL,
+    label VARCHAR(120),
+    created_by_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at DATETIME NOT NULL,
+    expires_at DATETIME, accepted_at DATETIME, accepted_by_id INTEGER, revoked_at DATETIME
+);
+CREATE UNIQUE INDEX ix_invitations_token ON invitations (token);
+INSERT INTO invitations VALUES
+    (1, 'bewaar-mij', 1, 'editor', 'Partner', 2, '2024-01-01', NULL, NULL, NULL, NULL);
+"""
+
+
+def test_upgrade_allows_invitations_without_a_kast(tmp_path):
+    """Account invitations need ``wardrobe_id`` to be nullable.
+
+    SQLite cannot relax a NOT NULL in place, so the migration rebuilds the
+    table — and the links people are still holding have to survive that.
+    """
+    result = boot(
+        tmp_path,
+        OLD_USERS + WARDROBES + old_items(with_wardrobe_id=True) + OLD_INVITATIONS,
+    )
+    assert result.returncode == 0, result.stderr
+
+    # The existing link is untouched...
+    assert rows(tmp_path, "SELECT token, wardrobe_id, role, label FROM invitations") == [
+        ("bewaar-mij", 1, "editor", "Partner")
+    ]
+    # ...the token is still unique...
+    indexes = {
+        name for (name,) in rows(
+            tmp_path,
+            "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='invitations'",
+        )
+    }
+    assert "ix_invitations_token" in indexes
+    # ...and a link without a kast now fits.
+    con = sqlite3.connect(tmp_path / "wardrobe.db")
+    try:
+        con.execute(
+            "INSERT INTO invitations (token, wardrobe_id, role, created_by_id, created_at)"
+            " VALUES ('account-link', NULL, 'viewer', 1, '2024-01-02')"
+        )
+        con.commit()
+    finally:
+        con.close()
+    assert rows(tmp_path, "SELECT COUNT(*) FROM invitations WHERE wardrobe_id IS NULL") == [(1,)]

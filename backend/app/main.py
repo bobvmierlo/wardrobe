@@ -238,6 +238,62 @@ def migrate_schema() -> None:
         )
 
 
+def migrate_account_invitations() -> None:
+    """Let ``invitations.wardrobe_id`` be NULL, for account invitations.
+
+    Every invitation used to belong to a kast, so the column was NOT NULL. An
+    account invitation belongs to no kast at all, and SQLite cannot relax a
+    constraint in place — so rebuild the table once, keeping every existing
+    link exactly as it was.
+    """
+    with engine.begin() as conn:
+        cols = conn.exec_driver_sql("PRAGMA table_info(invitations)").fetchall()
+        if not cols:
+            return  # fresh install: create_all already made the correct schema
+        # (cid, name, type, notnull, default, pk)
+        if not any(c[1] == "wardrobe_id" and c[3] for c in cols):
+            return  # already nullable
+
+        # Links pointing at a kast or a creator that is gone would fail the
+        # copy (foreign keys are enforced). They are wreckage either way —
+        # migrate_orphans would drop them minutes later — so drop them here.
+        conn.exec_driver_sql(
+            "DELETE FROM invitations WHERE wardrobe_id NOT IN (SELECT id FROM wardrobes)"
+            " OR created_by_id NOT IN (SELECT id FROM users)"
+        )
+        conn.exec_driver_sql(
+            "CREATE TABLE invitations_new ("
+            " id INTEGER NOT NULL PRIMARY KEY,"
+            " token VARCHAR(64) NOT NULL,"
+            " wardrobe_id INTEGER REFERENCES wardrobes(id) ON DELETE CASCADE,"
+            " role VARCHAR(10),"
+            " label VARCHAR(120),"
+            " created_by_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,"
+            " created_at DATETIME,"
+            " expires_at DATETIME,"
+            " accepted_at DATETIME,"
+            " accepted_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL,"
+            " revoked_at DATETIME)"
+        )
+        conn.exec_driver_sql(
+            "INSERT INTO invitations_new (id, token, wardrobe_id, role, label,"
+            " created_by_id, created_at, expires_at, accepted_at, accepted_by_id,"
+            " revoked_at)"
+            " SELECT id, token, wardrobe_id, role, label, created_by_id, created_at,"
+            " expires_at, accepted_at, accepted_by_id, revoked_at FROM invitations"
+        )
+        conn.exec_driver_sql("DROP TABLE invitations")
+        conn.exec_driver_sql("ALTER TABLE invitations_new RENAME TO invitations")
+        conn.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_invitations_token ON invitations (token)"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_invitations_wardrobe_id"
+            " ON invitations (wardrobe_id)"
+        )
+        log.info("Uitnodigingen: kolom wardrobe_id mag nu leeg zijn (accountuitnodigingen)")
+
+
 def migrate_wardrobes() -> None:
     """Give every user a wardrobe and move existing garments into one.
 
@@ -385,9 +441,12 @@ def migrate_orphans() -> None:
         if dangling_members:
             removed["gedeelde toegangen"] = len(dangling_members)
 
+        # An account invitation has no kast on purpose; only a link pointing at
+        # a kast that is *gone* is wreckage.
         dangling_invites = [
             inv for inv in db.query(Invitation).all()
-            if inv.wardrobe_id not in wardrobe_ids or inv.created_by_id not in user_ids
+            if (inv.wardrobe_id is not None and inv.wardrobe_id not in wardrobe_ids)
+            or inv.created_by_id not in user_ids
         ]
         for invitation in dangling_invites:
             db.delete(invitation)
@@ -479,6 +538,7 @@ log.info("Kledingkast %s start op, database: %s", __version__, settings.db_path)
 migrate_schema()
 seed_admin()
 migrate_sizes()
+migrate_account_invitations()
 migrate_size_uniqueness()
 migrate_wardrobes()
 migrate_brands()

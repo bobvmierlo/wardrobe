@@ -192,8 +192,17 @@ export interface Stats {
   remaining_for_me: number;
 }
 
+/** What the login screen is allowed to offer someone without an account. */
+export interface AuthConfig {
+  /** True when anyone may create their own account; false = invitation only. */
+  self_registration: boolean;
+}
+
 // ---- invitation links ----
 export type InvitationStatus = "open" | "accepted" | "expired" | "revoked";
+
+/** "wardrobe" shares an existing kast; "account" only creates a login. */
+export type InvitationKind = "wardrobe" | "account";
 
 export const INVITATION_STATUS_LABELS: Record<InvitationStatus, string> = {
   open: "Nog te gebruiken",
@@ -205,10 +214,14 @@ export const INVITATION_STATUS_LABELS: Record<InvitationStatus, string> = {
 export interface Invitation {
   id: number;
   token: string;
+  kind: InvitationKind;
+  /** The kast being shared — null for an account link, which shares none. */
+  wardrobe_name: string | null;
   /** Path to open in a browser, e.g. "/invite/abc". Combine with the current
    *  origin to get the full link to share. */
   path: string;
-  role: MemberRole;
+  /** Null for an account link: there is no kast to have a role on. */
+  role: MemberRole | null;
   label: string | null;
   status: InvitationStatus;
   created_at: string;
@@ -217,11 +230,13 @@ export interface Invitation {
   accepted_by: User | null;
 }
 
-/** What the holder of a link is told before signing in or registering. */
+/** What the holder of a link is told before signing in or registering.
+ *  An account link shares no kast, so it leaves those fields empty. */
 export interface InvitationInfo {
-  wardrobe_name: string;
-  owner_name: string;
-  role: MemberRole;
+  kind: InvitationKind;
+  wardrobe_name: string | null;
+  owner_name: string | null;
+  role: MemberRole | null;
   label: string | null;
   status: InvitationStatus;
   expires_at: string | null;
