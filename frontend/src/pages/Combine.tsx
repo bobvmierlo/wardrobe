@@ -44,6 +44,18 @@ interface LastDecision {
   verdict: Verdict;
 }
 
+/** The queue in hand, put back in the order the server would hand it out:
+ *  everything unseen first, everything postponed behind it.
+ *
+ *  Skipping is "not now", not "not this garment", so a skipped pair belongs
+ *  behind every pair still unseen — including the ones a top-up fetches after
+ *  the skip. Both filters keep their input order, so the pairs that were unseen
+ *  stay as they were ranked, and a pair skipped again lands behind the ones put
+ *  off before it. */
+function unseenFirst(pairs: Pair[]): Pair[] {
+  return [...pairs.filter((p) => !p.skipped), ...pairs.filter((p) => p.skipped)];
+}
+
 /** Whether a swiped pair and a judged pair are the same two garments. */
 function samePair(pair: Pair, judged: JudgedPair): boolean {
   const swiped = [pair.anchor.id, pair.candidate.id].sort().join("-");
@@ -172,7 +184,7 @@ export default function Combine() {
           const key = pairKey(p.anchor.id, p.candidate.id);
           return !have.has(key) && !pendingKeys.has(key);
         });
-        const grown = [...held, ...extra];
+        const grown = unseenFirst([...held, ...extra]);
         if (grown.length > 0) setDone(false);
         return grown;
       });
@@ -276,8 +288,9 @@ export default function Combine() {
   async function handleSkip() {
     if (!pair || !current) return;
     const skipped = pair;
-    // Locally it goes to the back, which is what the server does with it too.
-    setQueue((held) => [...held.slice(1), { ...skipped, skipped: true }]);
+    // Locally it goes behind everything still unseen, which is what the server
+    // does with it too — and it stays there when the queue is topped up.
+    setQueue((held) => unseenFirst([...held.slice(1), { ...skipped, skipped: true }]));
     setLast(null); // nothing was decided, so there is nothing to undo
     try {
       await api.skipPair(skipped.anchor.id, skipped.candidate.id);
