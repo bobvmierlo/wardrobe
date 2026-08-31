@@ -366,7 +366,7 @@ export default function Settings() {
       <div className="topbar">
         <h1>Instellingen</h1>
       </div>
-      <div className="content stack">
+      <div className="content stack settings-cols">
         {msg && <div className="notice">{msg}</div>}
         {err && <div className="error">{err}</div>}
 

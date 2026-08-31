@@ -920,3 +920,274 @@ label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0 0 6px
   background: color-mix(in srgb, var(--primary) 12%, var(--surface));
   border: 1px solid color-mix(in srgb, var(--primary) 35%, var(--border));
 }
+
+/* ======================================================================
+   DESKTOP
+   ----------------------------------------------------------------------
+   Everything above this line is written for a phone held in one hand: one
+   column of 640px, the navigation under your thumb. On a wide screen that
+   same layout leaves two thirds of the window empty and parks the menu as
+   far from the pointer as it can get.
+
+   So from 900px up the app rearranges itself instead of merely stretching:
+   the bottom bar stands up as a rail on the left, the column grows into the
+   room that frees up, and the grids answer with more columns rather than
+   bigger cards. Every rule that changes anything lives behind the media
+   query, so the phone layout is exactly what it was.
+   ====================================================================== */
+
+:root {
+  --rail-w: 232px;
+  /* How wide the reading column is allowed to get. Beyond this a line of
+     text stops being comfortable, however much window there is. */
+  --content-max: 1180px;
+}
+
+/* Pieces that only exist for the desktop layout. Hidden by default so the
+   phone never renders them, shown again inside the media query below. */
+.rail-brand,
+.fab-label,
+.kbd-hint { display: none; }
+
+/* The nav on pages that have no bottom bar on a phone (a garment, the form,
+   the log): on a wide screen the rail is context, on a phone the "← Terug"
+   button is the whole navigation and a bar would only be in the way. */
+@media (max-width: 899.98px) {
+  .nav-desktop-only { display: none; }
+}
+
+/* ---- in between ----
+   A tablet, or a browser window taking up half a desktop screen: too narrow
+   for a rail, too wide for a column built for a hand. The layout stays the
+   phone's, the column simply stops leaving a hand's width of nothing down
+   both sides — and the room goes into more garments per row, not bigger ones. */
+@media (min-width: 720px) and (max-width: 899.98px) {
+  :root { --maxw: 780px; }
+  .grid { grid-template-columns: repeat(4, 1fr); }
+}
+
+@media (min-width: 900px) {
+  /* ---- shell ----
+     The column is no longer the app; the window is. Top bar and content keep
+     their own reading width by way of padding, so their backgrounds still run
+     from edge to edge while the text inside lines up on one column. */
+  .app { max-width: none; margin: 0; }
+  .app:has(.bottomnav) { padding-left: var(--rail-w); }
+
+  .topbar,
+  .content {
+    padding-inline: max(28px, calc((100% - var(--content-max)) / 2));
+  }
+  .topbar { padding-block: 18px; }
+  .topbar h1 { font-size: 1.35rem; }
+  /* No bottom bar to clear down here any more. */
+  .content { padding-block: 24px 56px; }
+
+  /* Long explanations should not run the full width of a monitor. */
+  .content > p,
+  .empty p,
+  .backup-hint,
+  .suggest-reason { max-width: 72ch; }
+  .empty p { margin-inline: auto; }
+  /* One centred line under the page: it should centre on the page, not on the
+     reading width the paragraphs above it get. */
+  .content > .app-footer { max-width: none; }
+
+  /* ---- bottom bar becomes a left rail ---- */
+  .bottomnav {
+    top: 0;
+    right: auto;
+    bottom: 0;
+    width: var(--rail-w);
+    height: auto;
+    padding-bottom: 0;
+    flex-direction: column;
+    overflow-y: auto;
+    border-top: none;
+    border-right: 1px solid var(--border);
+  }
+  .bottomnav .inner {
+    max-width: none;
+    flex-direction: column;
+    gap: 4px;
+    padding: 14px 14px 20px;
+  }
+  .rail-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 20px 16px 14px;
+    font-weight: 700;
+    font-size: 1rem;
+  }
+  .rail-brand .logo { font-size: 1.5rem; line-height: 1; }
+  .bottomnav a {
+    flex: none;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 12px;
+    padding: 11px 14px;
+    border-radius: 12px;
+    font-size: 0.92rem;
+    font-weight: 600;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .bottomnav a:hover { background: var(--surface-2); color: var(--text); }
+  .bottomnav a.active {
+    background: color-mix(in srgb, var(--primary) 16%, transparent);
+    color: var(--primary);
+  }
+  .bottomnav .ico { font-size: 1.15rem; }
+
+  /* ---- add button ----
+     Out of thumb's reach and next to nothing on a wide screen, so it says
+     what it does instead of leaving a bare "+" to be worked out. */
+  .fab {
+    right: 32px;
+    bottom: 32px;
+    width: auto;
+    height: 52px;
+    padding: 0 22px;
+    gap: 10px;
+    border-radius: 999px;
+    font-weight: 700;
+  }
+  .fab-label { display: inline; }
+
+  /* ---- grids fill the width with more cards, not bigger ones ---- */
+  .grid {
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 16px;
+  }
+  .import-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+
+  /* ---- kast ----
+     Searching is a keyboard job here, but a search field the width of a
+     monitor looks like a mistake. */
+  .content > .field:first-child input { max-width: 420px; }
+  .wardrobe-select { max-width: 280px; }
+
+  /* ---- combineer ----
+     Side by side is what the room is for: both photos get bigger together,
+     which is the only way a colour comparison means anything.
+
+     One task per screen, so the page keeps a column of its own rather than
+     spreading a pair of photos over a whole monitor. */
+  .content.combine { padding-inline: max(28px, calc((100% - 960px) / 2)); }
+  .combine { gap: 20px; }
+  /* Wide enough to compare, never so tall that the verdict buttons fall off
+     the bottom: both panels are 3:4, so the pair is 1.5x as wide as it is
+     high, and what is left of the window after the bars is what it may use. */
+  .combine-side {
+    max-width: clamp(420px, calc((100vh - 420px) * 1.5), 900px);
+    gap: 16px;
+  }
+  .deck { max-width: clamp(280px, calc((100vh - 420px) * 0.75), 400px); }
+  /* Label and switch belong together; spread over a whole monitor the word
+     "Weergave" ends up on its own in a corner. */
+  .view-toggle { max-width: 560px; }
+  .kbd-hint { display: block; }
+
+  /* ---- outfits ---- */
+  /* A two-way switch as wide as a monitor reads as two buttons that happen to
+     touch; at this width it still reads as one control. */
+  .seg { max-width: 460px; }
+  .filters select { flex: 0 1 240px; }
+  /* On a phone this button takes its own row; here it fits beside the
+     dropdowns it undoes. */
+  .filters .btn-ghost { flex: 0 0 auto; }
+
+  /* ---- kledingstuk: photo beside the details instead of above them ---- */
+  .detail-cols {
+    display: grid;
+    grid-template-columns: minmax(0, 340px) minmax(0, 1fr);
+    gap: 28px;
+    align-items: start;
+  }
+  /* The photo stays in view while you scroll through the combinations it is
+     part of — that pairing is the point of the page. */
+  .detail-main {
+    position: sticky;
+    top: 92px;
+  }
+  .detail-photo { max-height: 70vh; }
+
+  /* ---- instellingen ----
+     A stack of small cards leaves a very long, very narrow page. Two columns
+     put the whole of it on one screen.
+     Columns rather than a grid: the cards are wildly different heights, and a
+     grid would line their rows up and leave a hole under every short one. */
+  .content.settings-cols {
+    display: block;
+    columns: 2;
+    column-gap: 16px;
+  }
+  .content.settings-cols > * {
+    /* A card split across the fold of two columns is unreadable. */
+    break-inside: avoid;
+    margin-bottom: 16px;
+  }
+
+  /* ---- dialogs get the room they were denied on a phone ---- */
+  .editor-panel { max-width: 560px; }
+  .confirm-panel { max-width: 420px; }
+}
+
+/* ---- pointer affordances ----
+   A mouse can hover, and on a screen this size hovering is how you find out
+   what is clickable. Touch devices are excluded: there "hover" sticks after
+   a tap and leaves cards lit up for no reason. */
+@media (hover: hover) and (pointer: fine) {
+  .card {
+    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .card:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--surface-2);
+    border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
+  }
+  .btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
+  .seg-btn:hover:not(.active) { color: var(--text); }
+  .circle-btn { transition: transform 0.12s ease, border-color 0.15s ease; }
+  .circle-btn:hover:not(:disabled) { transform: scale(1.06); border-color: currentColor; }
+  .judged-row:hover,
+  .log-row:hover { border-color: color-mix(in srgb, var(--primary) 30%, var(--border)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .circle-btn { transition: none; }
+  .card:hover { transform: none; }
+  .circle-btn:hover:not(:disabled) { transform: none; }
+}
+
+/* ---- keyboard hints (Combineer) ----
+   Only worth showing where there is a keyboard to use them with. */
+.kbd-hint {
+  font-size: 0.78rem;
+  color: var(--muted);
+  text-align: center;
+  margin: 0;
+}
+.kbd-hint kbd {
+  font: inherit;
+  font-size: 0.72rem;
+  padding: 2px 7px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+/* The version in the footer links to what shipped it, on GitHub. Muted like
+   the rest of the line — it is a reference, not a call to action. */
+.version-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--muted) 45%, transparent);
+  text-underline-offset: 2px;
+}
+.version-link:hover { color: var(--primary); text-decoration-color: currentColor; }

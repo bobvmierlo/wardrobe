@@ -17,13 +17,25 @@ type CombineView = "deck" | "side";
 
 const VIEW_KEY = "wardrobe.combine.view";
 
-/** The view chosen last time — comparing is a habit, not a per-pair decision. */
+/** Whether there is room to put both garments up at full size at once. */
+function widescreen(): boolean {
+  return typeof window !== "undefined" && window.matchMedia("(min-width: 900px)").matches;
+}
+
+/** The view chosen last time — comparing is a habit, not a per-pair decision.
+ *
+ * Never chosen at all, the screen decides: side by side needs the width of a
+ * desktop, where it is the better of the two (two photos, one size, one look).
+ * On a phone one of the pair would shrink to a thumbnail, so there the single
+ * card stays what you get. */
 function storedView(): CombineView {
   try {
-    return localStorage.getItem(VIEW_KEY) === "side" ? "side" : "deck";
+    const saved = localStorage.getItem(VIEW_KEY);
+    if (saved === "side" || saved === "deck") return saved;
   } catch {
     return "deck";
   }
+  return widescreen() ? "side" : "deck";
 }
 
 /** The pair the user last decided on, so a mistake can be taken back at once. */
@@ -337,6 +349,45 @@ export default function Combine() {
     setZoom([zoomPhoto(pair.anchor, "Bovenstuk"), zoomPhoto(pair.candidate, "Onderstuk")]);
   }
 
+  /* Judging from the keyboard. Dragging a card with a mouse works, but it is a
+     lot of hand for a yes/no, and this page is a queue you work through. The
+     listener is re-attached every render on purpose: it reads the pair and the
+     undo that are current now, not the ones it was created with. */
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName ?? "";
+      // Never take a key away from something being typed in.
+      if (el?.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(tag)) return;
+      // The full-screen viewer and the confirm dialog have keys of their own.
+      if (zoom || document.querySelector(".confirm-panel")) return;
+      const space = e.key === " " || e.key === "Spacebar";
+      // A focused button already answers to the space bar.
+      if (space && /^(BUTTON|A)$/.test(tag)) return;
+
+      if (e.key === "u" || e.key === "U") {
+        if (!last) return;
+        e.preventDefault();
+        undoLast();
+        return;
+      }
+      if (!pair) return;
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        cardRef.current?.swipe("no");
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        cardRef.current?.swipe("yes");
+      } else if (space) {
+        e.preventDefault();
+        handleSkip();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
   const anchor = pair?.anchor;
   const anchorSrc = anchor ? photoUrl(anchor, true) : null;
   // The side-by-side panel is as big as the swipe card, so it needs the full
@@ -473,8 +524,12 @@ export default function Combine() {
                   </button>
 
                   <div className="deck">
+                    {/* Keyed on the pair, not on the candidate: two pairs in a
+                        row often share one garment, and reusing the card then
+                        leaves it in the swiped-away state the last verdict put
+                        it in — off-screen, and deaf to the next one. */}
                     <SwipeCard
-                      key={pair.candidate.id}
+                      key={`${pair.anchor.id}-${pair.candidate.id}`}
                       ref={cardRef}
                       item={pair.candidate}
                       onDecide={handleDecide}
@@ -509,8 +564,9 @@ export default function Combine() {
                 </div>
 
                 <div className="deck">
+                  {/* Keyed on the pair — see the side-by-side view above. */}
                   <SwipeCard
-                    key={pair.candidate.id}
+                    key={`${pair.anchor.id}-${pair.candidate.id}`}
                     ref={cardRef}
                     item={pair.candidate}
                     onDecide={handleDecide}
@@ -540,6 +596,11 @@ export default function Combine() {
               {view === "side"
                 ? " Tik op een foto om beide schermvullend naast elkaar te zetten."
                 : " Tik op ⤢ om beide stukken even groot naast elkaar te zien."}
+            </p>
+            {/* Only shown where there is a keyboard to use them with (CSS). */}
+            <p className="kbd-hint">
+              <kbd>←</kbd> past niet · <kbd>→</kbd> combineert · <kbd>spatie</kbd> overslaan ·{" "}
+              <kbd>U</kbd> laatste ongedaan maken
             </p>
           </>
         )}
