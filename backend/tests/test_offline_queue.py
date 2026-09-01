@@ -105,6 +105,64 @@ def test_a_skipped_pair_sinks_to_the_back(client):
     assert after[-1]["skipped"] is True
 
 
+def skip(client, token, pair):
+    r = client.post(
+        "/api/matches/skip",
+        headers=h(token),
+        json={"item_a_id": pair["anchor"]["id"], "item_b_id": pair["candidate"]["id"]},
+    )
+    assert r.status_code == 204, r.text
+
+
+def test_a_skipped_pair_sinks_behind_the_pairs_of_every_other_garment(client):
+    """Skipping is "not now", not "not this garment".
+
+    A pair put off used to sink only to the bottom of the candidates of the
+    garment it was found under, so it came back while other garments still had
+    pairs nobody had ever seen. It now goes behind the whole queue.
+    """
+    token, wid, _ids = setup_wardrobe(
+        client,
+        ("Overhemd", "Overhemd", "wit"),
+        ("Trui", "Trui", "grijs"),
+        ("Broek", "Broek", "blauw"),
+        ("Rok", "Rok", "zwart"),
+    )
+    before = queue(client, token, wid)
+    assert len(before) == 4, before
+    first = before[0]
+    skip(client, token, first)
+
+    after = queue(client, token, wid)
+    assert key(after[-1]) == key(first)
+    assert after[-1]["skipped"] is True
+    # Everything ahead of it is still unseen, including the pairs that share a
+    # garment with the one that was put off.
+    assert all(p["skipped"] is False for p in after[:-1])
+    assert {key(p) for p in after} == {key(p) for p in before}
+
+
+def test_pairs_put_off_come_back_in_the_order_they_were_skipped(client):
+    token, wid, _ids = setup_wardrobe(
+        client,
+        ("Overhemd", "Overhemd", "wit"),
+        ("Trui", "Trui", "grijs"),
+        ("Broek", "Broek", "blauw"),
+        ("Rok", "Rok", "zwart"),
+    )
+    first, second = queue(client, token, wid)[:2]
+    skip(client, token, first)
+    skip(client, token, second)
+
+    tail = queue(client, token, wid)[-2:]
+    assert [key(p) for p in tail] == [key(first), key(second)]
+
+    # Skipping the longest-postponed pair again sends it to the very back.
+    skip(client, token, first)
+    tail = queue(client, token, wid)[-2:]
+    assert [key(p) for p in tail] == [key(second), key(first)]
+
+
 def test_the_queue_needs_access_to_the_wardrobe(client):
     from tests.test_wardrobes import ADMIN_PASS, ADMIN_USER, login, make_user
 

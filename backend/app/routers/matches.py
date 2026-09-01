@@ -101,6 +101,9 @@ def _pair_queue(
     this queue, and the app asks for a stretch of it to carry offline. Because
     both come from here, what someone swipes through without a connection is
     exactly what the server would have handed them one at a time.
+
+    Everything unseen comes first; pairs that were skipped follow at the very
+    end of the whole queue, oldest skip first.
     """
     require_view(db, wardrobe_id, user)
     items = _wardrobe_items(db, wardrobe_id)
@@ -118,16 +121,12 @@ def _pair_queue(
             and seasons_compatible(anchor.season, it.season)
             and can_combine(anchor.category, it.category)
         ]
-        # Never-seen pairs first (cross-group before same-group, newest first),
-        # then the skipped ones in the order they were put off.
+        # Cross-group pairs before same-group ones, newest garment first.
+        # Whether a pair was skipped plays no part here: postponed pairs are
+        # lifted out of the queue below and ordered against each other, not
+        # against the candidates of the garment they happen to share.
         def sort_key(it: Item):
-            when = skipped.get(frozenset((anchor.id, it.id)))
-            return (
-                when is not None,
-                when.timestamp() if when else 0.0,
-                not is_cross_group(anchor.category, it.category),
-                -it.id,
-            )
+            return (not is_cross_group(anchor.category, it.category), -it.id)
 
         cands.sort(key=sort_key)
         return cands
@@ -174,18 +173,36 @@ def _pair_queue(
         scored.sort(key=lambda row: row[0], reverse=True)
         ranked = [(anchor, cands) for _key, anchor, cands in scored]
 
+    # Skipping is "not now", not "not this garment": a postponed pair goes
+    # behind *everything* still unseen, not merely behind the rest of its own
+    # anchor's candidates. So the two are gathered separately and the postponed
+    # ones are appended at the very end, oldest skip first — whoever was put off
+    # longest ago comes back around first, and skipping again sends it to the
+    # back once more.
     queue: list[PairOut] = []
+    postponed: list[tuple[datetime, PairOut]] = []
     seen: set[frozenset[int]] = set()
     for anchor, cands in ranked:
+        if len(queue) >= limit:
+            break
         for candidate in cands:
             # The same two garments rank under both of them; offer them once.
             key = frozenset((anchor.id, candidate.id))
             if key in seen:
                 continue
             seen.add(key)
-            queue.append(as_pair(anchor, candidate))
-            if len(queue) >= limit:
-                return queue
+            when = skipped.get(key)
+            if when is None:
+                queue.append(as_pair(anchor, candidate))
+                if len(queue) >= limit:
+                    break
+            else:
+                postponed.append((when, as_pair(anchor, candidate)))
+    # Only reached with room to spare, and then every anchor has been walked,
+    # so what was put off is complete and can be ordered as a whole.
+    if len(queue) < limit:
+        postponed.sort(key=lambda row: row[0])
+        queue.extend(pair for _when, pair in postponed[: limit - len(queue)])
     return queue
 
 
@@ -200,8 +217,8 @@ def next_pair(
 
     Pass ``anchor_id`` to keep swiping candidates for one garment. Omit it to
     let the server pick the garment with the most work left. Pairs the user
-    skipped come last, so everything unseen is offered before anything they
-    already put off once.
+    skipped come after every unseen pair in the wardrobe, so nothing that was
+    put off once returns while there is still something new to judge.
     """
     queue = _pair_queue(db, wardrobe_id, user, anchor_id, limit=1)
     return queue[0] if queue else None
