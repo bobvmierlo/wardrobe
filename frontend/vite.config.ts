@@ -12,10 +12,20 @@ export default defineConfig({
   // the components, which change shape far more often than they break.
   test: {
     environment: "jsdom",
+    // An explicit origin, because jsdom refuses localStorage on an opaque one
+    // ("localStorage is not available for opaque origins") and the code under
+    // test is all about localStorage. Relying on whatever vitest defaults to
+    // made the suite depend on the Node version underneath it.
+    environmentOptions: { jsdom: { url: "http://localhost/" } },
     include: ["src/**/*.test.ts"],
     // The end-to-end spec is Playwright's; it needs a browser and a server.
     exclude: ["e2e/**", "node_modules/**"],
     restoreMocks: true,
+    // restoreMocks does not undo vi.stubGlobal, so without this a stubbed
+    // `location` or `fetch` outlives the test that wanted it and the suite
+    // quietly depends on the order its files happen to run in.
+    unstubGlobals: true,
+    setupFiles: ["./src/test-setup.ts"],
   },
   plugins: [
     react(),
