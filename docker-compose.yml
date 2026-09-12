@@ -14,43 +14,50 @@ services:
     volumes:
       - kledingkast-data:/data
     environment:
-      # CHANGE THIS to a long random string (e.g. `openssl rand -hex 32`).
-      WARDROBE_SECRET_KEY: "${WARDROBE_SECRET_KEY:?set WARDROBE_SECRET_KEY in .env}"
-      # Bootstrap admin, created only on first run when the database is empty.
-      WARDROBE_ADMIN_USERNAME: "${WARDROBE_ADMIN_USERNAME:-admin}"
-      WARDROBE_ADMIN_PASSWORD: "${WARDROBE_ADMIN_PASSWORD:-changeme}"
-      WARDROBE_ADMIN_DISPLAY_NAME: "${WARDROBE_ADMIN_DISPLAY_NAME:-Beheerder}"
-      WARDROBE_MAX_UPLOAD_MB: "${WARDROBE_MAX_UPLOAD_MB:-15}"
-      # DEBUG, INFO, WARNING of ERROR. Zie `docker compose logs -f kledingkast`
-      # en in de app onder Instellingen → Logboek.
-      WARDROBE_LOG_LEVEL: "${WARDROBE_LOG_LEVEL:-INFO}"
+      # WARDROBE_SECRET_KEY is the one variable with no sensible default, so it
+      # is required here and the stack refuses to start without it.
+      - "WARDROBE_SECRET_KEY=${WARDROBE_SECRET_KEY:?set WARDROBE_SECRET_KEY in .env}"
+      # Everything else is passed through BY NAME ONLY, which matters for two
+      # reasons. Compose hands a bare name to the container only when it is
+      # actually set (in .env or your shell), so an unset variable stays unset
+      # and app/config.py owns the default — one place, no drift between this
+      # file and the code. And because the variable is genuinely absent, the
+      # app can tell "you set this" from "this is the built-in default" and says
+      # which in the startup log. Writing "${WARDROBE_X:-iets}" instead would
+      # always set the variable and throw that distinction away.
+      #
+      # See .env.example for what each one does; the defaults are listed in the
+      # README's configuration table.
+      - WARDROBE_PUBLIC_URL
+      - WARDROBE_ADMIN_USERNAME
+      - WARDROBE_ADMIN_PASSWORD
+      - WARDROBE_ADMIN_DISPLAY_NAME
+      - WARDROBE_MAX_UPLOAD_MB
+      - WARDROBE_LOG_LEVEL
+      - WARDROBE_ACCESS_TOKEN_EXPIRE_MINUTES
       # ---- Beveiliging ----
-      # De standaarden zijn al de veilige keuze; zie .env.example en de README.
-      WARDROBE_LOGIN_MAX_ATTEMPTS: "${WARDROBE_LOGIN_MAX_ATTEMPTS:-5}"
-      WARDROBE_LOGIN_LOCKOUT_SECONDS: "${WARDROBE_LOGIN_LOCKOUT_SECONDS:-30}"
-      WARDROBE_MIN_PASSWORD_LENGTH: "${WARDROBE_MIN_PASSWORD_LENGTH:-8}"
-      WARDROBE_CORS_ORIGINS: "${WARDROBE_CORS_ORIGINS:-}"
-      WARDROBE_COOKIE_SECURE: "${WARDROBE_COOKIE_SECURE:-auto}"
-      WARDROBE_HSTS_SECONDS: "${WARDROBE_HSTS_SECONDS:-0}"
-      WARDROBE_FETCH_ALLOW_PRIVATE: "${WARDROBE_FETCH_ALLOW_PRIVATE:-false}"
+      - WARDROBE_LOGIN_MAX_ATTEMPTS
+      - WARDROBE_LOGIN_LOCKOUT_SECONDS
+      - WARDROBE_MIN_PASSWORD_LENGTH
+      - WARDROBE_CORS_ORIGINS
+      - WARDROBE_COOKIE_SECURE
+      - WARDROBE_CONTENT_SECURITY_POLICY
+      - WARDROBE_HSTS_SECONDS
+      - WARDROBE_FETCH_ALLOW_PRIVATE
       # ---- Inloggen via SSO (OpenID Connect), optioneel ----
-      # Alles leeg/false = uit; dan verandert er niets. Zie .env.example en de
-      # README. Inloggen met gebruikersnaam en wachtwoord blijft altijd werken,
-      # zodat een onbereikbare provider je nooit buitensluit.
-      WARDROBE_PUBLIC_URL: "${WARDROBE_PUBLIC_URL:-}"
-      WARDROBE_OIDC_ENABLED: "${WARDROBE_OIDC_ENABLED:-false}"
-      WARDROBE_OIDC_ISSUER: "${WARDROBE_OIDC_ISSUER:-}"
-      WARDROBE_OIDC_CLIENT_ID: "${WARDROBE_OIDC_CLIENT_ID:-}"
-      WARDROBE_OIDC_CLIENT_SECRET: "${WARDROBE_OIDC_CLIENT_SECRET:-}"
-      WARDROBE_OIDC_SCOPES: "${WARDROBE_OIDC_SCOPES:-openid profile email groups}"
-      WARDROBE_OIDC_GROUPS_CLAIM: "${WARDROBE_OIDC_GROUPS_CLAIM:-groups}"
-      WARDROBE_OIDC_ADMIN_GROUP: "${WARDROBE_OIDC_ADMIN_GROUP:-}"
-      WARDROBE_OIDC_ALLOWED_GROUPS: "${WARDROBE_OIDC_ALLOWED_GROUPS:-}"
-      WARDROBE_OIDC_AUTO_CREATE: "${WARDROBE_OIDC_AUTO_CREATE:-false}"
-      WARDROBE_OIDC_LINK_BY_USERNAME: "${WARDROBE_OIDC_LINK_BY_USERNAME:-false}"
-      WARDROBE_OIDC_BUTTON_LABEL: "${WARDROBE_OIDC_BUTTON_LABEL:-Inloggen met SSO}"
-      WARDROBE_OIDC_LOGOUT_REDIRECT: "${WARDROBE_OIDC_LOGOUT_REDIRECT:-false}"
-      WARDROBE_LOCAL_LOGIN: "${WARDROBE_LOCAL_LOGIN:-true}"
+      - WARDROBE_OIDC_ENABLED
+      - WARDROBE_OIDC_ISSUER
+      - WARDROBE_OIDC_CLIENT_ID
+      - WARDROBE_OIDC_CLIENT_SECRET
+      - WARDROBE_OIDC_SCOPES
+      - WARDROBE_OIDC_GROUPS_CLAIM
+      - WARDROBE_OIDC_ADMIN_GROUP
+      - WARDROBE_OIDC_ALLOWED_GROUPS
+      - WARDROBE_OIDC_AUTO_CREATE
+      - WARDROBE_OIDC_LINK_BY_USERNAME
+      - WARDROBE_OIDC_BUTTON_LABEL
+      - WARDROBE_OIDC_LOGOUT_REDIRECT
+      - WARDROBE_LOCAL_LOGIN
 
 volumes:
   kledingkast-data:

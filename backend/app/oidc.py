@@ -69,16 +69,40 @@ HANDOFF_TTL_SECONDS = 120
 #: that rotating an endpoint does not need a container restart.
 DISCOVERY_TTL_SECONDS = 3600
 
+#: The signing keys are cached this long, and re-fetched straight away when a
+#: token names a key we have not seen — that is what makes key rotation a
+#: non-event. The floor stops an unknown kid from becoming a way to make the
+#: app hammer the provider.
+JWKS_TTL_SECONDS = 3600
+JWKS_MIN_REFETCH_SECONDS = 60
+
 HTTP_TIMEOUT = 10.0
+
+
+#: Sent on every call to the provider. Identifiable on purpose: a reverse proxy
+#: or WAF in front of an identity provider is free to refuse an anonymous
+#: client, and "Kledingkast" in the access log is what lets an operator allow it
+#: rather than guess. PyJWT's own JWKS client used to do these fetches with
+#: urllib's default "Python-urllib/3.x", which is exactly the kind of thing such
+#: a filter blocks — see :func:`_fetch_jwks`.
+USER_AGENT = "Kledingkast/OIDC (+https://github.com/bobvmierlo/wardrobe)"
 
 
 def _client() -> httpx.Client:
     """The HTTP client used for every call to the provider.
 
+    *Every* call: discovery, the token exchange, userinfo **and** the signing
+    keys. They used to not all come through here, and that cost an afternoon —
+    see :func:`_fetch_jwks`.
+
     A function rather than an inline constructor so the tests can stand up a
     fake provider without reaching into anything global.
     """
-    return httpx.Client(timeout=HTTP_TIMEOUT, follow_redirects=True)
+    return httpx.Client(
+        timeout=HTTP_TIMEOUT,
+        follow_redirects=True,
+        headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+    )
 
 
 class OidcError(Exception):
@@ -98,10 +122,18 @@ class OidcError(Exception):
 class _Discovery:
     document: dict[str, Any]
     fetched_at: float
-    jwk_client: jwt.PyJWKClient
 
 
 _discovery: _Discovery | None = None
+
+
+@dataclass
+class _KeySet:
+    keys: jwt.PyJWKSet
+    fetched_at: float
+
+
+_keys: _KeySet | None = None
 
 
 def _fetch_discovery() -> _Discovery:
@@ -126,13 +158,7 @@ def _fetch_discovery() -> _Discovery:
     log.info(
         "SSO-configuratie geladen van %s (issuer: %s)", url, document["issuer"]
     )
-    return _Discovery(
-        document=document,
-        fetched_at=time.monotonic(),
-        # PyJWT caches the key set and re-fetches when it meets an unknown kid,
-        # which is exactly the behaviour a rotating provider needs.
-        jwk_client=jwt.PyJWKClient(document["jwks_uri"], cache_keys=True),
-    )
+    return _Discovery(document=document, fetched_at=time.monotonic())
 
 
 def discovery() -> _Discovery:
@@ -147,9 +173,133 @@ def discovery() -> _Discovery:
 
 
 def reset_cache() -> None:
-    """Forget the cached metadata. Used by the tests, and harmless elsewhere."""
-    global _discovery
+    """Forget the cached metadata and keys. Used by the tests."""
+    global _discovery, _keys
     _discovery = None
+    _keys = None
+
+
+# ---------------------------------------------------------------------------
+# Signing keys
+# ---------------------------------------------------------------------------
+
+def _fetch_jwks() -> jwt.PyJWKSet:
+    """Fetch the provider's public keys, through the same client as everything else.
+
+    This used to be PyJWT's ``PyJWKClient``, which does its own networking with
+    ``urllib.request.urlopen``. That meant the one call that decides whether a
+    login succeeds went out over a different HTTP stack than the other three:
+    different timeout, different error text, and — the part that actually bit —
+    urllib's default ``User-Agent: Python-urllib/3.x``, which the reverse
+    proxies and WAFs people put in front of an identity provider routinely
+    answer with 403. Discovery would load fine and the login would then fail
+    claiming the ID token was invalid, which sent you to check the issuer and
+    client id: both of them innocent.
+
+    So the keys come through :func:`_client` like everything else, and a failure
+    here says *keys* rather than *token*.
+    """
+    url = discovery().document["jwks_uri"]
+    try:
+        with _client() as client:
+            response = client.get(url)
+            response.raise_for_status()
+            document = response.json()
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code
+        log.error(
+            "Kon de sleutels van de inlogdienst niet ophalen van %s: HTTP %s",
+            url,
+            status,
+        )
+        raise OidcError(
+            f"De sleutels van de inlogdienst zijn niet op te halen (foutcode {status})."
+            " Het adres is wel bereikbaar, dus dit zit meestal in een"
+            " reverse-proxy of firewall vóór je provider die dit verzoek"
+            " tegenhoudt — níet in de issuer-URL of de client-id."
+        ) from exc
+    except Exception as exc:
+        log.error("Kon de sleutels van de inlogdienst niet ophalen van %s: %s", url, exc)
+        raise OidcError(
+            "De sleutels van de inlogdienst zijn niet op te halen. Probeer het"
+            " later nog eens of log in met je gebruikersnaam."
+        ) from exc
+
+    try:
+        key_set = jwt.PyJWKSet.from_dict(document)
+    except jwt.PyJWKSetError as exc:
+        # Authentik with no Signing Key on the provider publishes an empty set
+        # and signs with HS256 instead. That is a provider setting, and saying
+        # so beats "the token is invalid".
+        log.error("De inlogdienst publiceerde geen bruikbare sleutels op %s: %s", url, exc)
+        raise OidcError(
+            "De inlogdienst publiceert geen ondertekeningssleutels. Stel bij de"
+            " toepassing van je provider een 'Signing Key' in (zonder die sleutel"
+            " ondertekent bijvoorbeeld Authentik met HS256, en dat accepteert deze"
+            " app niet)."
+        ) from exc
+
+    log.info(
+        "Sleutels van de inlogdienst geladen van %s (%d sleutel(s))",
+        url,
+        len(key_set.keys),
+    )
+    return key_set
+
+
+def _key_set(*, force: bool = False) -> jwt.PyJWKSet:
+    """The provider's key set, cached. ``force`` re-fetches it now."""
+    global _keys
+    stale = _keys is None or time.monotonic() - _keys.fetched_at > JWKS_TTL_SECONDS
+    if force or stale:
+        if (
+            force
+            and _keys is not None
+            and time.monotonic() - _keys.fetched_at < JWKS_MIN_REFETCH_SECONDS
+        ):
+            # A token naming an unknown kid must not become a way to make the
+            # app hammer the provider on demand.
+            return _keys.keys
+        _keys = _KeySet(keys=_fetch_jwks(), fetched_at=time.monotonic())
+    return _keys.keys
+
+
+def _signing_key(id_token: str):
+    """The key the provider signed this token with.
+
+    Looked up by ``kid``; an unknown one means the provider has rotated its
+    keys since we cached them, so the set is fetched once more before giving up.
+    A token with no ``kid`` at all is matched against a single published key,
+    which is what providers that publish exactly one key tend to send.
+    """
+    try:
+        kid = jwt.get_unverified_header(id_token).get("kid")
+    except jwt.PyJWTError as exc:
+        raise OidcError("Het identiteitsbewijs van de inlogdienst is onleesbaar.") from exc
+
+    for attempt in (False, True):
+        keys = _key_set(force=attempt)
+        if kid is None:
+            if len(keys.keys) == 1:
+                return keys.keys[0]
+        else:
+            try:
+                return keys[kid]
+            except KeyError:
+                pass
+        if attempt:
+            break
+    log.error(
+        "De inlogdienst ondertekende met een onbekende sleutel (kid=%s);"
+        " gepubliceerd zijn: %s",
+        kid,
+        [k.key_id for k in _key_set().keys],
+    )
+    raise OidcError(
+        "Het identiteitsbewijs is ondertekend met een sleutel die de inlogdienst"
+        " niet publiceert. Is de ondertekeningssleutel net gewisseld, probeer het"
+        " dan opnieuw."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -330,13 +480,31 @@ def complete(state_cookie: str, state_param: str, code: str) -> Completed:
             " scope 'openid' is toegestaan voor deze toepassing."
         )
 
-    algorithms = [
-        alg
-        for alg in (document.get("id_token_signing_alg_values_supported") or ALLOWED_ALGORITHMS)
-        if alg in ALLOWED_ALGORITHMS
-    ] or ALLOWED_ALGORITHMS
+    advertised = document.get("id_token_signing_alg_values_supported") or []
+    algorithms = [alg for alg in advertised if alg in ALLOWED_ALGORITHMS]
+    if advertised and not algorithms:
+        # Every algorithm the provider offers is one we refuse. In practice this
+        # is a provider with no signing key, falling back to HS256 — a setting,
+        # not a mystery, so name it.
+        log.error(
+            "De inlogdienst ondertekent alleen met %s; deze app accepteert"
+            " alleen asymmetrische ondertekening (%s).",
+            ", ".join(advertised),
+            ", ".join(ALLOWED_ALGORITHMS),
+        )
+        raise OidcError(
+            f"De inlogdienst ondertekent met {', '.join(advertised)}. Deze app"
+            " accepteert alleen asymmetrische ondertekening (RS256 en"
+            " vergelijkbaar): stel bij de toepassing van je provider een"
+            " 'Signing Key' in."
+        )
+    algorithms = algorithms or ALLOWED_ALGORITHMS
+
+    # Fetching the keys and verifying the token are separate failures with
+    # separate causes, so they get separate messages. Lumping them together is
+    # what once reported a blocked JWKS request as "controleer de issuer-URL".
+    signing_key = _signing_key(id_token)
     try:
-        signing_key = discovery().jwk_client.get_signing_key_from_jwt(id_token)
         claims = jwt.decode(
             id_token,
             signing_key.key,
