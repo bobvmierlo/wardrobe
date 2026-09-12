@@ -7,6 +7,12 @@ from .config import settings
 
 ALGORITHM = "HS256"
 
+#: Stored instead of a hash for an account that has no password of its own —
+#: one created through a federated provider. A bcrypt hash always starts with
+#: "$2", so this can never be matched by any password, and the check below
+#: refuses it explicitly rather than relying on bcrypt to raise.
+UNUSABLE_PASSWORD = "!sso"
+
 
 def hash_password(password: str) -> str:
     # bcrypt operates on the first 72 bytes; encode explicitly.
@@ -15,6 +21,10 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, hashed: str) -> bool:
+    # An account that signs in through a provider has no local password. Such
+    # a hash must never verify, whatever is typed into the form.
+    if not hashed or not hashed.startswith("$2"):
+        return False
     try:
         return bcrypt.checkpw(password.encode("utf-8")[:72], hashed.encode("utf-8"))
     except ValueError:

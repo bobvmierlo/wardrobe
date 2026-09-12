@@ -24,6 +24,24 @@ services:
       # DEBUG, INFO, WARNING of ERROR. Zie `docker compose logs -f kledingkast`
       # en in de app onder Instellingen → Logboek.
       WARDROBE_LOG_LEVEL: "${WARDROBE_LOG_LEVEL:-INFO}"
+      # ---- Inloggen via SSO (OpenID Connect), optioneel ----
+      # Alles leeg/false = uit; dan verandert er niets. Zie .env.example en de
+      # README. Inloggen met gebruikersnaam en wachtwoord blijft altijd werken,
+      # zodat een onbereikbare provider je nooit buitensluit.
+      WARDROBE_PUBLIC_URL: "${WARDROBE_PUBLIC_URL:-}"
+      WARDROBE_OIDC_ENABLED: "${WARDROBE_OIDC_ENABLED:-false}"
+      WARDROBE_OIDC_ISSUER: "${WARDROBE_OIDC_ISSUER:-}"
+      WARDROBE_OIDC_CLIENT_ID: "${WARDROBE_OIDC_CLIENT_ID:-}"
+      WARDROBE_OIDC_CLIENT_SECRET: "${WARDROBE_OIDC_CLIENT_SECRET:-}"
+      WARDROBE_OIDC_SCOPES: "${WARDROBE_OIDC_SCOPES:-openid profile email groups}"
+      WARDROBE_OIDC_GROUPS_CLAIM: "${WARDROBE_OIDC_GROUPS_CLAIM:-groups}"
+      WARDROBE_OIDC_ADMIN_GROUP: "${WARDROBE_OIDC_ADMIN_GROUP:-}"
+      WARDROBE_OIDC_ALLOWED_GROUPS: "${WARDROBE_OIDC_ALLOWED_GROUPS:-}"
+      WARDROBE_OIDC_AUTO_CREATE: "${WARDROBE_OIDC_AUTO_CREATE:-false}"
+      WARDROBE_OIDC_LINK_BY_USERNAME: "${WARDROBE_OIDC_LINK_BY_USERNAME:-false}"
+      WARDROBE_OIDC_BUTTON_LABEL: "${WARDROBE_OIDC_BUTTON_LABEL:-Inloggen met SSO}"
+      WARDROBE_OIDC_LOGOUT_REDIRECT: "${WARDROBE_OIDC_LOGOUT_REDIRECT:-false}"
+      WARDROBE_LOCAL_LOGIN: "${WARDROBE_LOCAL_LOGIN:-true}"
 
 volumes:
   kledingkast-data:

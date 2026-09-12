@@ -14,11 +14,39 @@ const CACHES = ["wardrobe-photos", "wardrobe-api"];
  */
 const USER_KEY = "kledingkast_user";
 
+/** What an SSO redirect leaves in the URL fragment, and what to do with it.
+ *
+ * The server cannot hand the app a token directly — it can only redirect a
+ * browser — so a finished SSO login arrives as a one-time code in the hash.
+ * A fragment never travels in a Referer header, and it is wiped from the URL
+ * the moment it is read, so a shared or reloaded URL cannot replay it.
+ */
+function takeSsoFragment(): { code?: string; error?: string } {
+  const raw = window.location.hash.replace(/^#/, "");
+  if (!raw) return {};
+  let params: URLSearchParams;
+  try {
+    params = new URLSearchParams(raw);
+  } catch {
+    return {};
+  }
+  const code = params.get("oidc") ?? undefined;
+  const error = params.get("oidc_error") ?? undefined;
+  if (code || error) {
+    const { pathname, search } = window.location;
+    window.history.replaceState(null, "", pathname + search);
+  }
+  return { code, error };
+}
+
 interface AuthState {
   user: User | null;
   loading: boolean;
   /** True when we are running on a remembered user rather than a fresh check. */
   stale: boolean;
+  /** Why the last SSO attempt failed, in the server's own words. */
+  ssoError: string | null;
+  clearSsoError: () => void;
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
   refresh: () => Promise<void>;
@@ -53,6 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [stale, setStale] = useState(false);
+  const [ssoError, setSsoError] = useState<string | null>(null);
 
   async function loadMe() {
     if (!getToken()) {
@@ -85,7 +114,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  /** Finish a login that started at the identity provider. */
+  async function completeSso(code: string) {
+    // Whoever used this browser before, their cached kast is not this
+    // person's to see — same reasoning as a password login.
+    clearCaches();
+    try {
+      const res = await api.oidcExchange(code);
+      setToken(res.access_token);
+      remember(res.user);
+      setUser(res.user);
+      setStale(false);
+      setLoading(false);
+    } catch (e) {
+      setSsoError(e instanceof Error ? e.message : "Inloggen via SSO is mislukt");
+      // Fall back to whatever session this browser already had, if any.
+      await loadMe();
+    }
+  }
+
   useEffect(() => {
+    const { code, error } = takeSsoFragment();
+    if (error) setSsoError(error);
+    if (code) {
+      completeSso(code);
+      return;
+    }
     loadMe();
   }, []);
 
@@ -100,6 +154,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   async function login(username: string, password: string) {
+    setSsoError(null);
     // Whoever was here before, their cached kast is not this person's to see.
     clearCaches();
     const res = await api.login(username, password);
@@ -120,10 +175,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     remember(null);
     setUser(null);
     setStale(false);
+    setSsoError(null);
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, stale, login, logout, refresh: loadMe }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+        stale,
+        ssoError,
+        clearSsoError: () => setSsoError(null),
+        login,
+        logout,
+        refresh: loadMe,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

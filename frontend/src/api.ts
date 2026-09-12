@@ -165,6 +165,20 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ self_registration }),
     }),
+  /** Where the browser goes to start an SSO login. A real navigation, not a
+   *  fetch: the server answers with a redirect to another origin. */
+  oidcLoginUrl: (opts: { next?: string; invite?: string } = {}) => {
+    const params = new URLSearchParams({ next: opts.next ?? "/" });
+    if (opts.invite) params.set("invite", opts.invite);
+    return `/api/auth/oidc/login?${params}`;
+  },
+  /** Trade the one-time code from an SSO redirect for an ordinary token. */
+  oidcExchange: (code: string) =>
+    request<{ access_token: string; user: User }>("/api/auth/oidc/exchange", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    }),
   register: (data: { username: string; display_name: string; password: string }) =>
     request<{ access_token: string; user: User }>("/api/auth/register", {
       method: "POST",

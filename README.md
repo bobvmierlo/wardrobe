@@ -26,6 +26,12 @@ welke stukken bij elkaar passen — via een **Tinder-achtige swipe**.
 - 🔒 **Alleen op uitnodiging** – niemand kan zich zomaar aanmelden; dat zegt het
   inlogscherm er ook bij. Een beheerder deelt een **uitnodiging (link of QR-code)**
   uit voor een nieuw account, of zet **zelf registreren** met één schakelaar open.
+- 🔑 **Inloggen via je eigen SSO** – optioneel inloggen met **OpenID Connect**
+  (Authentik, Authelia, Keycloak, Zitadel, Entra ID…). Wie in de juiste **groep**
+  zit is meteen beheerder, wie er niet in zit een gewone gebruiker — bij elke
+  login opnieuw. Een uitnodigingslink werkt ook via SSO. Inloggen met
+  gebruikersnaam en wachtwoord blijft er altijd naast staan, zodat een
+  onbereikbare inlogdienst je nooit buitensluit.
 - 💾 **Back-up & export** – iedereen kan z'n eigen kast downloaden als Excel-bestand
   met de foto's erbij; een beheerder maakt een volledige back-up of een exacte
   momentopname, en kan een export weer terugzetten.
@@ -81,6 +87,9 @@ regel HTTPS met certbot.
 ### Eerste login
 
 1. Ga naar de app en log in met `WARDROBE_ADMIN_USERNAME` / `WARDROBE_ADMIN_PASSWORD` uit je `.env`.
+   (Liever inloggen via je eigen Authentik/Authelia? Zie
+   [Inloggen via SSO](#inloggen-via-sso-openid-connect) — dit account blijft
+   daarnaast bestaan als noodingang.)
 2. Ga naar **Instellingen → Wachtwoord wijzigen** en kies een eigen wachtwoord.
 3. Maak onder **Instellingen → Accounts** een account voor je partner aan.
 4. **Deel je kast:** tik rechtsboven op je eigen kast op **🔗 Delen** (of ga naar
@@ -103,6 +112,25 @@ Alles via omgevingsvariabelen (zie `.env.example`):
 | `WARDROBE_MAX_UPLOAD_MB` | `15` | Max fotogrootte. |
 | `WARDROBE_DATA_DIR` | `/data` (in Docker) | Waar SQLite-db + foto's staan. |
 | `WARDROBE_LOG_LEVEL` | `INFO` | Hoeveel er gelogd wordt: `DEBUG`, `INFO`, `WARNING`, `ERROR`. |
+| `WARDROBE_PUBLIC_URL` | — | Het adres waarop je de app bereikt, bv. `https://kast.jouwdomein.nl`. Alleen nodig voor SSO. |
+
+Voor **inloggen via SSO** (optioneel, standaard uit):
+
+| Variabele | Standaard | Uitleg |
+|---|---|---|
+| `WARDROBE_OIDC_ENABLED` | `false` | Zet federated login aan. Blijft uit zolang issuer, client-id of secret ontbreekt. |
+| `WARDROBE_OIDC_ISSUER` | — | Basis-URL van je provider; `/.well-known/openid-configuration` wordt er zelf achter gezet. |
+| `WARDROBE_OIDC_CLIENT_ID` | — | Client-id van de toepassing die je bij je provider maakt. |
+| `WARDROBE_OIDC_CLIENT_SECRET` | — | Bijbehorend secret (confidential client). |
+| `WARDROBE_OIDC_SCOPES` | `openid profile email groups` | Welke scopes gevraagd worden. `openid` wordt altijd toegevoegd. |
+| `WARDROBE_OIDC_GROUPS_CLAIM` | `groups` | Claim met de groepen. Een punt gaat dieper, bv. `realm_access.roles`. |
+| `WARDROBE_OIDC_ADMIN_GROUP` | — | Wie hierin zit is beheerder, wie niet een gewone gebruiker. Leeg = de app beheert rollen zelf. |
+| `WARDROBE_OIDC_ALLOWED_GROUPS` | — | Komma-lijst; alleen leden hiervan mogen inloggen. Leeg = iedereen die je provider doorlaat. |
+| `WARDROBE_OIDC_AUTO_CREATE` | `false` | Maak een account aan bij de eerste login. Uit = alleen op uitnodiging. |
+| `WARDROBE_OIDC_LINK_BY_USERNAME` | `false` | Koppel aan een bestaand account met dezelfde gebruikersnaam. Voor een eenmalige overstap. |
+| `WARDROBE_OIDC_BUTTON_LABEL` | `Inloggen met SSO` | De tekst op de knop. |
+| `WARDROBE_OIDC_LOGOUT_REDIRECT` | `false` | Bij uitloggen ook afmelden bij de provider zelf. |
+| `WARDROBE_LOCAL_LOGIN` | `true` | Of het wachtwoordformulier meteen op het inlogscherm staat. Het blijft altijd bereikbaar — zie [Inloggen via SSO](#inloggen-via-sso-openid-connect). |
 
 Foto's worden bij upload automatisch geroteerd (EXIF), verkleind (max 1280px)
 en als JPEG opgeslagen, plus een thumbnail — zodat de kast licht blijft.
@@ -247,9 +275,10 @@ backend/            FastAPI-app (Python)
     main.py         app + seed-admin + migraties + serveert de gebouwde frontend
     models.py       User, Wardrobe, WardrobeMember, Item, Match (SQLAlchemy)
     access.py       kast-toegang & rollen (eigenaar/beheerder/bewerker/kijker)
-    routers/        auth, users, wardrobes, items, matches, catalog, color_rules,
-                    imports, invitations, admin_log
+    routers/        auth, oidc, users, wardrobes, items, matches, catalog,
+                    color_rules, imports, invitations, admin_log
     app_settings.py instellingen die een beheerder in de app omzet (zelf registreren)
+    oidc.py         federated login: discovery, PKCE, tokencontrole, groep → beheerder
     images.py       foto-verwerking (Pillow)
     matching.py     categorie-groepen voor slimme combinatie-suggesties
     audit.py        auditlog: wie deed wat (naar database én logregel)
@@ -353,6 +382,10 @@ Ook hier hoort een QR-code bij, handig als diegene naast je staat.
 Een link werkt in beide gevallen **één keer** en verloopt daarna vanzelf. Zolang
 'ie nog niet gebruikt is kun je 'm altijd **intrekken**.
 
+Heb je [SSO](#inloggen-via-sso-openid-connect) aanstaan, dan staat er op de
+uitnodigingspagina ook een SSO-knop: dan hoeft de uitgenodigde geen wachtwoord
+te kiezen, en verzilvert één keer inloggen bij je provider meteen de uitnodiging.
+
 ### Zelf registreren open- of dichtzetten
 
 Wil je geen uitnodigingen meer uitdelen — bijvoorbeeld binnen een huishouden of
@@ -364,6 +397,255 @@ dezelfde schakelaar; de wissel komt in het logboek te staan.
 
 > Zet 'm alleen open als de app niet zomaar vanaf het internet te bereiken is,
 > of als je het niet erg vindt wie er binnenkomt.
+
+---
+
+## Inloggen via SSO (OpenID Connect)
+
+Naast de eigen gebruikersnaam en wachtwoord kan de app inloggen uitbesteden aan
+je eigen identity provider — **Authentik**, **Authelia**, **Keycloak**,
+**Zitadel**, **Pocket ID**, **Microsoft Entra ID**, **Google**: alles wat
+OpenID Connect spreekt. Eén knop op het inlogscherm, en wie in de juiste
+**groep** zit is meteen beheerder.
+
+Alleen OpenID Connect, geen SAML. Dat is een bewuste keuze: OIDC kost hier geen
+enkele extra systeembibliotheek, en Authentik (of Keycloak) kan desnoods zelf
+als brug naar een SAML-provider dienen.
+
+> **Inloggen met gebruikersnaam en wachtwoord blijft altijd werken.** Er is geen
+> schakelaar die dat uitzet. Als je provider onbereikbaar is, stuk staat of
+> verkeerd ingesteld is, moet je nog steeds in je eigen kast kunnen — dus blijft
+> die deur open. `WARDROBE_LOCAL_LOGIN=false` klapt het formulier alleen dicht
+> op het inlogscherm; één klik opent het weer.
+
+### Hoe het werkt
+
+1. Je klikt op de knop; de app stuurt je naar je provider (authorization code
+   met PKCE).
+2. Je meldt je daar aan — met MFA, passkey of wat je daar ook hebt ingesteld.
+3. De app controleert de signature van het identiteitsbewijs tegen de sleutels
+   die je provider publiceert, plus de issuer, de audience en een eenmalige
+   nonce.
+4. Je komt binnen als je eigen account, met je eigen kast, precies zoals bij een
+   wachtwoord-login. Ook offline-swipen en de PWA merken er niets van.
+
+Een paar dingen die goed zijn om te weten:
+
+- **Een account wordt herkend op de `sub`-claim**, niet op je e-mailadres of
+  gebruikersnaam. Die twee kun je bij je provider wijzigen; `sub` niet. Zou de
+  app op e-mail matchen, dan kon iemand die bij de provider van naam verandert
+  in de kast van een ander belanden.
+- **Je weergavenaam volgt je provider** bij elke login. Je *gebruikersnaam*
+  niet: daarmee staat het logboek volgeschreven, en die laten we dus staan.
+- **Een SSO-account heeft geen wachtwoord.** Er is er geen om te raden. Wil je
+  er toch een lokaal wachtwoord bij (handig voor een beheerder die er altijd in
+  moet kunnen), dan stel je dat in onder **Instellingen → Wachtwoord wijzigen**.
+
+### Authentik
+
+**1. Maak een provider.** *Applications → Providers → Create →
+OAuth2/OpenID Provider*:
+
+| Veld | Waarde |
+| --- | --- |
+| Name | `Kledingkast` |
+| Authorization flow | je gebruikelijke (bv. *implicit consent*) |
+| Client type | **Confidential** |
+| Redirect URI | `https://kast.jouwdomein.nl/api/auth/oidc/callback` (exact, strict match) |
+| Signing Key | je certificaat (bv. de standaard self-signed) |
+
+Bewaar de **Client ID** en het **Client Secret** die Authentik laat zien.
+
+**2. Maak een application** (*Applications → Applications → Create*), geef 'm
+een slug zoals `kledingkast` en hang de provider eraan. De issuer-URL die je
+nodig hebt is wat Authentik onder de provider toont als *OpenID Configuration
+Issuer*, meestal:
+
+```
+https://auth.jouwdomein.nl/application/o/kledingkast/
+```
+
+**3. Zorg dat de groepen meekomen.** In recente versies van Authentik zit
+`groups` al in de standaard-scopemapping van `profile`, en staat *Include claims
+in id_token* aan — dan hoef je niks te doen. Controleer het even; werkt het
+niet, maak er dan zelf één: *Customization → Property mappings → Create →
+Scope mapping*:
+
+| Veld | Waarde |
+| --- | --- |
+| Name | `Kledingkast groups` |
+| Scope name | `groups` |
+| Expression | `return {"groups": [g.name for g in request.user.ak_groups.all()]}` |
+
+Voeg die mapping daarna toe aan de **Scopes** van je provider (bij de
+OAuth2-provider onder *Advanced protocol settings → Scopes*).
+
+**4. Maak de groep** waar je beheerders in komen, bv. `kledingkast-admins`
+(*Directory → Groups*), en zet de juiste mensen erin.
+
+**5. Zet het in je `.env`:**
+
+```bash
+WARDROBE_PUBLIC_URL=https://kast.jouwdomein.nl
+WARDROBE_OIDC_ENABLED=true
+WARDROBE_OIDC_ISSUER=https://auth.jouwdomein.nl/application/o/kledingkast/
+WARDROBE_OIDC_CLIENT_ID=...
+WARDROBE_OIDC_CLIENT_SECRET=...
+WARDROBE_OIDC_SCOPES=openid profile email groups
+WARDROBE_OIDC_GROUPS_CLAIM=groups
+WARDROBE_OIDC_ADMIN_GROUP=kledingkast-admins
+WARDROBE_OIDC_BUTTON_LABEL=Inloggen met Authentik
+```
+
+Dan `docker compose up -d`. Het logboek van de container zegt bij het opstarten
+of SSO aan staat en welke groep beheerder maakt.
+
+### Authelia
+
+Authelia zet groepen standaard in de `groups`-claim, maar je moet de scope wel
+aan de client toewijzen. In je `configuration.yml`:
+
+```yaml
+identity_providers:
+  oidc:
+    clients:
+      - client_id: kledingkast
+        client_name: Kledingkast
+        # Genereer met: authelia crypto hash generate pbkdf2 --password '<secret>'
+        client_secret: '$pbkdf2-sha512$...'
+        public: false
+        authorization_policy: two_factor
+        require_pkce: true
+        pkce_challenge_method: S256
+        redirect_uris:
+          - https://kast.jouwdomein.nl/api/auth/oidc/callback
+        scopes: [openid, profile, email, groups]
+        userinfo_signed_response_alg: none
+```
+
+```bash
+WARDROBE_OIDC_ISSUER=https://auth.jouwdomein.nl
+WARDROBE_OIDC_CLIENT_ID=kledingkast
+WARDROBE_OIDC_CLIENT_SECRET=<het secret in platte tekst>
+WARDROBE_OIDC_GROUPS_CLAIM=groups
+WARDROBE_OIDC_ADMIN_GROUP=kledingkast-admins
+WARDROBE_OIDC_BUTTON_LABEL=Inloggen met Authelia
+```
+
+De groepen komen uit je gebruikersbestand (`users_database.yml`) of uit je LDAP.
+
+### Keycloak
+
+Maak een client (*Clients → Create client*), **Client authentication: On**,
+*Valid redirect URIs* op `https://kast.jouwdomein.nl/api/auth/oidc/callback`.
+Het secret staat onder *Credentials*.
+
+Keycloak zet **realm roles** in `realm_access.roles` in plaats van in een
+`groups`-claim — daar is de punt-notatie voor:
+
+```bash
+WARDROBE_OIDC_ISSUER=https://auth.jouwdomein.nl/realms/jouwrealm
+WARDROBE_OIDC_SCOPES=openid profile email
+WARDROBE_OIDC_GROUPS_CLAIM=realm_access.roles
+WARDROBE_OIDC_ADMIN_GROUP=kledingkast-admin
+```
+
+Wil je liever echte *groups* gebruiken, voeg dan in de client een
+**Group Membership**-mapper toe met token claim name `groups`, zet *Full group
+path* uit, en houd `WARDROBE_OIDC_GROUPS_CLAIM=groups`.
+
+### Zitadel, Pocket ID en andere zelfgehoste providers
+
+Dezelfde drie dingen: een confidential client, de redirect-URI hierboven, en een
+claim met groepsnamen.
+
+- **Zitadel** – maak een *Web*-applicatie met *Code*-flow en PKCE. Rollen komen
+  mee als je in de applicatie *Assert Roles on Authentication* aanzet; de claim
+  heet dan `urn:zitadel:iam:org:project:roles`. Zet die naam in
+  `WARDROBE_OIDC_GROUPS_CLAIM`. Die claim is een object en geen lijst — werkt
+  dat niet, gebruik dan een *Action* om er een platte lijst van te maken.
+- **Pocket ID** – maak een OIDC-client, vink de groepen-scope aan en zet
+  `WARDROBE_OIDC_SCOPES=openid profile email groups`.
+- **Komt je claim niet aan?** Zet `WARDROBE_LOG_LEVEL=DEBUG` en kijk in het
+  logboek: de app zegt het expliciet als de groepen-claim er niet in zat.
+
+### Microsoft Entra ID en Google
+
+Werkt, met twee aantekeningen.
+
+- **Entra ID** – registreer een app, redirect-URI van het type *Web* op
+  `https://kast.jouwdomein.nl/api/auth/oidc/callback`. Issuer:
+  `https://login.microsoftonline.com/<tenant-id>/v2.0`. Groepen komen standaard
+  **niet** mee: zet in het app-manifest *groupMembershipClaims* op
+  `SecurityGroup`, en let op dat de claim dan groeps-**GUID's** bevat, geen
+  namen — vul dus de GUID in bij `WARDROBE_OIDC_ADMIN_GROUP`. Netter is een
+  app-rol met een *Optional claim* op naam.
+- **Google** – levert geen groepen in het ID token (Workspace-groepen vereisen
+  de Admin SDK). Gebruik Google dus alleen om te authenticeren, laat
+  `WARDROBE_OIDC_ADMIN_GROUP` leeg en beheer beheerders in de app.
+
+### Wie er binnen mag
+
+Ook met SSO blijft de app **op uitnodiging**. Iemand die zich bij je provider
+netjes aanmeldt maar hier nog geen account heeft, komt er standaard *niet* in —
+dat is het punt van een gesloten voordeur. Er zijn drie manieren om mensen toe
+te laten:
+
+| Manier | Hoe |
+| --- | --- |
+| **Uitnodigingslink** (aanbevolen) | Deel een link of QR-code zoals altijd. Wie 'm opent, ziet naast "account aanmaken" ook de SSO-knop. Eén keer inloggen bij je provider maakt het account én verzilvert de uitnodiging — inclusief de rol (bewerker/kijker) op je kast. |
+| **Iedereen binnenlaten** | `WARDROBE_OIDC_AUTO_CREATE=true`. Wie je provider doorlaat, krijgt meteen een account en een eigen kast. Combineer dit met `WARDROBE_OIDC_ALLOWED_GROUPS` om het tot een groep te beperken. |
+| **Bestaande accounts overzetten** | `WARDROBE_OIDC_LINK_BY_USERNAME=true` koppelt een SSO-login aan een bestaand account met dezelfde gebruikersnaam. Bedoeld om eenmalig over te stappen; zet 'm daarna weer uit, want hij vertrouwt je provider op de gebruikersnaam. |
+
+### Beheerders via een groepsclaim
+
+Zet `WARDROBE_OIDC_ADMIN_GROUP` op de naam van je groep, en dan geldt bij
+**elke** SSO-login:
+
+- zit je in die groep → je bent beheerder;
+- zit je er niet in → je bent een gewone gebruiker.
+
+Dus iemand de beheerdersrol afnemen doe je door 'm uit de groep te halen; bij de
+volgende login is het geregeld. De naam wordt vergeleken zonder op
+hoofdletters te letten, zodat `Kledingkast-Admins` en `kledingkast-admins`
+hetzelfde betekenen. Elke wijziging komt in het logboek te staan.
+
+Omdat de provider deze rol bezit, staat er voor zulke accounts geen knop
+*"Maak beheerder"* meer onder **Instellingen → Accounts** — die zou bij de
+volgende login toch weer overschreven worden. Je ziet er in plaats daarvan een
+**SSO**-label.
+
+Drie grenzen, zodat dit je nooit buitensluit:
+
+- **Lokale accounts blijft dit ongemoeid.** De beheerder uit je `.env` houdt
+  z'n rol, wat je provider ook zegt. Daarom blijft die het vangnet.
+- **De laatste beheerder wordt nooit gedegradeerd.** Typ je de groepsnaam
+  verkeerd, dan kost dat iemand een rol — niet iedereen het instellingenscherm.
+  Het logboek zegt dan dat de rol behouden is.
+- **Ontbreekt de claim helemaal, dan verandert er niets.** "Niet in de groep" en
+  "de provider stuurt geen groepen mee" zijn twee heel verschillende dingen, en
+  de app houdt ze apart: bij het tweede blijft de rol staan en komt er een
+  waarschuwing in het logboek (`SSO-login zonder groepen-claim`). Dat is
+  veruit de meest gemaakte fout bij het instellen.
+
+Laat je `WARDROBE_OIDC_ADMIN_GROUP` leeg, dan komt de app niet aan de rollen en
+beheer je ze gewoon in de app.
+
+### Als het niet werkt
+
+Bijna alles is terug te vinden onder **Instellingen → Logboek** (of in
+`docker compose logs -f kledingkast`).
+
+| Wat je ziet | Wat er meestal aan de hand is |
+| --- | --- |
+| *"De inlogdienst is niet bereikbaar"* | De container kan de issuer-URL niet ophalen. Check DNS in de container, en of je provider intern op een ander adres zit. Gebruikt je provider een self-signed certificaat, mount dan je CA en zet `SSL_CERT_FILE=/pad/naar/ca.crt`. |
+| *"De inlogdienst weigerde deze aanmelding"* | Client-id of client-secret klopt niet. |
+| *"Het identiteitsbewijs ... is niet geldig"* | De issuer-URL of de client-id wijkt af van wat de provider in het token zet. Neem de issuer letterlijk over uit `/.well-known/openid-configuration`. |
+| `redirect_uri` mismatch bij je provider | Moet exact `<WARDROBE_PUBLIC_URL>/api/auth/oidc/callback` zijn, inclusief `https` en zonder slash erachter. Zet `WARDROBE_PUBLIC_URL` altijd als je achter een reverse proxy zit. |
+| *"je hebt nog geen account in deze Kledingkast"* | Inloggen lukte, maar de voordeur staat dicht. Stuur een uitnodigingslink, of zet `WARDROBE_OIDC_AUTO_CREATE=true`. |
+| `SSO-login zonder groepen-claim` | De groepen komen niet mee. Voeg de scope/mapping bij je provider toe (zie hierboven). |
+| Iemand is onbedoeld géén beheerder | Wel een claim, maar de naam matcht niet. Check de exacte groepsnaam. |
+| De knop is er niet | `WARDROBE_OIDC_ENABLED` staat uit, óf issuer/client-id/secret is niet alle drie gevuld — dan blijft SSO met opzet uit. Het opstartlogboek zegt welke van de twee. |
 
 ---
 

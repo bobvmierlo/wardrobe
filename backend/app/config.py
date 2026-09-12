@@ -18,6 +18,15 @@ class Settings(BaseSettings):
     # How long a login stays valid (minutes). Default: 30 days.
     access_token_expire_minutes: int = 60 * 24 * 30
 
+    # The address the app is reached at from a browser, e.g.
+    # "https://kast.jouwdomein.nl". Only needed for federated login: the
+    # redirect URI handed to the identity provider has to match the one
+    # registered there exactly, and a reverse proxy is free to rewrite every
+    # header this would otherwise be guessed from. Left empty the app derives
+    # it from the request, which works as long as the proxy forwards
+    # X-Forwarded-Proto and Host faithfully.
+    public_url: str = ""
+
     # Bootstrap admin account, created on first startup if no users exist.
     admin_username: str = "admin"
     admin_password: str = "changeme"
@@ -30,6 +39,50 @@ class Settings(BaseSettings):
     # INFO logs changes, warnings and errors. Visible in the container log and
     # in the app under Instellingen → Logboek.
     log_level: str = "INFO"
+
+    # ---- Federated login (OpenID Connect) ----
+    #
+    # Off unless an issuer, a client id and a secret are all present: a half
+    # configured provider must not put a broken button on the login screen.
+    oidc_enabled: bool = False
+    #: Base URL of the provider, e.g.
+    #: "https://auth.jouwdomein.nl/application/o/kledingkast/". Discovery
+    #: appends /.well-known/openid-configuration; a full discovery URL is
+    #: accepted too and trimmed back.
+    oidc_issuer: str = ""
+    oidc_client_id: str = ""
+    oidc_client_secret: str = ""
+    #: Scopes to ask for. "openid" is added if you leave it out. Group
+    #: membership is not in the standard set, hence "groups".
+    oidc_scopes: str = "openid profile email groups"
+    #: Claim holding the user's groups. A dotted path reaches into nested
+    #: claims, which is how Keycloak's "realm_access.roles" is read.
+    oidc_groups_claim: str = "groups"
+    #: Membership of this group makes someone a beheerder; anyone without it
+    #: becomes (or stays) an ordinary user. Empty disables the mapping
+    #: altogether and leaves the role as the app has it.
+    oidc_admin_group: str = ""
+    #: When set, only members of these groups (comma-separated) may sign in
+    #: at all. Empty lets every account the provider authenticates through.
+    oidc_allowed_groups: str = ""
+    #: Create an account the first time someone signs in who has none. Off by
+    #: default, which keeps the installation invitation-only: without it an
+    #: unknown person is turned away unless they hold an invitation link.
+    oidc_auto_create: bool = False
+    #: Adopt an existing local account when the provider's username matches it
+    #: exactly. Off by default because it trusts the provider with the
+    #: username: only turn it on to bootstrap accounts that predate SSO.
+    oidc_link_by_username: bool = False
+    #: Text on the login button.
+    oidc_button_label: str = "Inloggen met SSO"
+    #: Ask the provider to end its own session too when signing out here.
+    oidc_logout_redirect: bool = False
+
+    # Whether the login screen shows the username/password form up front.
+    # This is a tidiness setting, not a security control: the password
+    # endpoint keeps working either way, on purpose, so an unreachable or
+    # misconfigured provider can never lock you out of your own wardrobe.
+    local_login: bool = True
 
     # Directory containing the built frontend (index.html + assets). Relative
     # paths are resolved against the backend package root. In the Docker image
@@ -47,6 +100,37 @@ class Settings(BaseSettings):
     @property
     def database_url(self) -> str:
         return f"sqlite:///{self.db_path}"
+
+    @property
+    def oidc_configured(self) -> bool:
+        """True only when federated login can actually complete a round trip."""
+        return bool(
+            self.oidc_enabled
+            and self.oidc_issuer.strip()
+            and self.oidc_client_id.strip()
+            and self.oidc_client_secret.strip()
+        )
+
+    @property
+    def oidc_issuer_url(self) -> str:
+        """The issuer, with a pasted discovery URL trimmed back to its base."""
+        issuer = self.oidc_issuer.strip().rstrip("/")
+        suffix = "/.well-known/openid-configuration"
+        if issuer.endswith(suffix):
+            issuer = issuer[: -len(suffix)]
+        return issuer
+
+    @property
+    def oidc_scope_list(self) -> list[str]:
+        """Requested scopes, always including "openid"."""
+        scopes = [s for s in self.oidc_scopes.replace(",", " ").split() if s]
+        if "openid" not in scopes:
+            scopes.insert(0, "openid")
+        return scopes
+
+    @property
+    def oidc_allowed_group_list(self) -> list[str]:
+        return [g.strip() for g in self.oidc_allowed_groups.split(",") if g.strip()]
 
 
 settings = Settings()

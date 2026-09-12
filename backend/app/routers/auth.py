@@ -7,7 +7,15 @@ from ..access import ensure_wardrobe
 from ..database import get_db
 from ..deps import get_current_user, require_admin
 from ..models import User
-from ..schemas import AuthConfig, PasswordChange, RegistrationIn, Token, UserOut
+from ..config import settings
+from ..schemas import (
+    AuthConfig,
+    AuthConfigUpdate,
+    PasswordChange,
+    RegistrationIn,
+    Token,
+    UserOut,
+)
 from ..security import create_access_token, hash_password, verify_password
 from .photos import clear_photo_cookie, set_photo_cookie
 
@@ -40,6 +48,17 @@ def login(
     return Token(access_token=token, user=UserOut.model_validate(user))
 
 
+def _auth_config(db: Session) -> AuthConfig:
+    return AuthConfig(
+        self_registration=app_settings.self_registration_open(db),
+        oidc_enabled=settings.oidc_configured,
+        oidc_label=settings.oidc_button_label if settings.oidc_configured else "",
+        oidc_manages_admins=settings.oidc_configured
+        and bool(settings.oidc_admin_group.strip()),
+        local_login=settings.local_login,
+    )
+
+
 @router.get("/config", response_model=AuthConfig)
 def auth_config(db: Session = Depends(get_db)):
     """What the login screen may offer. Readable without being logged in.
@@ -48,12 +67,12 @@ def auth_config(db: Session = Depends(get_db)):
     je beheerder om een uitnodiging" is only the right answer while the front
     door is actually shut — so it asks first.
     """
-    return AuthConfig(self_registration=app_settings.self_registration_open(db))
+    return _auth_config(db)
 
 
 @router.put("/config", response_model=AuthConfig)
 def update_auth_config(
-    body: AuthConfig,
+    body: AuthConfigUpdate,
     admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -69,7 +88,7 @@ def update_auth_config(
                else "dicht — alleen op uitnodiging"),
             user=admin,
         )
-    return AuthConfig(self_registration=body.self_registration)
+    return _auth_config(db)
 
 
 @router.post("/register", response_model=Token, status_code=201)
@@ -145,12 +164,16 @@ def change_password(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    had_password = user.hashed_password.startswith("$2")
     user.hashed_password = hash_password(body.new_password)
     db.commit()
     audit.record(
         db,
         "auth.password_change",
-        f"{user.display_name} wijzigde het eigen wachtwoord",
+        f"{user.display_name} wijzigde het eigen wachtwoord"
+        if had_password
+        else f"{user.display_name} stelde een lokaal wachtwoord in"
+        " (dit account logde alleen via SSO in)",
         user=user,
         entity_type="user",
         entity_id=user.id,
