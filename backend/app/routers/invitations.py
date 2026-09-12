@@ -17,7 +17,7 @@ token is the only self-service way to an account.
 import secrets
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from .. import audit
@@ -330,6 +330,7 @@ def accept_invitation(
 def register_via_invitation(
     token: str,
     body: RegistrationIn,
+    request: Request,
     response: Response,
     db: Session = Depends(get_db),
 ):
@@ -378,7 +379,7 @@ def register_via_invitation(
         entity_type="user",
         entity_id=user.id,
     )
-    token_str = create_access_token(user.id)
+    token_str = create_access_token(user.id, token_version=user.token_version)
     # Same as a normal login: the browser needs the photo cookie too.
-    set_photo_cookie(response, token_str)
+    set_photo_cookie(response, token_str, request)
     return Token(access_token=token_str, user=UserOut.model_validate(user))

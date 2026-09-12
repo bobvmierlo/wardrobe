@@ -1,12 +1,12 @@
 import io
 import shutil
 import uuid
-from urllib.request import Request, urlopen
 
 from fastapi import HTTPException, UploadFile
 from PIL import Image, ImageOps
 
 from .config import settings
+from .fetching import FetchFailed, FetchRefused, fetch_remote
 
 MAX_DIM = 1280       # longest side of the stored full photo
 THUMB_DIM = 400      # longest side of the thumbnail
@@ -63,19 +63,28 @@ def save_upload(file: UploadFile) -> tuple[str, str]:
 
 
 def save_upload_from_url(url: str) -> tuple[str, str]:
-    """Download an image from a URL and store it like a normal upload."""
-    if not url.lower().startswith(("http://", "https://")):
-        raise HTTPException(status_code=400, detail="Ongeldige afbeeldings-URL")
-    limit = settings.max_upload_mb * 1024 * 1024
+    """Download an image from a URL and store it like a normal upload.
+
+    The URL comes from whoever is adding the garment, so the fetch goes through
+    :mod:`app.fetching` — which refuses to walk into the private network the
+    server happens to be sitting on. See that module for what it does and does
+    not guarantee.
+    """
     try:
-        req = Request(url, headers={"User-Agent": "Mozilla/5.0 (Kledingkast)"})
-        with urlopen(req, timeout=15) as resp:  # noqa: S310 (user-provided URL, size-capped)
-            raw = resp.read(limit + 1)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Kon de afbeelding niet downloaden")
-    if len(raw) > limit:
-        raise HTTPException(status_code=413, detail=f"Foto is te groot (max {settings.max_upload_mb} MB)")
-    return _store_bytes(raw)
+        fetched = fetch_remote(
+            url,
+            limit=settings.max_upload_mb * 1024 * 1024,
+            headers={"User-Agent": "Mozilla/5.0 (Kledingkast)"},
+        )
+    except FetchRefused as exc:
+        # A refusal by policy, so say which: "kon niet downloaden" would send
+        # someone hunting for a network problem that is not there.
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FetchFailed as exc:
+        raise HTTPException(
+            status_code=400, detail=f"Kon de afbeelding niet downloaden: {exc}"
+        ) from exc
+    return _store_bytes(fetched.body)
 
 
 def copy_photo(

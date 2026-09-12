@@ -1,10 +1,15 @@
 """Best-effort webshop product import.
 
 Fetches a product page and pulls a name, brand, colour, price and candidate
-images out of its JSON-LD and OpenGraph/meta tags. Uses only the standard
-library so no extra dependency is needed. Everything degrades gracefully:
-if the server can't reach the URL, a clear error is returned and the user
-falls back to filling the form manually.
+images out of its JSON-LD and OpenGraph/meta tags. The parsing uses only the
+standard library. Everything degrades gracefully: if the server can't reach the
+URL, a clear error is returned and the user falls back to filling the form
+manually.
+
+The URL is whatever a signed-in user typed, and this route hands the *parsed
+content* back to them — so the fetch goes through :mod:`app.fetching`, which
+keeps the server off its own network. Without that, "import from a webshop" is
+also "read any page only this server can see, and tell me the title".
 """
 
 from __future__ import annotations
@@ -12,13 +17,12 @@ from __future__ import annotations
 import json
 from html import unescape
 from html.parser import HTMLParser
-from urllib.error import HTTPError
 from urllib.parse import urljoin
-from urllib.request import Request, urlopen
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..deps import get_current_user
+from ..fetching import FetchFailed, FetchRefused, fetch_remote
 from ..models import User
 from ..schemas import ScrapeResult
 
@@ -135,29 +139,30 @@ def scrape(
     url: str,
     _: User = Depends(get_current_user),
 ):
-    if not url.lower().startswith(("http://", "https://")):
-        raise HTTPException(status_code=400, detail="Voer een geldige http(s)-URL in")
     try:
-        req = Request(url, headers=_BROWSER_HEADERS)
-        with urlopen(req, timeout=15) as resp:  # noqa: S310 (user-provided URL)
-            charset = resp.headers.get_content_charset() or "utf-8"
-            html = resp.read(_MAX_HTML).decode(charset, errors="replace")
-            final_url = resp.geturl()
-    except HTTPError as exc:
-        # The shop answered but refused us (403 bot-block, 404 dead link, ...).
-        raise HTTPException(
-            status_code=502,
-            detail=(
-                f"De webshop weigerde het verzoek (foutcode {exc.code}). "
-                "Deze winkel blokkeert mogelijk automatisch importeren; "
-                "vul de gegevens handmatig in."
-            ),
-        )
-    except Exception:
+        fetched = fetch_remote(url, limit=_MAX_HTML, headers=_BROWSER_HEADERS)
+    except FetchRefused as exc:
+        # Refused on purpose, so 400 and the actual reason — a 502 here would
+        # send someone looking for a webshop problem that does not exist.
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FetchFailed as exc:
+        if exc.status is not None:
+            # The shop answered but refused us (403 bot-block, 404 dead link…).
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    f"De webshop weigerde het verzoek (foutcode {exc.status}). "
+                    "Deze winkel blokkeert mogelijk automatisch importeren; "
+                    "vul de gegevens handmatig in."
+                ),
+            ) from exc
         raise HTTPException(
             status_code=502,
             detail="Kon de webshop-pagina niet ophalen. Vul de gegevens handmatig in.",
-        )
+        ) from exc
+
+    html = fetched.body.decode(fetched.encoding or "utf-8", errors="replace")
+    final_url = fetched.url
 
     parser = _ProductParser()
     parser.feed(html)

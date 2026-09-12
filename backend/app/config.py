@@ -35,6 +35,63 @@ class Settings(BaseSettings):
     # Max upload size in megabytes.
     max_upload_mb: int = 15
 
+    # ---- Hardening ----
+    #
+    # Consecutive failed logins allowed before the answer becomes 429, and the
+    # first wait once it does. Each further failure doubles it, up to 15
+    # minutes. A correct password clears the count.
+    login_max_attempts: int = 5
+    login_lockout_seconds: int = 30
+
+    # Shortest password the app will accept when one is *set*. Existing
+    # passwords are not affected: nobody is locked out by raising this, they
+    # only meet it the next time they choose one.
+    min_password_length: int = 10
+
+    # Browsers that may call the API from another origin, comma-separated.
+    # Empty means none, which is the right answer for every normal install:
+    # the app serves its own frontend from the same origin, and the Vite dev
+    # server proxies /api, so cross-origin requests never arise. Set this only
+    # if you host the frontend somewhere else.
+    cors_origins: str = ""
+
+    # Whether the photo cookie carries the Secure flag. "auto" decides per
+    # request: set on https, left off on plain http, where a secure cookie
+    # would simply never be sent and photos would break. "true"/"false" force
+    # it either way.
+    cookie_secure: str = "auto"
+
+    # Content-Security-Policy sent with the app's own pages. The default keeps
+    # everything on this origin, which is the strongest mitigation available
+    # for a token that lives in localStorage. Set to an empty string to send
+    # no policy at all (e.g. when your reverse proxy sets its own).
+    content_security_policy: str = (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        # React writes inline style attributes all over this app, and those
+        # need 'unsafe-inline' in style-src. It does not weaken script-src.
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob:; "
+        "font-src 'self' data:; "
+        "connect-src 'self'; "
+        "manifest-src 'self'; "
+        "worker-src 'self'; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'; "
+        "frame-ancestors 'none'"
+    )
+
+    # Send Strict-Transport-Security on https requests. Off by default: it is a
+    # promise a browser remembers for a year, and turning it on before your
+    # certificate is sorted locks people out of their own wardrobe.
+    hsts_seconds: int = 0
+
+    # Let the photo-URL and webshop-import features reach private addresses.
+    # Off by default: those features take a URL from any signed-in user, and
+    # the server sits on the same network as everything else you self-host.
+    fetch_allow_private: bool = False
+
     # How chatty the application log is. DEBUG also logs every read request;
     # INFO logs changes, warnings and errors. Visible in the container log and
     # in the app under Instellingen → Logboek.
@@ -100,6 +157,10 @@ class Settings(BaseSettings):
     @property
     def database_url(self) -> str:
         return f"sqlite:///{self.db_path}"
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     @property
     def oidc_configured(self) -> bool:

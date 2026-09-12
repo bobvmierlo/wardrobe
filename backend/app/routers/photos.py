@@ -19,8 +19,8 @@ from sqlalchemy.orm import Session
 from ..access import require_view
 from ..config import settings
 from ..database import get_db
+from ..deps import user_for_token
 from ..models import Item, User
-from ..security import decode_token
 
 router = APIRouter(tags=["photos"])
 
@@ -29,7 +29,32 @@ PHOTO_COOKIE = "wardrobe_photo"
 COOKIE_PATH = "/uploads"
 
 
-def set_photo_cookie(response: Response, token: str) -> None:
+def is_https(request: Request | None) -> bool:
+    """Whether the browser reached us over https, as far as we can tell."""
+    if request is None:
+        return False
+    forwarded = request.headers.get("x-forwarded-proto", "").split(",")[0].strip().lower()
+    return (forwarded or request.url.scheme) == "https"
+
+
+def wants_secure_cookie(request: Request | None) -> bool:
+    """Whether to mark cookies Secure.
+
+    "auto" is the default and decides per request, because both answers are
+    wrong as a constant: on plain http — which is how plenty of home networks
+    serve this — a Secure cookie is simply never sent and every photo breaks,
+    while on https leaving it off hands the token to anyone who can make the
+    browser try http once.
+    """
+    setting = settings.cookie_secure.strip().lower()
+    if setting in ("1", "true", "yes", "on"):
+        return True
+    if setting in ("0", "false", "no", "off"):
+        return False
+    return is_https(request)
+
+
+def set_photo_cookie(response: Response, token: str, request: Request | None = None) -> None:
     """Hand the browser the credential its <img> requests will need."""
     response.set_cookie(
         PHOTO_COOKIE,
@@ -38,9 +63,7 @@ def set_photo_cookie(response: Response, token: str) -> None:
         httponly=True,
         samesite="lax",
         path=COOKIE_PATH,
-        # Not "secure": the app is commonly served over plain http on a home
-        # network, where a secure cookie would simply never be sent. The token
-        # already travels in the clear there, in the Authorization header.
+        secure=wants_secure_cookie(request),
     )
 
 
@@ -49,15 +72,18 @@ def clear_photo_cookie(response: Response) -> None:
 
 
 def _current_user(request: Request, db: Session) -> User:
-    """Authenticate a photo request from the header, else from the cookie."""
+    """Authenticate a photo request from the header, else from the cookie.
+
+    Both go through the same check as every other request, so a token that has
+    been revoked stops serving photos at the same moment it stops serving data.
+    """
     token = None
     header = request.headers.get("Authorization", "")
     if header.lower().startswith("bearer "):
         token = header[7:].strip()
     if not token:
         token = request.cookies.get(PHOTO_COOKIE)
-    sub = decode_token(token) if token else None
-    user = db.get(User, int(sub)) if sub is not None else None
+    user = user_for_token(db, token)
     if user is None:
         raise HTTPException(
             status_code=401,

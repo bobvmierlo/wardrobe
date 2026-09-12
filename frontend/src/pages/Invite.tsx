@@ -31,6 +31,8 @@ export default function Invite() {
     enabled: false,
     label: "",
   });
+  /** The server's minimum, so the form says it instead of bouncing a 422 back. */
+  const [minPassword, setMinPassword] = useState(10);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -49,7 +51,10 @@ export default function Invite() {
   useEffect(() => {
     api
       .authConfig()
-      .then((cfg) => setOidc({ enabled: cfg.oidc_enabled, label: cfg.oidc_label }))
+      .then((cfg) => {
+        setOidc({ enabled: cfg.oidc_enabled, label: cfg.oidc_label });
+        setMinPassword(cfg.min_password_length);
+      })
       .catch(() => {
         /* offline or unreachable: the other ways in still work */
       });
@@ -85,7 +90,8 @@ export default function Invite() {
   async function register(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (password.length < 4) return setError("Wachtwoord moet minimaal 4 tekens zijn.");
+    if (password.length < minPassword)
+      return setError(`Wachtwoord moet minimaal ${minPassword} tekens zijn.`);
     if (password !== password2) return setError("Wachtwoorden komen niet overeen.");
     setBusy(true);
     try {
@@ -234,7 +240,10 @@ export default function Invite() {
             </div>
             <div className="field">
               <label>Wachtwoord</label>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" required />
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" minLength={minPassword} required />
+              <div className="muted" style={{ fontSize: "0.78rem", marginTop: 4 }}>
+                Minimaal {minPassword} tekens.
+              </div>
             </div>
             <div className="field">
               <label>Herhaal wachtwoord</label>

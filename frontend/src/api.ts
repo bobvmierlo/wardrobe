@@ -150,11 +150,18 @@ export const api = {
   me: () => request<User>("/api/auth/me"),
   // Drops the server-side photo cookie; the bearer token is cleared locally.
   logout: () => request<void>("/api/auth/logout", { method: "POST" }),
-  changePassword: (new_password: string) =>
-    request<void>("/api/auth/change-password", {
+  /** Change your own password. Answers with a fresh token, because the change
+   *  invalidates every token issued before it — this device's included. */
+  changePassword: (current_password: string | null, new_password: string) =>
+    request<{ access_token: string; user: User }>("/api/auth/change-password", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ new_password }),
+      body: JSON.stringify({ current_password, new_password }),
+    }),
+  /** End every other session. Also answers with a fresh token for this one. */
+  logoutEverywhere: () =>
+    request<{ access_token: string; user: User }>("/api/auth/logout-everywhere", {
+      method: "POST",
     }),
 
   // ---- the front door (readable while logged out) ----

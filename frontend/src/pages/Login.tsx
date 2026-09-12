@@ -24,6 +24,8 @@ export default function Login() {
     label: "",
   });
   const [localLogin, setLocalLogin] = useState(true);
+  /** The server's minimum, so the form says it instead of bouncing a 422 back. */
+  const [minPassword, setMinPassword] = useState(10);
   /** Set when the operator tucked the password form away and the visitor asked
    *  for it anyway — the break-glass, one click deep. */
   const [showPasswordForm, setShowPasswordForm] = useState(false);
@@ -41,6 +43,7 @@ export default function Login() {
         setSelfRegistration(cfg.self_registration);
         setOidc({ enabled: cfg.oidc_enabled, label: cfg.oidc_label });
         setLocalLogin(cfg.local_login);
+        setMinPassword(cfg.min_password_length);
       })
       .catch(() => {
         /* offline or unreachable: the invitation-only message still holds, and
@@ -69,7 +72,8 @@ export default function Login() {
   async function register(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (newPassword.length < 4) return setError("Wachtwoord moet minimaal 4 tekens zijn.");
+    if (newPassword.length < minPassword)
+      return setError(`Wachtwoord moet minimaal ${minPassword} tekens zijn.`);
     if (newPassword !== newPassword2) return setError("Wachtwoorden komen niet overeen.");
     setBusy(true);
     try {
@@ -129,8 +133,12 @@ export default function Login() {
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 autoComplete="new-password"
+                minLength={minPassword}
                 required
               />
+              <div className="muted" style={{ fontSize: "0.78rem", marginTop: 4 }}>
+                Minimaal {minPassword} tekens.
+              </div>
             </div>
             <div className="field">
               <label>Herhaal wachtwoord</label>

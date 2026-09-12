@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api } from "../api";
+import { api, setToken } from "../api";
 import { useAuth } from "../auth";
 import { useConfirm } from "../confirm";
 import { useWardrobe } from "../wardrobe";
@@ -17,8 +17,11 @@ export default function Settings() {
   const [err, setErr] = useState<string | null>(null);
 
   // change password
+  const [currentPw, setCurrentPw] = useState("");
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
+  /** What the server accepts, so the form can say it before the server refuses. */
+  const [minPassword, setMinPassword] = useState(10);
 
   // sharing my own kast
   const ownWardrobe = wardrobes.find((w) => w.my_role === "owner") ?? null;
@@ -107,6 +110,7 @@ export default function Settings() {
     try {
       const cfg = await api.authConfig();
       setSelfRegistration(cfg.self_registration);
+      setMinPassword(cfg.min_password_length);
       setSso({
         enabled: cfg.oidc_enabled,
         label: cfg.oidc_label,
@@ -333,19 +337,46 @@ export default function Settings() {
     }
   }
 
+  /** True for an account that signs in through SSO and has no password yet:
+   *  there is no current one to ask for. */
+  const settingFirstPassword = user?.auth_provider === "oidc";
+
   async function changePw(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
     setMsg(null);
-    if (pw.length < 4) return setErr("Wachtwoord moet minimaal 4 tekens zijn.");
+    if (pw.length < minPassword)
+      return setErr(`Wachtwoord moet minimaal ${minPassword} tekens zijn.`);
     if (pw !== pw2) return setErr("Wachtwoorden komen niet overeen.");
     try {
-      await api.changePassword(pw);
+      // The change logs out every other session, this one included, so the
+      // server hands back a replacement token to carry on with.
+      const res = await api.changePassword(settingFirstPassword ? null : currentPw, pw);
+      setToken(res.access_token);
+      setCurrentPw("");
       setPw("");
       setPw2("");
-      setMsg("Wachtwoord gewijzigd.");
+      setMsg("Wachtwoord gewijzigd. Andere apparaten zijn uitgelogd.");
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Wijzigen mislukt");
+    }
+  }
+
+  async function logoutOthers() {
+    setErr(null);
+    setMsg(null);
+    if (!(await confirm({
+      title: "Alle andere apparaten uitloggen?",
+      body: "Op elk ander toestel moet er opnieuw worden ingelogd. Dit apparaat blijft ingelogd.",
+      confirmLabel: "Uitloggen",
+      danger: false,
+    }))) return;
+    try {
+      const res = await api.logoutEverywhere();
+      setToken(res.access_token);
+      setMsg("Alle andere apparaten zijn uitgelogd.");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Uitloggen mislukt");
     }
   }
 
@@ -451,12 +482,46 @@ export default function Settings() {
         </div>
 
         <div className="card" style={{ padding: 16 }}>
-          <h3 style={{ marginTop: 0 }}>Wachtwoord wijzigen</h3>
+          <h3 style={{ marginTop: 0 }}>
+            {settingFirstPassword ? "Wachtwoord instellen" : "Wachtwoord wijzigen"}
+          </h3>
+          <p className="muted" style={{ fontSize: "0.82rem", marginTop: 0 }}>
+            {settingFirstPassword ? (
+              <>
+                Dit account logt in via SSO en heeft nog geen eigen wachtwoord. Stel er
+                één in als je er ook zonder de inlogdienst in wilt kunnen.
+              </>
+            ) : (
+              <>
+                Minimaal {minPassword} tekens. Na het wijzigen zijn <strong>andere
+                apparaten uitgelogd</strong>; dit apparaat blijft ingelogd.
+              </>
+            )}
+          </p>
           <form onSubmit={changePw} className="stack">
-            <input type="password" placeholder="Nieuw wachtwoord" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" />
-            <input type="password" placeholder="Herhaal wachtwoord" value={pw2} onChange={(e) => setPw2(e.target.value)} autoComplete="new-password" />
+            {!settingFirstPassword && (
+              <input
+                type="password"
+                placeholder="Huidig wachtwoord"
+                value={currentPw}
+                onChange={(e) => setCurrentPw(e.target.value)}
+                autoComplete="current-password"
+                required
+              />
+            )}
+            <input type="password" placeholder="Nieuw wachtwoord" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" minLength={minPassword} required />
+            <input type="password" placeholder="Herhaal wachtwoord" value={pw2} onChange={(e) => setPw2(e.target.value)} autoComplete="new-password" minLength={minPassword} required />
             <button className="btn-primary">Opslaan</button>
           </form>
+          <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "16px 0" }} />
+          <h4 style={{ margin: "0 0 6px" }}>Andere apparaten uitloggen</h4>
+          <p className="muted" style={{ fontSize: "0.82rem", marginTop: 0 }}>
+            Telefoon kwijt, of ergens ingelogd gebleven? Hiermee moet er op elk ander
+            toestel opnieuw worden ingelogd — zonder je wachtwoord te wijzigen.
+          </p>
+          <button className="btn-ghost btn-block" onClick={logoutOthers}>
+            Overal uitloggen behalve hier
+          </button>
         </div>
 
         <div className="card" id="delen" style={{ padding: 16, scrollMarginTop: 80 }}>

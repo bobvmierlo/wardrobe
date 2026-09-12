@@ -206,6 +206,9 @@ export interface AuthConfig {
   /** True when a group at the provider decides who is a beheerder, so the
    *  accounts screen must not offer a button that would be overwritten. */
   oidc_manages_admins: boolean;
+  /** Shortest password this installation accepts, so a form can say so before
+   *  the server has to refuse anything. */
+  min_password_length: number;
   /** Whether to show the username/password form straight away. The form is
    *  always reachable either way — that is the break-glass for when the
    *  provider is down. */

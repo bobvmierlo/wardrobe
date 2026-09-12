@@ -34,7 +34,7 @@ def test_a_stranger_registers_through_the_link_and_lands_in_the_kast(client):
     username = "n_" + uuid.uuid4().hex[:10]
     r = client.post(
         f"/api/invitations/{invite['token']}/register",
-        json={"username": username, "display_name": "Nieuw", "password": "pw123456"},
+        json={"username": username, "display_name": "Nieuw", "password": "test-wachtwoord"},
     )
     assert r.status_code == 201, r.text
     body = r.json()
@@ -51,7 +51,7 @@ def test_a_stranger_registers_through_the_link_and_lands_in_the_kast(client):
     assert client.get(f"/api/invitations/{invite['token']}").status_code == 410
     r = client.post(
         f"/api/invitations/{invite['token']}/register",
-        json={"username": "x_" + uuid.uuid4().hex[:8], "display_name": "X", "password": "pw123456"},
+        json={"username": "x_" + uuid.uuid4().hex[:8], "display_name": "X", "password": "test-wachtwoord"},
     )
     assert r.status_code == 410, r.text
 
@@ -60,13 +60,13 @@ def test_registration_is_closed_without_a_valid_invitation(client):
     # Self-registration is off unless a beheerder opens it…
     r = client.post(
         "/api/auth/register",
-        json={"username": "sneak", "display_name": "Sneak", "password": "pw123456"},
+        json={"username": "sneak", "display_name": "Sneak", "password": "test-wachtwoord"},
     )
     assert r.status_code == 403, r.text
     # …and a made-up token is refused.
     r = client.post(
         "/api/invitations/geen-echte-token/register",
-        json={"username": "sneak", "display_name": "Sneak", "password": "pw123456"},
+        json={"username": "sneak", "display_name": "Sneak", "password": "test-wachtwoord"},
     )
     assert r.status_code == 404, r.text
 

@@ -26,6 +26,7 @@ from .models import (
     Wardrobe,
     WardrobeMember,
 )
+from .routers.photos import is_https
 from .routers import (
     admin_log,
     auth,
@@ -66,14 +67,54 @@ DEFAULT_SIZES: list[tuple[str, str]] = [
 
 app = FastAPI(title="Kledingkast", version=__version__)
 
-# Bearer tokens (not cookies) are used, so a permissive CORS policy is safe
-# and keeps a separate-origin dev frontend working.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# No CORS at all unless an operator names an origin. The app serves its own
+# frontend from its own origin, and the Vite dev server proxies /api and
+# /uploads to the backend (see frontend/vite.config.ts), so a cross-origin
+# request never arises in either setup — the old "allow every origin" was
+# answering a question nobody asked. It was harmless only for as long as the
+# API authorised nothing with cookies, and photos already do.
+if settings.cors_origin_list:
+    log.info("CORS toegestaan voor: %s", ", ".join(settings.cors_origin_list))
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origin_list,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """Headers the browser needs in order to protect the app for us.
+
+    The login token lives in ``localStorage``, where a script injected into the
+    page could read it. A Content-Security-Policy that refuses to run anything
+    but this origin's own scripts is by far the strongest thing available
+    against that, and it costs nothing here because the app loads no third-party
+    anything.
+
+    Skipped for photos: those are authorised by cookie and served straight off
+    disk, and a policy on an image is meaningless.
+    """
+    response = await call_next(request)
+    if request.url.path.startswith("/uploads/"):
+        return response
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    if settings.content_security_policy.strip():
+        response.headers.setdefault(
+            "Content-Security-Policy", settings.content_security_policy.strip()
+        )
+    # Only over https, and only when asked: HSTS is a promise the browser keeps
+    # for as long as it says, and making it before the certificate is sorted
+    # locks people out of their own wardrobe.
+    if settings.hsts_seconds > 0 and is_https(request):
+        response.headers.setdefault(
+            "Strict-Transport-Security", f"max-age={settings.hsts_seconds}"
+        )
+    return response
 
 # Requests that change something, and anything that fails, are worth a log
 # line. Successful reads are not — they would drown the log on every screen
@@ -237,6 +278,26 @@ def migrate_schema() -> None:
         conn.exec_driver_sql(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_item_wardrobe_uid ON items (wardrobe_id, uid)"
         )
+
+
+def migrate_token_versions() -> None:
+    """Add ``users.token_version`` so tokens become revocable.
+
+    Everyone starts at 1, which is also what a token without the claim counts
+    as — so nobody is signed out by the upgrade itself, and the first password
+    change after it is what actually retires the old tokens.
+    """
+    with engine.begin() as conn:
+        cols = [c[1] for c in conn.exec_driver_sql("PRAGMA table_info(users)").fetchall()]
+        if not cols:
+            return  # fresh install: create_all already made the full schema
+        if "token_version" not in cols:
+            conn.exec_driver_sql(
+                "ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 1"
+            )
+            conn.exec_driver_sql(
+                "UPDATE users SET token_version = 1 WHERE token_version IS NULL"
+            )
 
 
 def migrate_federated_login() -> None:
@@ -566,6 +627,7 @@ migrate_schema()
 # Before seed_admin(): that uses the ORM, and a mapped column the database
 # does not have yet makes every query on `users` fail.
 migrate_federated_login()
+migrate_token_versions()
 seed_admin()
 migrate_sizes()
 migrate_account_invitations()
@@ -585,6 +647,12 @@ elif settings.oidc_enabled:
     log.warning(
         "WARDROBE_OIDC_ENABLED staat aan, maar issuer, client-id of"
         " client-secret ontbreekt — SSO blijft uit."
+    )
+if settings.admin_password in ("changeme", "change-me"):
+    log.warning(
+        "Het beheerderswachtwoord uit de omgeving is nog het voorbeeld"
+        " ('%s'). Wijzig het in de app onder Instellingen → Wachtwoord wijzigen.",
+        settings.admin_password,
     )
 log.info("Migraties en seeds afgerond; app is klaar")
 

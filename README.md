@@ -43,6 +43,10 @@ welke stukken bij elkaar passen — via een **Tinder-achtige swipe**.
   Zonder verbinding blijf je ingelogd, zie je je kast en je outfits zoals ze het
   laatst geladen waren, en kun je gewoon doorswipen: je oordelen worden verstuurd
   zodra je weer online bent — ook als je de app tussendoor sluit.
+- 🔐 **Dichte voordeur** – wachtwoorden van minimaal 10 tekens, een login die
+  afremt na mislukte pogingen, een wachtwoordwijziging die je andere apparaten
+  uitlogt (en een knop om dat los te doen), en een server die weigert adressen
+  in je eigen netwerk op te halen. Zie [Beveiliging](#beveiliging).
 - 🔒 **Foto's achter de login** – een foto-URL is geen achterdeur: elke foto wordt
   geserveerd met dezelfde toegangsregels als het kledingstuk waar hij bij hoort.
 
@@ -90,7 +94,8 @@ regel HTTPS met certbot.
    (Liever inloggen via je eigen Authentik/Authelia? Zie
    [Inloggen via SSO](#inloggen-via-sso-openid-connect) — dit account blijft
    daarnaast bestaan als noodingang.)
-2. Ga naar **Instellingen → Wachtwoord wijzigen** en kies een eigen wachtwoord.
+2. Ga naar **Instellingen → Wachtwoord wijzigen** en kies een eigen wachtwoord
+   (minimaal 10 tekens; je huidige wachtwoord wordt erbij gevraagd).
 3. Maak onder **Instellingen → Accounts** een account voor je partner aan.
 4. **Deel je kast:** tik rechtsboven op je eigen kast op **🔗 Delen** (of ga naar
    **Instellingen → Mijn kast delen**), kies die persoon uit de lijst en geef ze
@@ -113,6 +118,20 @@ Alles via omgevingsvariabelen (zie `.env.example`):
 | `WARDROBE_DATA_DIR` | `/data` (in Docker) | Waar SQLite-db + foto's staan. |
 | `WARDROBE_LOG_LEVEL` | `INFO` | Hoeveel er gelogd wordt: `DEBUG`, `INFO`, `WARNING`, `ERROR`. |
 | `WARDROBE_PUBLIC_URL` | — | Het adres waarop je de app bereikt, bv. `https://kast.jouwdomein.nl`. Alleen nodig voor SSO. |
+
+Voor **beveiliging** — alle standaarden zijn al de veilige keuze, zie
+[Beveiliging](#beveiliging):
+
+| Variabele | Standaard | Uitleg |
+|---|---|---|
+| `WARDROBE_MIN_PASSWORD_LENGTH` | `10` | Kortste wachtwoord dat wordt geaccepteerd als er één wordt *ingesteld*. Bestaande wachtwoorden blijven werken. |
+| `WARDROBE_LOGIN_MAX_ATTEMPTS` | `5` | Mislukte pogingen op rij voordat de app met 429 antwoordt. |
+| `WARDROBE_LOGIN_LOCKOUT_SECONDS` | `30` | Eerste wachttijd daarna; verdubbelt per verdere poging tot een kwartier. |
+| `WARDROBE_CORS_ORIGINS` | — | Adressen die de API cross-origin mogen aanroepen. Leeg = geen, en dat klopt voor vrijwel elke installatie. |
+| `WARDROBE_COOKIE_SECURE` | `auto` | `Secure`-vlag op de fotocookie. `auto` = aan op https, uit op http. |
+| `WARDROBE_CONTENT_SECURITY_POLICY` | alles van dit adres | De CSP die wordt meegestuurd. Leeg = geen policy. |
+| `WARDROBE_HSTS_SECONDS` | `0` (uit) | HSTS op https. Zet dit pas aan als je certificaat staat. |
+| `WARDROBE_FETCH_ALLOW_PRIVATE` | `false` | Of de foto-URL- en importfuncties adressen in je eigen netwerk mogen ophalen. |
 
 Voor **inloggen via SSO** (optioneel, standaard uit):
 
@@ -279,6 +298,9 @@ backend/            FastAPI-app (Python)
                     color_rules, imports, invitations, admin_log
     app_settings.py instellingen die een beheerder in de app omzet (zelf registreren)
     oidc.py         federated login: discovery, PKCE, tokencontrole, groep → beheerder
+    throttle.py     mislukte inlogpogingen afremmen
+    fetching.py     URL's die een gebruiker typt ophalen zónder je eigen netwerk te raken
+    deps.py         wie doet dit verzoek: één plek die bepaalt wat een token betekent
     images.py       foto-verwerking (Pillow)
     matching.py     categorie-groepen voor slimme combinatie-suggesties
     audit.py        auditlog: wie deed wat (naar database én logregel)
@@ -397,6 +419,134 @@ dezelfde schakelaar; de wissel komt in het logboek te staan.
 
 > Zet 'm alleen open als de app niet zomaar vanaf het internet te bereiken is,
 > of als je het niet erg vindt wie er binnenkomt.
+
+---
+
+## Beveiliging
+
+Niets hiervan hoef je in te stellen: de standaarden zijn al de veilige keuze.
+Dit staat er zodat je weet wat de app doet, en wat je kúnt bijstellen.
+
+### Wachtwoorden
+
+- **Minimaal 10 tekens** bij het instellen van een wachtwoord
+  (`WARDROBE_MIN_PASSWORD_LENGTH`). Dit geldt alleen bij het *instellen*:
+  bestaande wachtwoorden blijven werken, dus er wordt niemand buitengesloten —
+  je komt de regel pas tegen als je 'm wijzigt.
+- **Je huidige wachtwoord is nodig** om een nieuw in te stellen. Zonder die
+  vraag kon iemand met een geleende, ontgrendelde telefoon het wachtwoord
+  omzetten en het account houden; nu is zo'n moment tijdelijk in plaats van
+  definitief. Een account dat alleen via SSO inlogt heeft nog geen wachtwoord
+  en stelt er dus een eerste in — daar is niets te bewijzen, en het logboek
+  schrijft het als zodanig op.
+- **Een wachtwoordwijziging logt alle andere apparaten uit.** Dat is meestal
+  precies waarom je 'm wijzigt. Het toestel waarop je het doet blijft ingelogd.
+- **Overal uitloggen** kan ook los, onder **Instellingen → Wachtwoord
+  wijzigen**: handig als je telefoon kwijt is en je je wachtwoord niet wilt
+  veranderen.
+
+### Inlogpogingen
+
+Na **5 mislukte pogingen** op rij antwoordt de app met een 429. De eerste
+wachttijd is **30 seconden** en verdubbelt bij elke volgende poging, tot
+maximaal een kwartier. Een goed wachtwoord wist de teller meteen, dus wie zich
+twee keer vertypt merkt er niets van.
+
+Geteld wordt op **gebruikersnaam** én op **afzender-adres**, en een blokkade op
+een van de twee is genoeg. Dat eerste is wat een account echt beschermt; het
+tweede moet voorkomen dat één machine een lijst met accounts afwerkt. Achter een
+reverse-proxy komt elk verzoek van `127.0.0.1`, dus daar wordt
+`X-Forwarded-For` gebruikt — te vervalsen, en dat maakt niet uit: wie dat doet
+verdeelt alleen z'n eigen budget over verzonnen adressen, terwijl de teller op
+de gebruikersnaam gewoon doortikt.
+
+De tellers staan in het geheugen van het proces. Een herstart wist ze, en dat is
+hier prima: de app draait met opzet één worker, en een herstart is geen
+gereedschap dat een aanvaller heeft.
+
+Blokkades komen in het **logboek** te staan, naast de mislukte pogingen zelf.
+
+### Sessies
+
+Een login-token is 30 dagen geldig en draagt het **tokenversie-nummer** van het
+account. Gaat dat nummer omhoog — bij een wachtwoordwijziging of bij "overal
+uitloggen" — dan zijn alle tokens van ervóór op dat moment dood. Zonder dat
+bleef een sessie die je oude wachtwoord kende nog een maand doorlopen.
+
+Hetzelfde geldt voor foto's: die worden met een cookie geautoriseerd, en die
+gaat door precies dezelfde controle. Een ingetrokken token stopt met foto's
+serveren op hetzelfde moment dat het stopt met gegevens serveren.
+
+Tokens van vóór deze versie hebben nog geen versienummer en gelden als versie 1
+— dus de update zelf logt niemand uit. De eerste wachtwoordwijziging daarna
+ruimt ze op.
+
+### Headers en cookies
+
+De app stuurt zelf de headers mee die de browser nodig heeft om het werk te
+doen:
+
+| Header | Waarde |
+| --- | --- |
+| `Content-Security-Policy` | alles van dit ene adres (`WARDROBE_CONTENT_SECURITY_POLICY`) |
+| `X-Content-Type-Options` | `nosniff` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `X-Frame-Options` | `DENY` |
+| `Strict-Transport-Security` | alleen op https én als je `WARDROBE_HSTS_SECONDS` zet |
+
+De CSP is de belangrijkste: het login-token leeft in `localStorage`, waar een
+script dat in de pagina terechtkomt het zou kunnen lezen. Een policy die niets
+anders laat draaien dan de eigen scripts van deze app is daar de sterkste
+bescherming tegen, en kost hier niets omdat de app niets van buiten laadt.
+
+`WARDROBE_HSTS_SECONDS` staat op 0 omdat HSTS een belofte is die de browser een
+jaar lang onthoudt: aanzetten voordat je certificaat staat sluit mensen buiten
+van hun eigen kast. Staat certbot, zet 'm dan op `31536000`. Doet je nginx het
+al, laat 'm dan op 0.
+
+De **fotocookie** krijgt de `Secure`-vlag op https en niet op gewone http
+(`WARDROBE_COOKIE_SECURE=auto`). Beide antwoorden zijn namelijk fout als vaste
+waarde: op http wordt een secure cookie simpelweg nooit verstuurd en breekt elke
+foto, en op https is 'm weglaten het weggeven van je token.
+
+**CORS** staat standaard helemaal uit. De app serveert z'n eigen frontend vanaf
+hetzelfde adres, en de Vite-dev-server proxyt `/api` en `/uploads` naar de
+backend — in geen van beide gevallen komt er ooit een cross-origin-verzoek. Host
+je de frontend echt elders, dan noem je dat adres in `WARDROBE_CORS_ORIGINS`.
+
+### URL's die de server voor je ophaalt
+
+Twee functies geven de server een adres en vragen 'm het op te halen: een
+kledingstuk toevoegen via een **foto-URL**, en de gegevens van een **webshop**
+inlezen. Dat is handig, en zonder zorg ook een manier om de server op deuren te
+laten kloppen die alleen hij kan bereiken — het beheerpaneel van een andere
+container, de webinterface van je router. De app staat op je eigen server,
+meestal op hetzelfde netwerk als de rest van wat die server draait, dus "alleen
+de server komt daar" is juist het probleem: *elke* ingelogde gebruiker, ook een
+kijker op een gedeelde kast, zou dat bereik lenen.
+
+Daarom gaat zo'n verzoek langs een controle:
+
+- alleen `http` en `https`;
+- de servernaam wordt eerst opgezocht, en geweigerd als **één van** de adressen
+  privé, loopback, link-local of anderszins geen publiek internetadres is
+  (dus ook `127.0.0.1`, `10.x`, `192.168.x`, `169.254.169.254` en `::1`);
+- omleidingen worden met de hand gevolgd, maximaal vier, met diezelfde controle
+  bij **elke stap** — een omleiding naar `127.0.0.1` is de voor de hand liggende
+  manier om een controle te omzeilen die alleen kijkt naar wat er getypt werd;
+- de download heeft een maximum, dus een adres dat eindeloos blijft sturen kan
+  de schijf niet volzetten.
+
+Wat hiermee *niet* dicht is: het gaatje tussen het opzoeken van een naam en het
+verbinden ermee. Een DNS-server die de tweede keer een ander adres teruggeeft
+kan er nog langs. Dat echt dichtzetten betekent de verbinding vastpinnen op het
+gecontroleerde adres, wat TLS-verificatie breekt tenzij je 'm zorgvuldig weer in
+elkaar zet — voor een thuisserver niet die complexiteit waard. Het gaatje staat
+hier dus opgeschreven in plaats van weggemoffeld.
+
+Wil je juist wél je eigen netwerk kunnen bereiken (een NAS met foto's, een
+interne catalogus), zet dan `WARDROBE_FETCH_ALLOW_PRIVATE=true`. Doe dat alleen
+als je iedereen met een account in deze Kledingkast dat toevertrouwt.
 
 ---
 

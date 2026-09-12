@@ -283,6 +283,7 @@ def oidc_callback(
 @router.post("/exchange", response_model=Token)
 def oidc_exchange(
     body: OidcExchange,
+    request: Request,
     response: Response,
     db: Session = Depends(get_db),
 ):
@@ -302,6 +303,6 @@ def oidc_exchange(
     if user is None:
         raise HTTPException(status_code=400, detail="Dit account bestaat niet meer")
 
-    token = create_access_token(user.id)
-    set_photo_cookie(response, token)
+    token = create_access_token(user.id, token_version=user.token_version)
+    set_photo_cookie(response, token, request)
     return Token(access_token=token, user=UserOut.model_validate(user))
