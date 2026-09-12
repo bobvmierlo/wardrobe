@@ -801,7 +801,7 @@ def test_an_unreachable_provider_does_not_take_the_app_down(client, monkeypatch)
     assert "niet bereikbaar" in error_of(response)
 
     # And the app is otherwise entirely fine, including the password door.
-    assert client.get("/api/health").json() == {"status": "ok"}
+    assert client.get("/api/health").json()["status"] == "ok"
     assert client.post(
         "/api/auth/login", data={"username": "admin", "password": "changeme"}
     ).status_code == 200
