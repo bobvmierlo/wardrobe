@@ -147,8 +147,15 @@ class Item(Base):
     # One or more seasons, stored comma-separated (e.g. "Lente,Zomer").
     season: Mapped[str | None] = mapped_column(String(120), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    photo_filename: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    thumb_filename: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Indexed because serving a photo looks the garment up by filename, to
+    # apply the access rules of the kast it belongs to — once per image, and a
+    # wardrobe screen asks for dozens at a time.
+    photo_filename: Mapped[str | None] = mapped_column(
+        String(200), index=True, nullable=True
+    )
+    thumb_filename: Mapped[str | None] = mapped_column(
+        String(200), index=True, nullable=True
+    )
     is_favorite: Mapped[bool] = mapped_column(default=False)
 
     # The wardrobe this garment lives in. Nullable only so an in-place SQLite

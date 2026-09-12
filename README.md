@@ -132,6 +132,7 @@ Voor **beveiliging** — alle standaarden zijn al de veilige keuze, zie
 | `WARDROBE_CONTENT_SECURITY_POLICY` | alles van dit adres | De CSP die wordt meegestuurd. Leeg = geen policy. |
 | `WARDROBE_HSTS_SECONDS` | `0` (uit) | HSTS op https. Zet dit pas aan als je certificaat staat. |
 | `WARDROBE_FETCH_ALLOW_PRIVATE` | `false` | Of de foto-URL- en importfuncties adressen in je eigen netwerk mogen ophalen. |
+| `WARDROBE_REPAIR_ON_START` | `false` | Draai de opruimcontrole ook als de database al bij is — zie [Opstarten](#opstarten-migraties-en-healthcheck). |
 
 Voor **inloggen via SSO** (optioneel, standaard uit):
 
@@ -246,14 +247,19 @@ docker compose down
 docker compose up -d
 ```
 
-Of maak er zelf een van buitenaf, zonder de app:
+Of maak er zelf een van buitenaf, zonder de app. **Zet de container dan eerst
+stil**: de database staat in WAL-modus, dus een deel van de laatste wijzigingen
+staat in `wardrobe.db-wal` en hoort mee in het archief (zie
+[WAL](#wal)). Met de container uit is dat geregeld.
 
 ```bash
+docker compose down
 docker run --rm -v kledingkast-data:/data -v "$PWD":/backup alpine \
   tar czf /backup/kledingkast-backup.tar.gz -C /data .
+docker compose up -d
 ```
 
-Terugzetten: draai hetzelfde met `tar xzf` in `/data`.
+Terugzetten: draai hetzelfde met `tar xzf` in `/data`, ook met de container uit.
 
 > Een volledige back-up en een momentopname bevatten de gegevens van iedereen —
 > een momentopname zelfs de wachtwoord-hashes. Bewaar ze net zo zorgvuldig als
@@ -291,12 +297,13 @@ Standaard-admin bij eerste start: `admin` / `changeme`.
 ```
 backend/            FastAPI-app (Python)
   app/
-    main.py         app + seed-admin + migraties + serveert de gebouwde frontend
+    main.py         de app zelf: middleware, healthcheck, serveert de gebouwde frontend
     models.py       User, Wardrobe, WardrobeMember, Item, Match (SQLAlchemy)
     access.py       kast-toegang & rollen (eigenaar/beheerder/bewerker/kijker)
     routers/        auth, oidc, users, wardrobes, items, matches, catalog,
                     color_rules, imports, invitations, admin_log
     app_settings.py instellingen die een beheerder in de app omzet (zelf registreren)
+    migrations.py   genummerde schemastappen (één keer) + seeds (elke start)
     oidc.py         federated login: discovery, PKCE, tokencontrole, groep → beheerder
     throttle.py     mislukte inlogpogingen afremmen
     fetching.py     URL's die een gebruiker typt ophalen zónder je eigen netwerk te raken
@@ -359,9 +366,13 @@ je twijfelt.
 *niet* verwijderd hebt gewoon staan. Zie je iemand nog in de lijst staan, dan
 bestaat dat account nog.
 
-Bij het opstarten controleert de app of er resten liggen van accounts die in
-een oudere versie half verwijderd zijn, en ruimt die op. In beide gevallen zegt
-het logboek wat er gebeurd is:
+**Eén keer** — bij de eerste start na het bijwerken — controleert de app of er
+resten liggen van accounts die in een oudere versie half verwijderd zijn, en
+ruimt die op. Daarna niet meer, want die controle leest de hele kast in het
+geheugen en er komt geen nieuwe wrakstukken meer bij; zie
+[Opstarten](#opstarten-migraties-en-healthcheck) als je 'm alsnog wilt draaien
+(`WARDROBE_REPAIR_ON_START=true`). In beide gevallen zegt het logboek wat er
+gebeurd is:
 
 ```
 WARNING  Resten van eerder verwijderde accounts opgeruimd: 1 kasten, 2 kledingstukken
@@ -419,6 +430,87 @@ dezelfde schakelaar; de wissel komt in het logboek te staan.
 
 > Zet 'm alleen open als de app niet zomaar vanaf het internet te bereiken is,
 > of als je het niet erg vindt wie er binnenkomt.
+
+---
+
+## Opstarten, migraties en healthcheck
+
+### Migraties lopen één keer
+
+De database houdt in een tabelletje `schema_version` bij hoe ver 'ie is. Bij het
+opstarten worden alleen de stappen gedaan die nog niet gedaan zijn; staat 'ie
+al op de nieuwste versie, dan zegt het logboek dat en gebeurt er niets:
+
+```
+INFO  Database is bij (schemaversie 10); geen migraties nodig.
+```
+
+Bij de eerste start ná deze versie worden alle stappen één keer doorlopen —
+elke stap kijkt eerst zelf of 'ie nodig is, dus op een bestaande database doen
+ze niets en verandert er niets aan je gegevens:
+
+```
+INFO  Geen schemaversie gevonden — alle 10 stappen worden één keer doorlopen.
+INFO  Migratie 1/10: tabellen en kolommen
+INFO  Migratie 2/10: kolommen voor SSO-login
+...
+INFO  Migraties afgerond; database staat op schemaversie 10
+```
+
+Elke stap wordt apart afgevinkt, dus als er halverwege iets misgaat blijven de
+stappen die wél lukten staan in plaats van dat ze bij de volgende start opnieuw
+langskomen.
+
+Waarom dit beter is dan "altijd alles doen": bij de stappen zit een
+**opruimcontrole** die resten opspoort van accounts die in een oude versie half
+verwijderd zijn. Die leest daarvoor alle kledingstukken en alle beoordelingen in
+het geheugen. Bij tweehonderd kledingstukken kost dat niets; bij een paar
+duizend, elke keer dat de container herstart, wel.
+
+Wil je die controle toch nog eens draaien — bijvoorbeeld nadat je een back-up met
+de hand hebt teruggezet — dan zet je `WARDROBE_REPAIR_ON_START=true`. Hij zegt in
+het logboek wat 'ie vond, of dat er niets te vinden was. Zet 'm daarna weer uit.
+
+> **Seeds lopen wél elke start.** De categorieënlijst, de matenlijst en de
+> kleurregels worden elke keer bijgevuld, want dat is hoe een maat die in een
+> nieuwe versie is toegevoegd terechtkomt in een kast die de lijst al had. Dat
+> kost twee telvragen en raakt niets wat je zelf hebt aangepast.
+
+### De healthcheck
+
+`/api/health` kijkt of de app z'n werk kan doen: is de database te lezen, en is
+de fotomap te beschrijven. Gaat er iets niet, dan antwoordt 'ie **503** met wat
+er stuk is:
+
+```json
+{"status": "degraded", "checks": {"database": "ok", "uploads": "niet beschrijfbaar"}, "version": "0.11.0"}
+```
+
+`docker-compose.yml` gebruikt dat nu als `healthcheck`. Dat is wat
+`restart: unless-stopped` nodig heeft om te kunnen ingrijpen: zonder healthcheck
+herstart Docker alleen een container die *stopt*, niet één die nog draait maar
+niet meer bij z'n eigen database kan.
+
+```bash
+docker compose ps            # toont "healthy" of "unhealthy"
+curl -s localhost:8000/api/health | jq
+```
+
+De eerste minuut na het starten telt niet mee (`start_period`), want de eerste
+start doet de migraties en dat mag even duren.
+
+### WAL
+
+De database staat in **WAL-modus**, zodat lezen niet hoeft te wachten op
+schrijven. Dat is hier geen theoretische winst: een volledige back-up of een
+export loopt door álle kledingstukken en foto's, en zonder WAL staat iedereen die
+ondertussen wil swipen stil tot dat klaar is. Je ziet er twee extra bestanden van
+naast `wardrobe.db` (`-wal` en `-shm`); die horen erbij.
+
+> Maak je een **momentopname** met `tar` buiten de app om, zet de container dan
+> eerst stil (`docker compose down`). Met WAL staat een deel van de laatste
+> wijzigingen nog in `wardrobe.db-wal`, en die moet er dus mee in het archief.
+> De back-up- en exportfuncties ín de app hebben dit probleem niet.
 
 ---
 

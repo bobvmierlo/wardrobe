@@ -92,6 +92,11 @@ class Settings(BaseSettings):
     # certificate is sorted locks people out of their own wardrobe.
     hsts_seconds: int = 0
 
+    # Run the orphan/repair sweep even on a database that is already up to
+    # date. Normally it runs once, as a migration; this asks for it again, which
+    # is the obvious thing to want after putting a backup back by hand.
+    repair_on_start: bool = False
+
     # Let the photo-URL and webshop-import features reach private addresses.
     # Off by default: those features take a URL from any signed-in user, and
     # the server sits on the same network as everything else you self-host.

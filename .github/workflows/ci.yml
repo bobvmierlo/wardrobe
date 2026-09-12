@@ -28,8 +28,16 @@ jobs:
       - run: npm run build
 
   backend:
-    name: Backend tests
+    # The image ships python:3.14-slim, so 3.14 is the one that has to pass —
+    # testing only 3.12 meant the suite had never run on the interpreter our
+    # users actually execute. 3.12 stays in the matrix because that is what a
+    # contributor is likely to have installed locally.
+    name: Backend tests (Python ${{ matrix.python }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.14", "3.12"]
     defaults:
       run:
         working-directory: backend
@@ -37,7 +45,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: "${{ matrix.python }}"
           cache: pip
           cache-dependency-path: |
             backend/requirements.txt
