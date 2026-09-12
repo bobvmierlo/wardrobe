@@ -6,6 +6,27 @@ import { VitePWA } from "vite-plugin-pwa";
 // requests to the FastAPI backend on :8000. In production everything is served
 // from the same origin by FastAPI, so these proxies are dev-only.
 export default defineConfig({
+  // Unit tests run under jsdom because the code under test talks to
+  // localStorage and fetch. Only the logic that is worth protecting is covered
+  // — the offline queue, the connection probe and the API error mapping — not
+  // the components, which change shape far more often than they break.
+  test: {
+    environment: "jsdom",
+    // An explicit origin, because jsdom refuses localStorage on an opaque one
+    // ("localStorage is not available for opaque origins") and the code under
+    // test is all about localStorage. Relying on whatever vitest defaults to
+    // made the suite depend on the Node version underneath it.
+    environmentOptions: { jsdom: { url: "http://localhost/" } },
+    include: ["src/**/*.test.ts"],
+    // The end-to-end spec is Playwright's; it needs a browser and a server.
+    exclude: ["e2e/**", "node_modules/**"],
+    restoreMocks: true,
+    // restoreMocks does not undo vi.stubGlobal, so without this a stubbed
+    // `location` or `fetch` outlives the test that wanted it and the suite
+    // quietly depends on the order its files happen to run in.
+    unstubGlobals: true,
+    setupFiles: ["./src/test-setup.ts"],
+  },
   plugins: [
     react(),
     VitePWA({

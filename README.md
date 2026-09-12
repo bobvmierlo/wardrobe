@@ -286,7 +286,38 @@ cd frontend
 npm install
 npm run dev            # http://localhost:5173
 npm run lint           # oxlint; draait ook in CI
+npm test               # unit-tests (vitest); draait ook in CI
 ```
+
+### Tests
+
+```bash
+cd backend && pytest -q         # 189 tests: API, migraties, SSO, beveiliging
+cd frontend && npm test         # 46 tests: offline-wachtrij, verbinding, API-laag
+cd frontend && npx playwright test   # de doorloop in een echte browser
+```
+
+Drie lagen, elk met een eigen reden:
+
+- **pytest** dekt elke API-route, de migraties en de toegangsregels.
+- **vitest** dekt de frontend-logica waar een fout pas opvalt als je in de trein
+  zit: de wachtrij met oordelen, het vaststellen of er verbinding is, en het
+  verschil tussen "de server zegt nee" en "de server zegt niets".
+- **playwright** doet één doorloop in een echte browser — inloggen, een
+  kledingstuk toevoegen, het terugvinden — op desktop- én telefoonformaat. Dat
+  is het enige wat kan vertellen of de app überhaupt tekent en of de knoppen aan
+  de juiste routes hangen; precies de soort kapotheid waar de andere twee lagen
+  langs varen. Het bouwt de frontend en start de backend zelf
+  (`frontend/e2e/serve.sh`), tegen een wegwerpdatabase.
+
+De eerste keer heeft Playwright een browser nodig:
+
+```bash
+cd frontend && npx playwright install chromium
+```
+
+Staat er al een Chromium op je machine, dan kun je die gebruiken met
+`PLAYWRIGHT_CHROMIUM_PATH=/pad/naar/chrome npx playwright test`.
 
 Standaard-admin bij eerste start: `admin` / `changeme`.
 
@@ -313,6 +344,8 @@ backend/            FastAPI-app (Python)
     audit.py        auditlog: wie deed wat (naar database én logregel)
     logging_setup.py logging naar stdout (docker logs) + ringbuffer voor in de app
 frontend/           React + Vite (TypeScript)
+  e2e/              één doorloop in een echte browser (Playwright)
+  src/*.test.ts     unit-tests voor de offline-logica en de API-laag (vitest)
   src/pages/        Login, Invite, Wardrobe, AddItem, ItemDetail, Combine, Outfits,
                     Settings, AdminLog
   src/wardrobe.tsx  kast-context (welke kast is actief + je rol)
