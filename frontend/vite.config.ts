@@ -6,6 +6,17 @@ import { VitePWA } from "vite-plugin-pwa";
 // requests to the FastAPI backend on :8000. In production everything is served
 // from the same origin by FastAPI, so these proxies are dev-only.
 export default defineConfig({
+  // Unit tests run under jsdom because the code under test talks to
+  // localStorage and fetch. Only the logic that is worth protecting is covered
+  // — the offline queue, the connection probe and the API error mapping — not
+  // the components, which change shape far more often than they break.
+  test: {
+    environment: "jsdom",
+    include: ["src/**/*.test.ts"],
+    // The end-to-end spec is Playwright's; it needs a browser and a server.
+    exclude: ["e2e/**", "node_modules/**"],
+    restoreMocks: true,
+  },
   plugins: [
     react(),
     VitePWA({

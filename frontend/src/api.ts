@@ -58,6 +58,20 @@ class OfflineError extends Error {
   }
 }
 
+/** The server's explanation for a failure, or ``fallback`` when it gave none. */
+async function detailFrom(res: Response, fallback: string): Promise<string> {
+  try {
+    const body = await res.json();
+    if (body?.detail) {
+      return typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
+    }
+  } catch {
+    /* a non-JSON error body tells us nothing extra */
+  }
+  return fallback;
+}
+
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   const token = getToken();
@@ -73,23 +87,21 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     throw new OfflineError();
   }
   if (res.status === 401) {
-    setToken(null);
-    // Force a re-login on session expiry — except on the endpoints that are
-    // reachable while logged out, where a 401 is just an answer.
-    if (!path.endsWith("/auth/login") && !path.startsWith("/api/invitations/")) {
-      window.location.assign("/login");
+    // On the endpoints reachable while logged out, a 401 is an *answer* — the
+    // login form asking "is this the password?", an invitation being looked up.
+    // There the server's own words are the useful ones: telling someone who
+    // mistyped their password that their "sessie is verlopen" is both wrong and
+    // baffling, and it is what this used to say.
+    if (path.endsWith("/auth/login") || path.startsWith("/api/invitations/")) {
+      throw new ApiError(401, await detailFrom(res, "Onjuiste gebruikersnaam of wachtwoord"));
     }
+    // Anywhere else a 401 means the session really is over.
+    setToken(null);
+    window.location.assign("/login");
     throw new ApiError(401, "Sessie verlopen");
   }
   if (!res.ok) {
-    let detail = `Er ging iets mis (${res.status})`;
-    try {
-      const body = await res.json();
-      if (body?.detail) detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
-    } catch {
-      /* ignore */
-    }
-    throw new ApiError(res.status, detail);
+    throw new ApiError(res.status, await detailFrom(res, `Er ging iets mis (${res.status})`));
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;

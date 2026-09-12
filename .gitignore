@@ -23,3 +23,8 @@ data/
 Thumbs.db
 .vscode/
 .idea/
+
+# Playwright output
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
