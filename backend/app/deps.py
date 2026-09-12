@@ -1,3 +1,11 @@
+"""Who is making this request.
+
+One place decides what a token means, because there are two doors it arrives
+through — the ``Authorization`` header on every API call, and the cookie an
+``<img>`` has to use for photos — and they must never disagree about whether a
+token is still alive.
+"""
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
@@ -9,21 +17,40 @@ from .security import decode_token
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
 
 
+def user_for_token(db: Session, token: str | None) -> User | None:
+    """The account a token belongs to, or None when it is not (or no longer) valid.
+
+    "No longer" is the part worth having: a token also dies when the account's
+    ``token_version`` has moved past the one stamped into it, which is how a
+    password change ends the sessions that knew the old password instead of
+    leaving them running for another thirty days.
+    """
+    if not token:
+        return None
+    decoded = decode_token(token)
+    if decoded is None:
+        return None
+    subject, version = decoded
+    try:
+        user = db.get(User, int(subject))
+    except (TypeError, ValueError):
+        return None
+    if user is None or user.token_version != version:
+        return None
+    return user
+
+
 def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> User:
-    credentials_exc = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Niet ingelogd of sessie verlopen",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    sub = decode_token(token)
-    if sub is None:
-        raise credentials_exc
-    user = db.get(User, int(sub))
+    user = user_for_token(db, token)
     if user is None:
-        raise credentials_exc
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Niet ingelogd of sessie verlopen",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return user
 
 

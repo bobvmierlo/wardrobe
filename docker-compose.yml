@@ -24,6 +24,15 @@ services:
       # DEBUG, INFO, WARNING of ERROR. Zie `docker compose logs -f kledingkast`
       # en in de app onder Instellingen → Logboek.
       WARDROBE_LOG_LEVEL: "${WARDROBE_LOG_LEVEL:-INFO}"
+      # ---- Beveiliging ----
+      # De standaarden zijn al de veilige keuze; zie .env.example en de README.
+      WARDROBE_LOGIN_MAX_ATTEMPTS: "${WARDROBE_LOGIN_MAX_ATTEMPTS:-5}"
+      WARDROBE_LOGIN_LOCKOUT_SECONDS: "${WARDROBE_LOGIN_LOCKOUT_SECONDS:-30}"
+      WARDROBE_MIN_PASSWORD_LENGTH: "${WARDROBE_MIN_PASSWORD_LENGTH:-8}"
+      WARDROBE_CORS_ORIGINS: "${WARDROBE_CORS_ORIGINS:-}"
+      WARDROBE_COOKIE_SECURE: "${WARDROBE_COOKIE_SECURE:-auto}"
+      WARDROBE_HSTS_SECONDS: "${WARDROBE_HSTS_SECONDS:-0}"
+      WARDROBE_FETCH_ALLOW_PRIVATE: "${WARDROBE_FETCH_ALLOW_PRIVATE:-false}"
       # ---- Inloggen via SSO (OpenID Connect), optioneel ----
       # Alles leeg/false = uit; dan verandert er niets. Zie .env.example en de
       # README. Inloggen met gebruikersnaam en wachtwoord blijft altijd werken,

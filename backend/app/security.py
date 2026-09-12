@@ -31,15 +31,36 @@ def verify_password(password: str, hashed: str) -> bool:
         return False
 
 
-def create_access_token(subject: str | int) -> str:
+def create_access_token(subject: str | int, *, token_version: int) -> str:
+    """Mint a login token for this account, stamped with its token version.
+
+    ``token_version`` is required rather than defaulted: a token minted without
+    the account's current version would be one that revocation cannot reach,
+    and that is not a mistake worth making quietly.
+    """
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
-    payload = {"sub": str(subject), "exp": expire}
+    payload = {"sub": str(subject), "exp": expire, "tv": int(token_version)}
     return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
 
 
-def decode_token(token: str) -> str | None:
+def decode_token(token: str) -> tuple[str, int] | None:
+    """The (subject, token version) a token claims, or None if it is no good.
+
+    A token from before versioning existed has no ``tv`` claim. Those count as
+    version 1 — which is what every existing account is migrated to — so an
+    upgrade does not sign the whole household out. The first password change
+    moves that account to 2 and the old tokens die then, which is exactly when
+    they should.
+    """
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
-        return payload.get("sub")
     except jwt.PyJWTError:
         return None
+    sub = payload.get("sub")
+    if sub is None:
+        return None
+    try:
+        version = int(payload.get("tv", 1))
+    except (TypeError, ValueError):
+        return None
+    return str(sub), version

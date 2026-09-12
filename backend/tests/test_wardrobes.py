@@ -22,7 +22,7 @@ def login(client, username: str, password: str) -> str:
 
 def make_user(client, admin_token: str, display: str, is_admin: bool = False):
     username = "u_" + uuid.uuid4().hex[:10]
-    password = "pw123456"
+    password = "test-wachtwoord"
     r = client.post(
         "/api/users",
         headers=h(admin_token),

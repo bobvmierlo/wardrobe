@@ -2,6 +2,13 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
+from .config import settings
+
+#: Read once, at import, so every password field in the API agrees. Raising it
+#: never locks anyone out: it applies when a password is *set*, not when one is
+#: checked, so existing logins keep working and only meet it next time.
+MIN_PASSWORD = settings.min_password_length
+
 
 # ---- Users / auth ----
 class UserOut(BaseModel):
@@ -18,7 +25,7 @@ class UserOut(BaseModel):
 class UserCreate(BaseModel):
     username: str = Field(min_length=2, max_length=50)
     display_name: str = Field(min_length=1, max_length=100)
-    password: str = Field(min_length=4, max_length=128)
+    password: str = Field(min_length=MIN_PASSWORD, max_length=128)
     is_admin: bool = False
 
 
@@ -27,7 +34,15 @@ class UserUpdate(BaseModel):
 
 
 class PasswordChange(BaseModel):
-    new_password: str = Field(min_length=4, max_length=128)
+    """Changing your own password.
+
+    ``current_password`` is optional in the schema but required in practice for
+    any account that has one — the route checks that, because only the route
+    knows whether this account signs in with a password at all. An account that
+    only uses SSO is setting a first one and has nothing to prove.
+    """
+    current_password: str | None = None
+    new_password: str = Field(min_length=MIN_PASSWORD, max_length=128)
 
 
 class Token(BaseModel):
@@ -44,7 +59,7 @@ class RegistrationIn(BaseModel):
     """
     username: str = Field(min_length=2, max_length=50)
     display_name: str = Field(min_length=1, max_length=100)
-    password: str = Field(min_length=4, max_length=128)
+    password: str = Field(min_length=MIN_PASSWORD, max_length=128)
 
 
 class AuthConfig(BaseModel):
@@ -66,6 +81,9 @@ class AuthConfig(BaseModel):
     #: Whether to show the username/password form without being asked. The
     #: form is always *reachable*; see ``WARDROBE_LOCAL_LOGIN``.
     local_login: bool = True
+    #: Shortest password this installation accepts, so the forms can say so
+    #: before the server has to refuse anything.
+    min_password_length: int = MIN_PASSWORD
 
 
 class AuthConfigUpdate(BaseModel):

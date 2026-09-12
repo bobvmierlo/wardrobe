@@ -38,7 +38,7 @@ def test_a_beheerder_opens_and_closes_self_registration(client):
 
         r = client.post(
             "/api/auth/register",
-            json={"username": username, "display_name": "Zelf", "password": "pw123456"},
+            json={"username": username, "display_name": "Zelf", "password": "test-wachtwoord"},
         )
         assert r.status_code == 201, r.text
         token = r.json()["access_token"]
@@ -51,7 +51,7 @@ def test_a_beheerder_opens_and_closes_self_registration(client):
         # The username is taken now, and says so instead of 500-ing.
         r = client.post(
             "/api/auth/register",
-            json={"username": username, "display_name": "Zelf", "password": "pw123456"},
+            json={"username": username, "display_name": "Zelf", "password": "test-wachtwoord"},
         )
         assert r.status_code == 409, r.text
     finally:
@@ -60,7 +60,7 @@ def test_a_beheerder_opens_and_closes_self_registration(client):
     # Shut again: the same request that just worked is refused.
     r = client.post(
         "/api/auth/register",
-        json={"username": new_name(), "display_name": "Te laat", "password": "pw123456"},
+        json={"username": new_name(), "display_name": "Te laat", "password": "test-wachtwoord"},
     )
     assert r.status_code == 403, r.text
 
@@ -103,7 +103,7 @@ def test_an_account_invitation_lets_one_newcomer_in(client):
     username = new_name()
     r = client.post(
         f"/api/invitations/{invite['token']}/register",
-        json={"username": username, "display_name": "Buurman", "password": "pw123456"},
+        json={"username": username, "display_name": "Buurman", "password": "test-wachtwoord"},
     )
     assert r.status_code == 201, r.text
     token = r.json()["access_token"]

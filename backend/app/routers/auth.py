@@ -17,6 +17,7 @@ from ..schemas import (
     UserOut,
 )
 from ..security import create_access_token, hash_password, verify_password
+from ..throttle import client_key, login_throttle
 from .photos import clear_photo_cookie, set_photo_cookie
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -24,13 +25,37 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 @router.post("/login", response_model=Token)
 def login(
+    request: Request,
     response: Response,
     form: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
     username = form.username.strip().lower()
+    # Counted per account *and* per caller; see app.throttle for why both.
+    keys = (
+        f"user:{username}",
+        client_key(
+            request.client.host if request.client else None,
+            request.headers.get("x-forwarded-for"),
+        ),
+    )
+    wait = login_throttle.retry_after(*keys)
+    if wait:
+        audit.record(
+            db,
+            "auth.login_throttled",
+            f"Inlogpoging voor '{username}' geweigerd: te veel mislukte pogingen",
+            user_name=username,
+        )
+        raise HTTPException(
+            status_code=429,
+            detail=f"Te veel mislukte inlogpogingen. Probeer het over {wait} seconden opnieuw.",
+            headers={"Retry-After": str(wait)},
+        )
+
     user = db.query(User).filter(User.username == username).first()
     if not user or not verify_password(form.password, user.hashed_password):
+        login_throttle.record_failure(*keys)
         # Logged with the attempted name (never the password) so a beheerder
         # can tell a forgotten password from someone knocking on the door.
         audit.record(
@@ -40,10 +65,13 @@ def login(
             user_name=username,
         )
         raise HTTPException(status_code=401, detail="Onjuiste gebruikersnaam of wachtwoord")
-    token = create_access_token(user.id)
+
+    # A correct password forgives the typos that came before it.
+    login_throttle.record_success(*keys)
+    token = create_access_token(user.id, token_version=user.token_version)
     # <img> requests cannot carry the bearer token, so photos are authorised
     # by this cookie instead.
-    set_photo_cookie(response, token)
+    set_photo_cookie(response, token, request)
     audit.record(db, "auth.login", f"{user.display_name} logde in", user=user)
     return Token(access_token=token, user=UserOut.model_validate(user))
 
@@ -56,6 +84,7 @@ def _auth_config(db: Session) -> AuthConfig:
         oidc_manages_admins=settings.oidc_configured
         and bool(settings.oidc_admin_group.strip()),
         local_login=settings.local_login,
+        min_password_length=settings.min_password_length,
     )
 
 
@@ -94,6 +123,7 @@ def update_auth_config(
 @router.post("/register", response_model=Token, status_code=201)
 def register(
     body: RegistrationIn,
+    request: Request,
     response: Response,
     db: Session = Depends(get_db),
 ):
@@ -131,8 +161,8 @@ def register(
         entity_type="user",
         entity_id=user.id,
     )
-    token = create_access_token(user.id)
-    set_photo_cookie(response, token)
+    token = create_access_token(user.id, token_version=user.token_version)
+    set_photo_cookie(response, token, request)
     return Token(access_token=token, user=UserOut.model_validate(user))
 
 
@@ -146,7 +176,7 @@ def me(
     # predates the photo cookie (or whose cookie has expired) gets one.
     header = request.headers.get("Authorization", "")
     if header.lower().startswith("bearer "):
-        set_photo_cookie(response, header[7:].strip())
+        set_photo_cookie(response, header[7:].strip(), request)
     return user
 
 
@@ -158,19 +188,63 @@ def logout():
     return response
 
 
-@router.post("/change-password", status_code=204)
+@router.post("/change-password", response_model=Token)
 def change_password(
     body: PasswordChange,
+    request: Request,
+    response: Response,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    had_password = user.hashed_password.startswith("$2")
+    """Change your own password, knowing the current one.
+
+    Two things this does beyond storing a new hash.
+
+    It asks for the **current** password first. Without that, anyone who got
+    hold of a session — a borrowed unlocked phone, a token read out of
+    localStorage — could swap the password and keep the account for good. Asking
+    turns that from permanent into temporary.
+
+    And it **ends every other session**, by moving the account's token version
+    past the one those tokens carry. A password change that leaves the old
+    sessions running for another thirty days is not really a password change;
+    it is what you do *because* you think someone else has one.
+
+    An account that has no local password yet (it signs in through SSO) is
+    setting a first one, so there is nothing to prove — it is logged as such.
+    """
+    had_password = user.has_password
+    if had_password:
+        if not body.current_password or not verify_password(
+            body.current_password, user.hashed_password
+        ):
+            audit.record(
+                db,
+                "auth.password_change_failed",
+                f"Mislukte poging om het wachtwoord van {user.display_name} te"
+                " wijzigen: huidig wachtwoord onjuist",
+                user=user,
+                entity_type="user",
+                entity_id=user.id,
+            )
+            raise HTTPException(
+                status_code=403, detail="Je huidige wachtwoord is niet juist"
+            )
+        if body.current_password == body.new_password:
+            raise HTTPException(
+                status_code=400,
+                detail="Het nieuwe wachtwoord is hetzelfde als het huidige",
+            )
+
     user.hashed_password = hash_password(body.new_password)
+    user.token_version += 1
     db.commit()
+    db.refresh(user)
     audit.record(
         db,
         "auth.password_change",
-        f"{user.display_name} wijzigde het eigen wachtwoord"
+        f"{user.display_name} wijzigde het eigen wachtwoord — andere sessies"
+        " zijn uitgelogd"
         if had_password
         else f"{user.display_name} stelde een lokaal wachtwoord in"
         " (dit account logde alleen via SSO in)",
@@ -178,3 +252,36 @@ def change_password(
         entity_type="user",
         entity_id=user.id,
     )
+    # The caller's own token died with the others, so hand them a fresh one:
+    # changing your password should not log you out of the device you did it on.
+    token = create_access_token(user.id, token_version=user.token_version)
+    set_photo_cookie(response, token, request)
+    return Token(access_token=token, user=UserOut.model_validate(user))
+
+
+@router.post("/logout-everywhere", response_model=Token)
+def logout_everywhere(
+    request: Request,
+    response: Response,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """End every session on every device, and keep this one.
+
+    The thing you reach for when a phone goes missing. Same mechanism as a
+    password change, without having to change the password.
+    """
+    user.token_version += 1
+    db.commit()
+    db.refresh(user)
+    audit.record(
+        db,
+        "auth.logout_everywhere",
+        f"{user.display_name} logde alle andere apparaten uit",
+        user=user,
+        entity_type="user",
+        entity_id=user.id,
+    )
+    token = create_access_token(user.id, token_version=user.token_version)
+    set_photo_cookie(response, token, request)
+    return Token(access_token=token, user=UserOut.model_validate(user))

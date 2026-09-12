@@ -41,11 +41,21 @@ class User(Base):
     oidc_subject: Mapped[str | None] = mapped_column(
         String(255), unique=True, index=True, nullable=True
     )
+    #: Bumped to invalidate every token already issued for this account — what
+    #: makes "log out everywhere" possible, and what makes changing a password
+    #: actually end the sessions that knew the old one. Every token carries the
+    #: version it was minted under; a mismatch is a dead token.
+    token_version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     @property
     def is_federated(self) -> bool:
         return self.oidc_subject is not None
+
+    @property
+    def has_password(self) -> bool:
+        """Whether a local password can sign this account in at all."""
+        return bool(self.hashed_password) and self.hashed_password.startswith("$2")
 
 
 # Roles a member can hold on someone else's wardrobe.

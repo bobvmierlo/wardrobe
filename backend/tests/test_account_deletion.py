@@ -46,7 +46,7 @@ def test_deleting_an_account_frees_the_username_and_removes_the_kast(client):
     # And the username is free again — the symptom that started all this.
     again = client.post(
         "/api/users", headers=h(admin),
-        json={"username": un, "display_name": "Opnieuw", "password": "pw123456", "is_admin": False},
+        json={"username": un, "display_name": "Opnieuw", "password": "test-wachtwoord", "is_admin": False},
     )
     assert again.status_code == 201, again.text
 
@@ -59,10 +59,10 @@ def test_a_recreated_account_never_inherits_the_old_wardrobe(client):
     client.delete(f"/api/users/{user['id']}", headers=h(admin))
     r = client.post(
         "/api/users", headers=h(admin),
-        json={"username": un, "display_name": "Nieuw", "password": "pw123456", "is_admin": False},
+        json={"username": un, "display_name": "Nieuw", "password": "test-wachtwoord", "is_admin": False},
     )
     assert r.status_code == 201
-    fresh = login(client, un, "pw123456")
+    fresh = login(client, un, "test-wachtwoord")
 
     own, reachable = own_wardrobe(client, fresh)
     # Whatever id it was given, the kast must be empty and theirs alone.
