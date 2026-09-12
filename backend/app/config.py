@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     # Shortest password the app will accept when one is *set*. Existing
     # passwords are not affected: nobody is locked out by raising this, they
     # only meet it the next time they choose one.
-    min_password_length: int = 10
+    min_password_length: int = 8
 
     # Browsers that may call the API from another origin, comma-separated.
     # Empty means none, which is the right answer for every normal install:

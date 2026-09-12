@@ -25,7 +25,7 @@ export default function Login() {
   });
   const [localLogin, setLocalLogin] = useState(true);
   /** The server's minimum, so the form says it instead of bouncing a 422 back. */
-  const [minPassword, setMinPassword] = useState(10);
+  const [minPassword, setMinPassword] = useState(8);
   /** Set when the operator tucked the password form away and the visitor asked
    *  for it anyway — the break-glass, one click deep. */
   const [showPasswordForm, setShowPasswordForm] = useState(false);

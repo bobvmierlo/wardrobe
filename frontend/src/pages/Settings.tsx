@@ -21,7 +21,7 @@ export default function Settings() {
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
   /** What the server accepts, so the form can say it before the server refuses. */
-  const [minPassword, setMinPassword] = useState(10);
+  const [minPassword, setMinPassword] = useState(8);
 
   // sharing my own kast
   const ownWardrobe = wardrobes.find((w) => w.my_role === "owner") ?? null;

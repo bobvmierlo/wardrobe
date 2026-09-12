@@ -43,7 +43,7 @@ welke stukken bij elkaar passen — via een **Tinder-achtige swipe**.
   Zonder verbinding blijf je ingelogd, zie je je kast en je outfits zoals ze het
   laatst geladen waren, en kun je gewoon doorswipen: je oordelen worden verstuurd
   zodra je weer online bent — ook als je de app tussendoor sluit.
-- 🔐 **Dichte voordeur** – wachtwoorden van minimaal 10 tekens, een login die
+- 🔐 **Dichte voordeur** – wachtwoorden van minimaal 8 tekens, een login die
   afremt na mislukte pogingen, een wachtwoordwijziging die je andere apparaten
   uitlogt (en een knop om dat los te doen), en een server die weigert adressen
   in je eigen netwerk op te halen. Zie [Beveiliging](#beveiliging).
@@ -95,7 +95,7 @@ regel HTTPS met certbot.
    [Inloggen via SSO](#inloggen-via-sso-openid-connect) — dit account blijft
    daarnaast bestaan als noodingang.)
 2. Ga naar **Instellingen → Wachtwoord wijzigen** en kies een eigen wachtwoord
-   (minimaal 10 tekens; je huidige wachtwoord wordt erbij gevraagd).
+   (minimaal 8 tekens; je huidige wachtwoord wordt erbij gevraagd).
 3. Maak onder **Instellingen → Accounts** een account voor je partner aan.
 4. **Deel je kast:** tik rechtsboven op je eigen kast op **🔗 Delen** (of ga naar
    **Instellingen → Mijn kast delen**), kies die persoon uit de lijst en geef ze
@@ -124,7 +124,7 @@ Voor **beveiliging** — alle standaarden zijn al de veilige keuze, zie
 
 | Variabele | Standaard | Uitleg |
 |---|---|---|
-| `WARDROBE_MIN_PASSWORD_LENGTH` | `10` | Kortste wachtwoord dat wordt geaccepteerd als er één wordt *ingesteld*. Bestaande wachtwoorden blijven werken. |
+| `WARDROBE_MIN_PASSWORD_LENGTH` | `8` | Kortste wachtwoord dat wordt geaccepteerd als er één wordt *ingesteld*. Bestaande wachtwoorden blijven werken. |
 | `WARDROBE_LOGIN_MAX_ATTEMPTS` | `5` | Mislukte pogingen op rij voordat de app met 429 antwoordt. |
 | `WARDROBE_LOGIN_LOCKOUT_SECONDS` | `30` | Eerste wachttijd daarna; verdubbelt per verdere poging tot een kwartier. |
 | `WARDROBE_CORS_ORIGINS` | — | Adressen die de API cross-origin mogen aanroepen. Leeg = geen, en dat klopt voor vrijwel elke installatie. |
@@ -429,7 +429,7 @@ Dit staat er zodat je weet wat de app doet, en wat je kúnt bijstellen.
 
 ### Wachtwoorden
 
-- **Minimaal 10 tekens** bij het instellen van een wachtwoord
+- **Minimaal 8 tekens** bij het instellen van een wachtwoord
   (`WARDROBE_MIN_PASSWORD_LENGTH`). Dit geldt alleen bij het *instellen*:
   bestaande wachtwoorden blijven werken, dus er wordt niemand buitengesloten —
   je komt de regel pas tegen als je 'm wijzigt.

@@ -271,13 +271,48 @@ def test_a_short_password_is_refused_everywhere_one_is_set(client):
 def test_the_login_screen_is_told_the_minimum(client):
     body = client.get("/api/auth/config").json()
     assert body["min_password_length"] == settings.min_password_length
-    assert body["min_password_length"] >= 10
+    assert body["min_password_length"] >= 8
 
 
 def test_an_existing_short_password_still_signs_in(client):
-    """Raising the minimum must not lock anyone out of their own wardrobe."""
-    # The bootstrap beheerder's password is 8 characters and predates the rule.
-    assert login(client, "admin", "changeme").status_code == 200
+    """Raising the minimum must not lock anyone out of their own wardrobe.
+
+    The rule applies where a password is *set*, never where one is checked, so
+    an account whose password predates the rule keeps working. Stored straight
+    into the database on purpose: that is what an older install looks like, and
+    going through the API would (correctly) refuse it.
+    """
+    from app.security import hash_password
+
+    short = "kort"
+    assert len(short) < settings.min_password_length
+    username = "oldtimer_" + uuid.uuid4().hex[:6]
+    db = SessionLocal()
+    try:
+        db.add(
+            User(
+                username=username,
+                display_name="Van Vroeger",
+                hashed_password=hash_password(short),
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    assert login(client, username, short).status_code == 200
+    # …while setting a new one still has to meet the rule.
+    created = client.post(
+        "/api/users",
+        headers=h(admin_token(client)),
+        json={
+            "username": "newcomer_" + uuid.uuid4().hex[:6],
+            "display_name": "Nieuw",
+            "password": short,
+            "is_admin": False,
+        },
+    )
+    assert created.status_code == 422
 
 
 # ---------------------------------------------------------------------------

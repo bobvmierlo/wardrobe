@@ -32,7 +32,7 @@ export default function Invite() {
     label: "",
   });
   /** The server's minimum, so the form says it instead of bouncing a 422 back. */
-  const [minPassword, setMinPassword] = useState(10);
+  const [minPassword, setMinPassword] = useState(8);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
