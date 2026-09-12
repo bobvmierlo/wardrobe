@@ -21,9 +21,16 @@ type Mode = "choose" | "register" | "login";
 export default function Invite() {
   const { token = "" } = useParams();
   const navigate = useNavigate();
-  const { user, loading: authLoading, login, refresh } = useAuth();
+  const { user, loading: authLoading, login, refresh, ssoError } = useAuth();
 
   const [info, setInfo] = useState<InvitationInfo | null>(null);
+  /** What the server offers as ways in, same as on the login screen. The
+   *  invitation token rides along to the provider and back, so signing in
+   *  there is also what redeems this link. */
+  const [oidc, setOidc] = useState<{ enabled: boolean; label: string }>({
+    enabled: false,
+    label: "",
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -38,6 +45,15 @@ export default function Invite() {
   // login form
   const [loginName, setLoginName] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
+
+  useEffect(() => {
+    api
+      .authConfig()
+      .then((cfg) => setOidc({ enabled: cfg.oidc_enabled, label: cfg.oidc_label }))
+      .catch(() => {
+        /* offline or unreachable: the other ways in still work */
+      });
+  }, []);
 
   useEffect(() => {
     api
@@ -166,7 +182,7 @@ export default function Invite() {
           )}
         </p>
 
-        {error && <div className="error">{error}</div>}
+        {(error || ssoError) && <div className="error">{error ?? ssoError}</div>}
 
         {user && account ? (
           <div className="stack">
@@ -189,7 +205,19 @@ export default function Invite() {
             </button>
           </div>
         ) : mode === "register" ? (
-          <form onSubmit={register} className="stack">
+          <>
+            {oidc.enabled && account && (
+              <div className="stack">
+                <a
+                  className="btn-primary btn-block"
+                  href={api.oidcLoginUrl({ invite: token })}
+                >
+                  {oidc.label || "Inloggen met SSO"}
+                </a>
+                <div className="login-or">of maak een eigen wachtwoord aan</div>
+              </div>
+            )}
+            <form onSubmit={register} className="stack">
             <div className="field">
               <label>Je naam</label>
               <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />
@@ -222,7 +250,8 @@ export default function Invite() {
             >
               {account ? "Ik heb al een account" : "Terug"}
             </button>
-          </form>
+            </form>
+          </>
         ) : mode === "login" ? (
           <form onSubmit={signInThenAccept} className="stack">
             <div className="field">
@@ -259,7 +288,23 @@ export default function Invite() {
           </form>
         ) : (
           <div className="stack">
-            <button className="btn-primary btn-block" onClick={() => setMode("register")}>
+            {oidc.enabled && (
+              <>
+                {/* Signing in at the provider both creates the account and
+                    redeems this link, in one trip. */}
+                <a
+                  className="btn-primary btn-block"
+                  href={api.oidcLoginUrl({ invite: token })}
+                >
+                  {oidc.label || "Inloggen met SSO"}
+                </a>
+                <div className="login-or">of</div>
+              </>
+            )}
+            <button
+              className={oidc.enabled ? "btn-ghost btn-block" : "btn-primary btn-block"}
+              onClick={() => setMode("register")}
+            >
               Ik ben nieuw — account aanmaken
             </button>
             <button className="btn-ghost btn-block" onClick={() => setMode("login")}>

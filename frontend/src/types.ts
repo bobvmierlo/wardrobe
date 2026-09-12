@@ -3,6 +3,9 @@ export interface User {
   username: string;
   display_name: string;
   is_admin: boolean;
+  /** "local" or "oidc" — how this account signs in. Optional because a
+   *  response cached by the service worker may predate the field. */
+  auth_provider?: string;
 }
 
 export interface Item {
@@ -196,6 +199,17 @@ export interface Stats {
 export interface AuthConfig {
   /** True when anyone may create their own account; false = invitation only. */
   self_registration: boolean;
+  /** True when the server has a working SSO provider to offer. */
+  oidc_enabled: boolean;
+  /** Text for the SSO button, chosen by whoever runs the server. */
+  oidc_label: string;
+  /** True when a group at the provider decides who is a beheerder, so the
+   *  accounts screen must not offer a button that would be overwritten. */
+  oidc_manages_admins: boolean;
+  /** Whether to show the username/password form straight away. The form is
+   *  always reachable either way — that is the break-glass for when the
+   *  provider is down. */
+  local_login: boolean;
 }
 
 // ---- invitation links ----

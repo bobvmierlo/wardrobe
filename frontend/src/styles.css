@@ -322,6 +322,37 @@ label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0 0 6px
   display: flex; flex-direction: column; gap: 10px; text-align: center;
 }
 .login-foot .notice { text-align: left; }
+/* Separates the SSO button from the password form, so neither looks like the
+   only way in. A rule with the word sitting in the middle of it. */
+.login-or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.login-or::before,
+.login-or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+/* An <a> styled as a button needs the bits the bare `button` rule gives a
+   real button for free. The SSO link has to be an <a>: it is a navigation to
+   another origin, not something fetch can do. */
+a.btn-primary,
+a.btn-ghost {
+  display: block;
+  box-sizing: border-box;
+  padding: 12px 16px;
+  border-radius: 12px;
+  text-align: center;
+  text-decoration: none;
+}
 .brand .logo { font-size: 2.6rem; }
 .brand h1 { margin: 6px 0 2px; font-size: 1.5rem; }
 

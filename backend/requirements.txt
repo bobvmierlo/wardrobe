@@ -4,7 +4,12 @@ sqlalchemy==2.0.52
 pydantic==2.13.5
 pydantic-settings==2.15.0
 python-multipart==0.0.32
+# Server-to-server calls to the identity provider (discovery, token exchange,
+# userinfo). Also what FastAPI's TestClient uses.
+httpx==0.28.1
 bcrypt==5.0.0
-pyjwt==2.13.0
+# The [crypto] extra pulls in `cryptography`, needed to verify the RS256/ES256
+# signatures an identity provider signs its ID tokens with.
+pyjwt[crypto]==2.13.0
 pillow==12.3.0
 openpyxl==3.1.5

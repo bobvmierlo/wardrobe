@@ -36,6 +36,7 @@ from .routers import (
     invitations,
     items,
     matches,
+    oidc,
     photos,
     users,
     wardrobes,
@@ -235,6 +236,32 @@ def migrate_schema() -> None:
         # a table that already exists, so an index does the same job here.
         conn.exec_driver_sql(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_item_wardrobe_uid ON items (wardrobe_id, uid)"
+        )
+
+
+def migrate_federated_login() -> None:
+    """Add the columns a federated login needs on an existing database.
+
+    ``hashed_password`` stays NOT NULL: an account without a local password
+    stores an unusable sentinel instead (see :mod:`app.security`), which saves
+    rebuilding the one table every other row in the database points at.
+    """
+    with engine.begin() as conn:
+        cols = [c[1] for c in conn.exec_driver_sql("PRAGMA table_info(users)").fetchall()]
+        if not cols:
+            return  # fresh install: create_all already made the full schema
+        if "auth_provider" not in cols:
+            conn.exec_driver_sql(
+                "ALTER TABLE users ADD COLUMN auth_provider VARCHAR(20) DEFAULT 'local'"
+            )
+        if "oidc_subject" not in cols:
+            conn.exec_driver_sql("ALTER TABLE users ADD COLUMN oidc_subject VARCHAR(255)")
+        # Two accounts must never share one provider identity. Unique rather
+        # than plain: SQLite treats NULLs as distinct, so every local account
+        # (which has none) still fits.
+        conn.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_oidc_subject"
+            " ON users (oidc_subject)"
         )
 
 
@@ -536,6 +563,9 @@ def seed_color_rules() -> None:
 # Schema changes first, then data backfills that rely on the ORM.
 log.info("Kledingkast %s start op, database: %s", __version__, settings.db_path)
 migrate_schema()
+# Before seed_admin(): that uses the ORM, and a mapped column the database
+# does not have yet makes every query on `users` fail.
+migrate_federated_login()
 seed_admin()
 migrate_sizes()
 migrate_account_invitations()
@@ -545,6 +575,17 @@ migrate_brands()
 migrate_orphans()
 seed_catalog()
 seed_color_rules()
+if settings.oidc_configured:
+    log.info(
+        "SSO (OpenID Connect) staat aan voor %s; beheerdersgroep: %s",
+        settings.oidc_issuer_url,
+        settings.oidc_admin_group or "(geen — rollen blijven zoals de app ze heeft)",
+    )
+elif settings.oidc_enabled:
+    log.warning(
+        "WARDROBE_OIDC_ENABLED staat aan, maar issuer, client-id of"
+        " client-secret ontbreekt — SSO blijft uit."
+    )
 log.info("Migraties en seeds afgerond; app is klaar")
 
 app.include_router(auth.router)
@@ -561,6 +602,7 @@ app.include_router(imports.router)
 app.include_router(invitations.router)
 app.include_router(invitations.wardrobe_router)
 app.include_router(admin_log.router)
+app.include_router(oidc.router)
 
 # Uploaded photos. Served by a router rather than a StaticFiles mount, so each
 # photo goes through the access check of the wardrobe it belongs to.

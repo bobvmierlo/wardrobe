@@ -25,9 +25,27 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(String(50), unique=True, index=True)
     display_name: Mapped[str] = mapped_column(String(100))
+    #: A bcrypt hash, or :data:`app.security.UNUSABLE_PASSWORD` for an account
+    #: that only signs in through a federated provider. Kept NOT NULL because
+    #: relaxing that in SQLite means rebuilding the table every other row in
+    #: the database points at — a sentinel costs nothing and risks nothing.
     hashed_password: Mapped[str] = mapped_column(String(255))
     is_admin: Mapped[bool] = mapped_column(default=False)
+    #: "local" or "oidc" — how this account signs in, and therefore whether
+    #: the app or the identity provider decides its beheerder role.
+    auth_provider: Mapped[str] = mapped_column(String(20), default="local")
+    #: The provider's ``sub`` claim: the *only* thing an account is recognised
+    #: by on a federated login. Deliberately not the e-mail or the username,
+    #: both of which a provider lets people change — and which would therefore
+    #: let a renamed account walk into someone else's wardrobe.
+    oidc_subject: Mapped[str | None] = mapped_column(
+        String(255), unique=True, index=True, nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    @property
+    def is_federated(self) -> bool:
+        return self.oidc_subject is not None
 
 
 # Roles a member can hold on someone else's wardrobe.

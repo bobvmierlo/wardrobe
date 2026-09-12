@@ -25,7 +25,8 @@ def set_self_registration(client, admin_token: str, open_: bool):
 def test_the_login_screen_is_told_the_door_is_shut(client):
     r = client.get("/api/auth/config")
     assert r.status_code == 200, r.text
-    assert r.json() == {"self_registration": False}
+    # Additive: the screen also learns whether there is an SSO button to draw.
+    assert r.json()["self_registration"] is False
 
 
 def test_a_beheerder_opens_and_closes_self_registration(client):

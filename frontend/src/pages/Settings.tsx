@@ -34,6 +34,15 @@ export default function Settings() {
 
   // the front door (admin): self-registration, and links to a new account
   const [selfRegistration, setSelfRegistration] = useState(false);
+  /** What the server says about federated login. Read-only here: it is set in
+   *  the environment, not in the app, and saying so beats a toggle that would
+   *  not work. */
+  const [sso, setSso] = useState({
+    enabled: false,
+    label: "",
+    localLogin: true,
+    managesAdmins: false,
+  });
   const [accountInvites, setAccountInvites] = useState<Invitation[]>([]);
   const [accountLabel, setAccountLabel] = useState("");
   const [accountDays, setAccountDays] = useState("14");
@@ -96,7 +105,14 @@ export default function Settings() {
   }
   async function loadFrontDoor() {
     try {
-      setSelfRegistration((await api.authConfig()).self_registration);
+      const cfg = await api.authConfig();
+      setSelfRegistration(cfg.self_registration);
+      setSso({
+        enabled: cfg.oidc_enabled,
+        label: cfg.oidc_label,
+        localLogin: cfg.local_login,
+        managesAdmins: cfg.oidc_manages_admins,
+      });
       setAccountInvites(await api.listAccountInvitations());
     } catch {
       /* ignore */
@@ -644,6 +660,29 @@ export default function Settings() {
 
             <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "16px 0" }} />
 
+            <h4 style={{ margin: "0 0 6px" }}>Inloggen via SSO</h4>
+            <p className="muted" style={{ fontSize: "0.82rem", marginTop: 0 }}>
+              {sso.enabled ? (
+                <>
+                  Aan — het inlogscherm biedt <strong>{sso.label}</strong> aan.{" "}
+                  {sso.localLogin
+                    ? "Inloggen met gebruikersnaam en wachtwoord kan ook gewoon."
+                    : "Het wachtwoordformulier staat weggeklapt, maar blijft bereikbaar — dat is de noodingang als de inlogdienst onbereikbaar is."}{" "}
+                  {sso.managesAdmins
+                    ? "Of een SSO-account beheerder is, bepaalt de groep bij je identity provider; dat wordt bij elke SSO-login opnieuw toegepast. Klopt dat niet, kijk dan in het logboek op regels over de groepen-claim."
+                    : "Er is geen beheerdersgroep ingesteld, dus rollen beheer je hieronder in de app."}
+                </>
+              ) : (
+                <>
+                  Uit. Dit stel je in met omgevingsvariabelen
+                  (<code>WARDROBE_OIDC_*</code>) bij het starten van de container, niet
+                  hier — zie de README.
+                </>
+              )}
+            </p>
+
+            <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "16px 0" }} />
+
             <h4 style={{ margin: "0 0 6px" }}>Iemand nieuw uitnodigen</h4>
             <p className="muted" style={{ fontSize: "0.82rem", marginTop: 0 }}>
               Maak een eenmalige link — of laat de QR-code scannen. Daarmee maakt precies
@@ -688,14 +727,24 @@ export default function Settings() {
                       {u.display_name}{" "}
                       <span className={`role-badge ${u.is_admin ? "admin" : ""}`}>
                         {u.is_admin ? "Beheerder" : "Gebruiker"}
-                      </span>
+                      </span>{" "}
+                      {u.auth_provider === "oidc" && <span className="role-badge">SSO</span>}
                     </div>
                     <div className="muted" style={{ fontSize: "0.8rem" }}>@{u.username}</div>
                   </div>
                   <div className="row" style={{ gap: 6 }}>
-                    <button className="btn-ghost" style={{ padding: "6px 10px", fontSize: "0.82rem" }} onClick={() => toggleAdmin(u)}>
-                      {u.is_admin ? "Maak gebruiker" : "Maak beheerder"}
-                    </button>
+                    {/* With a group mapping configured the provider owns this
+                        role and re-applies it on every login, so a button here
+                        would only appear to work. */}
+                    {u.auth_provider === "oidc" && sso.managesAdmins ? (
+                      <span className="muted" style={{ fontSize: "0.78rem", maxWidth: 170, textAlign: "right" }}>
+                        Rol via SSO-groep
+                      </span>
+                    ) : (
+                      <button className="btn-ghost" style={{ padding: "6px 10px", fontSize: "0.82rem" }} onClick={() => toggleAdmin(u)}>
+                        {u.is_admin ? "Maak gebruiker" : "Maak beheerder"}
+                      </button>
+                    )}
                     {u.id !== user.id && (
                       <button className="btn-danger" style={{ padding: "6px 10px" }} onClick={() => removeUser(u)}>
                         Verwijder

@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from .. import audit
 from ..accounts import delete_account
 from ..access import ensure_wardrobe
+from ..config import settings
 from ..database import get_db
 from ..deps import get_current_user, require_admin
 from ..models import User
@@ -67,6 +68,15 @@ def update_user(
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="Gebruiker niet gevonden")
+    # With a group mapping configured the identity provider owns this role for
+    # federated accounts, and it re-applies it on every login. Refusing is
+    # kinder than accepting a change that silently reverts at the next sign-in.
+    if user.is_federated and settings.oidc_admin_group.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Dit account logt in via SSO: beheer de beheerdersrol via de"
+            f" groep '{settings.oidc_admin_group.strip()}' bij je identity provider",
+        )
     # Don't let the last remaining admin demote themselves and lock everyone out.
     if user.is_admin and not body.is_admin:
         admins = db.query(User).filter(User.is_admin.is_(True)).count()

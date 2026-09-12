@@ -10,6 +10,9 @@ class UserOut(BaseModel):
     username: str
     display_name: str
     is_admin: bool
+    #: "local" or "oidc" — shown on the accounts screen so a beheerder can see
+    #: at a glance which roles are theirs to change and which the provider owns.
+    auth_provider: str = "local"
 
 
 class UserCreate(BaseModel):
@@ -48,9 +51,36 @@ class AuthConfig(BaseModel):
     """What the login screen needs to know before anyone has signed in.
 
     Public on purpose, and deliberately thin: whether the front door is open,
-    nothing else about the installation.
+    and whether there is an SSO button to draw. Nothing about *which* provider
+    beyond the label the operator chose — an unauthenticated caller has no
+    business learning the issuer URL.
     """
     self_registration: bool
+    #: True when federated login is configured well enough to try.
+    oidc_enabled: bool = False
+    #: The text for the SSO button.
+    oidc_label: str = ""
+    #: True when a group mapping is configured, so the provider owns the
+    #: beheerder role and the accounts screen must not offer to change it.
+    oidc_manages_admins: bool = False
+    #: Whether to show the username/password form without being asked. The
+    #: form is always *reachable*; see ``WARDROBE_LOCAL_LOGIN``.
+    local_login: bool = True
+
+
+class AuthConfigUpdate(BaseModel):
+    """The one thing a beheerder may change here.
+
+    Separate from :class:`AuthConfig` because the rest of that model is set by
+    the operator in the environment, and a PUT must not look like it could
+    change it.
+    """
+    self_registration: bool
+
+
+class OidcExchange(BaseModel):
+    """The one-time code the app trades for a token after an SSO redirect."""
+    code: str = Field(min_length=8, max_length=200)
 
 
 # ---- Items ----
