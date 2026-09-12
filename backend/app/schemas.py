@@ -375,3 +375,21 @@ class LogEntryOut(BaseModel):
     level: str
     logger: str
     message: str
+
+
+# ---- Automatic backups ----
+class ScheduledBackupOut(BaseModel):
+    """One backup file sitting in <data>/backups."""
+    name: str
+    size_mb: float
+    created_at: datetime
+
+
+class ScheduledBackupsOut(BaseModel):
+    """The schedule, and what it has produced."""
+    #: "UU:MM", or empty when no schedule is set.
+    time: str
+    keep: int
+    #: False when unset *or* unparseable — the log says which.
+    enabled: bool
+    backups: list[ScheduledBackupOut]

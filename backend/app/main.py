@@ -1,4 +1,6 @@
+import asyncio
 import time
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
@@ -10,6 +12,7 @@ from .config import settings
 from .database import engine
 from .logging_setup import configure_logging, get_logger
 from .migrations import prepare_database
+from . import scheduled_backup
 from .routers.photos import is_https
 from .routers import (
     admin_log,
@@ -35,7 +38,22 @@ log = get_logger("app")
 request_log = get_logger("request")
 health_log = get_logger("health")
 
-app = FastAPI(title="Kledingkast", version=__version__)
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Start the things that run alongside the requests, and stop them cleanly."""
+    backup_task = scheduled_backup.start()
+    try:
+        yield
+    finally:
+        if backup_task is not None:
+            backup_task.cancel()
+            # Give it the moment it needs to unwind, but never hang a shutdown
+            # on it: a container that will not stop is its own problem.
+            with suppress(asyncio.CancelledError, TimeoutError):
+                await asyncio.wait_for(backup_task, timeout=5)
+
+
+app = FastAPI(title="Kledingkast", version=__version__, lifespan=lifespan)
 
 # No CORS at all unless an operator names an origin. The app serves its own
 # frontend from its own origin, and the Vite dev server proxies /api and
