@@ -7,13 +7,13 @@ fails a test here rather than in production. Only the network is faked.
 """
 
 import time
-from types import SimpleNamespace
 from urllib.parse import parse_qs, unquote, urlparse
 
 import httpx
 import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
+from jwt.algorithms import RSAAlgorithm
 
 from app import oidc
 from app.config import settings
@@ -43,6 +43,11 @@ class FakeIdp:
     def __init__(self) -> None:
         self.key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         self.other_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        #: Which key id the provider claims to sign with, and which one it
+        #: publishes. Normally the same; a rotation makes them differ for a
+        #: moment.
+        self.kid = "key-1"
+        self.published_kid = "key-1"
         # What the next token endpoint call will hand back, and what userinfo
         # will say. Tests set these before driving the callback.
         self.claims: dict = {}
@@ -50,12 +55,30 @@ class FakeIdp:
         self.sign_with_wrong_key = False
         self.omit_id_token = False
         self.reject_basic_auth = False
+        self.omit_kid = False
+        #: Status the JWKS endpoint answers with, and how many times it was
+        #: asked. 403 is the case that sent a real login into a wrong-looking
+        #: error about the issuer URL.
+        self.jwks_status = 200
+        self.jwks_keys_override: list | None = None
         self.token_requests: list[dict] = []
+        self.jwks_requests: list[dict] = []
 
     # -- signing ---------------------------------------------------------
     def sign(self, claims: dict) -> str:
         key = self.other_key if self.sign_with_wrong_key else self.key
-        return jwt.encode(claims, key, algorithm="RS256")
+        headers = None if self.omit_kid else {"kid": self.kid}
+        return jwt.encode(claims, key, algorithm="RS256", headers=headers)
+
+    def jwks_document(self) -> dict:
+        if self.jwks_keys_override is not None:
+            return {"keys": self.jwks_keys_override}
+        jwk = RSAAlgorithm.to_jwk(self.key.public_key(), as_dict=True)
+        return {
+            "keys": [
+                {**jwk, "kid": self.published_kid, "use": "sig", "alg": "RS256"}
+            ]
+        }
 
     def base_claims(self, *, sub: str, nonce: str, **extra) -> dict:
         now = int(time.time())
@@ -88,15 +111,21 @@ class FakeIdp:
             return httpx.Response(200, json=payload)
         if path.endswith("/userinfo"):
             return httpx.Response(200, json=self.userinfo)
+        if path.endswith("/jwks"):
+            self.jwks_requests.append(
+                {"user_agent": request.headers.get("user-agent", "")}
+            )
+            if self.jwks_status != 200:
+                return httpx.Response(self.jwks_status, text="Forbidden")
+            return httpx.Response(200, json=self.jwks_document())
         return httpx.Response(404, json={"error": "not_found"})
 
     def client(self) -> httpx.Client:
-        return httpx.Client(transport=httpx.MockTransport(self.handle))
-
-    def jwk_client(self):
-        public = self.key.public_key()
-        return SimpleNamespace(
-            get_signing_key_from_jwt=lambda token: SimpleNamespace(key=public)
+        # Mirrors the real client's headers, so a test can tell that a request
+        # went through app code rather than around it.
+        return httpx.Client(
+            transport=httpx.MockTransport(self.handle),
+            headers={"User-Agent": oidc.USER_AGENT},
         )
 
 
@@ -118,9 +147,7 @@ def idp(monkeypatch):
     monkeypatch.setattr(
         oidc,
         "_fetch_discovery",
-        lambda: oidc._Discovery(
-            document=DOCUMENT, fetched_at=time.monotonic(), jwk_client=fake.jwk_client()
-        ),
+        lambda: oidc._Discovery(document=DOCUMENT, fetched_at=time.monotonic()),
     )
     oidc.reset_cache()
     yield fake
@@ -778,3 +805,119 @@ def test_an_unreachable_provider_does_not_take_the_app_down(client, monkeypatch)
     assert client.post(
         "/api/auth/login", data={"username": "admin", "password": "changeme"}
     ).status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# fetching the signing keys
+# ---------------------------------------------------------------------------
+#
+# The keys used to be fetched by PyJWT's own PyJWKClient, over urllib, with
+# urllib's default User-Agent — while every other call to the provider went
+# through httpx. A proxy in front of an identity provider answering that one
+# request with 403 produced a login failure that blamed the issuer URL and the
+# client id, both of which were fine. These are the tests for that.
+
+def test_the_keys_are_fetched_through_the_apps_own_client(client, idp, monkeypatch):
+    monkeypatch.setattr(settings, "oidc_auto_create", True)
+    sso_login(client, idp, sub="keys", preferred_username="keys")
+    assert idp.jwks_requests, "the key set was never fetched"
+    # Same client, so the same identifiable User-Agent as every other call.
+    assert idp.jwks_requests[0]["user_agent"] == oidc.USER_AGENT
+
+
+def test_keys_that_cannot_be_fetched_blame_the_keys_and_not_the_issuer(
+    client, idp, monkeypatch
+):
+    """The exact failure seen in production: JWKS answers 403."""
+    monkeypatch.setattr(settings, "oidc_auto_create", True)
+    idp.jwks_status = 403
+    state, nonce = start_login(client)
+    response = finish_login(
+        client, idp, sub="blocked", state=state, nonce=nonce, preferred_username="blocked"
+    )
+    message = error_of(response)
+    assert "sleutels" in message
+    assert "403" in message
+    # The old message told you to check the issuer URL and the client id. This
+    # one points at the keys and says those two are *not* the problem — which is
+    # the whole difference between a five-minute fix and an evening.
+    assert "Controleer de issuer-URL" not in message
+    assert "níet in de issuer-URL of de client-id" in message
+    assert db_user("blocked") is None
+
+
+def test_a_provider_without_a_signing_key_is_told_to_set_one(client, idp, monkeypatch):
+    """Authentik with no Signing Key publishes an empty set and signs HS256."""
+    monkeypatch.setattr(settings, "oidc_auto_create", True)
+    idp.jwks_keys_override = []
+    state, nonce = start_login(client)
+    response = finish_login(
+        client, idp, sub="nokey", state=state, nonce=nonce, preferred_username="nokey"
+    )
+    assert "Signing Key" in error_of(response)
+
+
+def test_a_provider_that_only_offers_hs256_is_told_to_set_a_signing_key(
+    client, idp, monkeypatch
+):
+    monkeypatch.setattr(settings, "oidc_auto_create", True)
+    monkeypatch.setattr(
+        oidc,
+        "_fetch_discovery",
+        lambda: oidc._Discovery(
+            document={**DOCUMENT, "id_token_signing_alg_values_supported": ["HS256"]},
+            fetched_at=time.monotonic(),
+        ),
+    )
+    oidc.reset_cache()
+    state, nonce = start_login(client)
+    response = finish_login(
+        client, idp, sub="hs", state=state, nonce=nonce, preferred_username="hs"
+    )
+    message = error_of(response)
+    assert "HS256" in message
+    assert "Signing Key" in message
+
+
+def test_a_rotated_key_is_picked_up_without_a_restart(client, idp, monkeypatch):
+    monkeypatch.setattr(settings, "oidc_auto_create", True)
+    monkeypatch.setattr(oidc, "JWKS_MIN_REFETCH_SECONDS", 0)
+    sso_login(client, idp, sub="rot", preferred_username="rot")
+    fetched_before = len(idp.jwks_requests)
+
+    # The provider starts signing with a new key id and publishes it.
+    idp.kid = "key-2"
+    idp.published_kid = "key-2"
+    _token, user = sso_login(client, idp, sub="rot", preferred_username="rot")
+    assert user["username"] == "rot"
+    assert len(idp.jwks_requests) > fetched_before, "the key set was not re-fetched"
+
+
+def test_an_unknown_key_that_stays_unknown_is_refused(client, idp, monkeypatch):
+    monkeypatch.setattr(settings, "oidc_auto_create", True)
+    monkeypatch.setattr(oidc, "JWKS_MIN_REFETCH_SECONDS", 0)
+    # Signs with a kid it never publishes.
+    idp.kid = "ghost"
+    idp.published_kid = "key-1"
+    state, nonce = start_login(client)
+    response = finish_login(
+        client, idp, sub="ghost", state=state, nonce=nonce, preferred_username="ghost"
+    )
+    assert "sleutel" in error_of(response)
+    assert db_user("ghost") is None
+
+
+def test_a_token_without_a_key_id_still_verifies(client, idp, monkeypatch):
+    """Providers publishing exactly one key often omit the kid header."""
+    monkeypatch.setattr(settings, "oidc_auto_create", True)
+    idp.omit_kid = True
+    _token, user = sso_login(client, idp, sub="nokid", preferred_username="nokid")
+    assert user["username"] == "nokid"
+
+
+def test_the_key_set_is_cached_between_logins(client, idp, monkeypatch):
+    monkeypatch.setattr(settings, "oidc_auto_create", True)
+    sso_login(client, idp, sub="c1", preferred_username="c1")
+    after_first = len(idp.jwks_requests)
+    sso_login(client, idp, sub="c1", preferred_username="c1")
+    assert len(idp.jwks_requests) == after_first, "keys re-fetched on every login"

@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     # Max upload size in megabytes.
     max_upload_mb: int = 15
 
+    # How chatty the application log is. DEBUG also logs every read request;
+    # INFO logs changes, warnings and errors. Visible in the container log and
+    # in the app under Instellingen → Logboek.
+    log_level: str = "INFO"
+
     # ---- Hardening ----
     #
     # Consecutive failed logins allowed before the answer becomes 429, and the
@@ -91,11 +96,6 @@ class Settings(BaseSettings):
     # Off by default: those features take a URL from any signed-in user, and
     # the server sits on the same network as everything else you self-host.
     fetch_allow_private: bool = False
-
-    # How chatty the application log is. DEBUG also logs every read request;
-    # INFO logs changes, warnings and errors. Visible in the container log and
-    # in the app under Instellingen → Logboek.
-    log_level: str = "INFO"
 
     # ---- Federated login (OpenID Connect) ----
     #

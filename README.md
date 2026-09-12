@@ -445,6 +445,49 @@ Dit staat er zodat je weet wat de app doet, en wat je kúnt bijstellen.
   wijzigen**: handig als je telefoon kwijt is en je je wachtwoord niet wilt
   veranderen.
 
+### Wat staat er eigenlijk aan?
+
+Bij elke start schrijft de app **alle** instellingen naar het logboek, met de
+waarde die 'ie echt gebruikt en waar die vandaan komt. "Leest die .env nou wel?"
+is daarmee geen gokwerk meer:
+
+```
+Actieve instellingen (31; 4 afwijkend van de standaard). Herkomst: 'omgeving' =
+uit je .env of docker-compose, '.env-bestand' = uit een .env naast de app,
+'standaard' = de ingebouwde waarde.
+  -- Opslag en basis --
+  * WARDROBE_DATA_DIR               = /data                   [omgeving]
+  * WARDROBE_SECRET_KEY             = (ingesteld, 64 tekens)  [omgeving]
+    WARDROBE_ADMIN_USERNAME         = admin                   [standaard]
+  -- Beveiliging --
+    WARDROBE_LOGIN_MAX_ATTEMPTS     = 5                       [standaard]
+  * WARDROBE_MIN_PASSWORD_LENGTH    = 12                      [omgeving]
+  -- Inloggen via SSO (OpenID Connect) --
+  * WARDROBE_OIDC_ENABLED           = true                    [omgeving]
+  * WARDROBE_OIDC_CLIENT_SECRET     = (ingesteld, 40 tekens)  [omgeving]
+    WARDROBE_OIDC_GROUPS_CLAIM      = groups                  [standaard]
+  (database: /data/wardrobe.db)
+  (foto's:   /data/uploads)
+```
+
+Een `*` betekent: deze wijkt af van de ingebouwde standaard. Dus één blik zegt
+je wat je zelf hebt aangezet.
+
+Te zien met `docker compose logs kledingkast`, en in de app onder
+**Instellingen → Logboek**.
+
+> **Wachtwoorden en sleutels komen er niet in.** Van een geheim staat er alleen
+> óf 'ie gezet is en hoe lang 'ie is — genoeg om "hij is wel aangekomen" van
+> "hij is leeg" te onderscheiden, zonder je sleutel in een logboek te zetten
+> dat in de app te lezen is.
+
+Dat `[omgeving]` / `[standaard]`-onderscheid werkt alleen doordat
+`docker-compose.yml` de variabelen **op naam** doorgeeft (`- WARDROBE_LOG_LEVEL`)
+in plaats van met een eigen fallback (`WARDROBE_LOG_LEVEL: "${WARDROBE_LOG_LEVEL:-INFO}"`).
+Die tweede vorm zet de variabele namelijk *altijd*, ook als je `.env` zwijgt, en
+dan kan de container het verschil niet meer zien. Zo staan de standaarden ook op
+één plek — in `app/config.py` — in plaats van ook nog eens in het compose-bestand.
+
 ### Inlogpogingen
 
 Na **5 mislukte pogingen** op rij antwoordt de app met een 429. De eerste
@@ -791,6 +834,8 @@ Bijna alles is terug te vinden onder **Instellingen → Logboek** (of in
 | *"De inlogdienst is niet bereikbaar"* | De container kan de issuer-URL niet ophalen. Check DNS in de container, en of je provider intern op een ander adres zit. Gebruikt je provider een self-signed certificaat, mount dan je CA en zet `SSL_CERT_FILE=/pad/naar/ca.crt`. |
 | *"De inlogdienst weigerde deze aanmelding"* | Client-id of client-secret klopt niet. |
 | *"Het identiteitsbewijs ... is niet geldig"* | De issuer-URL of de client-id wijkt af van wat de provider in het token zet. Neem de issuer letterlijk over uit `/.well-known/openid-configuration`. |
+| *"De sleutels van de inlogdienst zijn niet op te halen (foutcode 403)"* | De configuratie van je provider wordt wél geladen, maar het `jwks_uri` eruit niet. Dat zit dus niet in de issuer of de client-id, maar tussen de app en je provider: een reverse-proxy, Cloudflare of WAF die dit ene verzoek tegenhoudt. Sta `Kledingkast/OIDC` toe als user-agent, of zet het pad `/application/o/<slug>/jwks/` vrij. Controleer het van binnenuit met `docker compose exec kledingkast python -c "import httpx;print(httpx.get('<jwks_uri>', headers={'User-Agent':'Kledingkast/OIDC'}).status_code)"`. |
+| *"De inlogdienst publiceert geen ondertekeningssleutels"* of *"ondertekent met HS256"* | Bij de toepassing van je provider staat geen **Signing Key**. Authentik valt dan terug op HS256 met het client-secret, en dat accepteert deze app niet. Kies in de provider een certificaat bij *Signing Key*. |
 | `redirect_uri` mismatch bij je provider | Moet exact `<WARDROBE_PUBLIC_URL>/api/auth/oidc/callback` zijn, inclusief `https` en zonder slash erachter. Zet `WARDROBE_PUBLIC_URL` altijd als je achter een reverse proxy zit. |
 | *"je hebt nog geen account in deze Kledingkast"* | Inloggen lukte, maar de voordeur staat dicht. Stuur een uitnodigingslink, of zet `WARDROBE_OIDC_AUTO_CREATE=true`. |
 | `SSO-login zonder groepen-claim` | De groepen komen niet mee. Voeg de scope/mapping bij je provider toe (zie hierboven). |

@@ -43,6 +43,7 @@ from .routers import (
     wardrobes,
 )
 from .security import hash_password
+from .settings_report import report as report_settings
 from .suggestions import DEFAULT_BAD_PAIRS, DEFAULT_GOOD_PAIRS
 
 # Logging is configured before anything else runs, so even the startup
@@ -623,6 +624,10 @@ def seed_color_rules() -> None:
 
 # Schema changes first, then data backfills that rely on the ORM.
 log.info("Kledingkast %s start op, database: %s", __version__, settings.db_path)
+# Before anything else does any work: what the app thinks its configuration is,
+# and where each piece of it came from. Half of self-hosting is finding out
+# whether the .env was read at all.
+report_settings()
 migrate_schema()
 # Before seed_admin(): that uses the ORM, and a mapped column the database
 # does not have yet makes every query on `users` fail.
