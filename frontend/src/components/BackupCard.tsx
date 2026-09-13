@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
 import { useConfirm } from "../confirm";
-import type { BackupPreview, RestoreResult, RestoreTarget, Wardrobe } from "../types";
+import type {
+  BackupPreview,
+  RestoreResult,
+  RestoreTarget,
+  ScheduledBackups,
+  Wardrobe,
+} from "../types";
 
 interface Props {
   /** The kast the current user owns — the one they can export for themselves. */
@@ -17,6 +23,14 @@ interface Props {
  * several people at once, so it is never one click: pick a file, read what is
  * in it, then choose to merge or replace.
  */
+/** A size somebody can read. A brand-new kast backs up to a few kB, and "0.0 MB"
+ *  looks like the backup is empty. */
+function fileSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} kB`;
+  return `${bytes} B`;
+}
+
 export default function BackupCard({ ownWardrobe, isAdmin }: Props) {
   const confirm = useConfirm();
   const [busy, setBusy] = useState<string | null>(null);
@@ -32,6 +46,10 @@ export default function BackupCard({ ownWardrobe, isAdmin }: Props) {
   const [result, setResult] = useState<RestoreResult | null>(null);
   const picker = useRef<HTMLInputElement>(null);
 
+  // automatic backups (admin). A schedule nobody can see is indistinguishable
+  // from one that silently stopped, which is the whole reason this is on screen.
+  const [scheduled, setScheduled] = useState<ScheduledBackups | null>(null);
+
   useEffect(() => {
     if (!isAdmin) return;
     api
@@ -42,6 +60,22 @@ export default function BackupCard({ ownWardrobe, isAdmin }: Props) {
       })
       .catch(() => setTargets([]));
   }, [isAdmin]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    api
+      .scheduledBackups()
+      .then(setScheduled)
+      .catch(() => setScheduled(null));
+  }, [isAdmin]);
+
+  async function refreshScheduled() {
+    try {
+      setScheduled(await api.scheduledBackups());
+    } catch {
+      /* the listing is a nicety; a failure here must not eat the message above */
+    }
+  }
 
   async function run(key: string, action: () => Promise<void>, done?: string) {
     setBusy(key);
@@ -146,6 +180,80 @@ export default function BackupCard({ ownWardrobe, isAdmin }: Props) {
             een exacte kopie van de database en de foto's: die zet je op de server terug, niet via de
             app. Beide bestanden bevatten gegevens van iedereen; bewaar ze zorgvuldig.
           </p>
+
+          <hr className="rule" />
+          <h4 className="backup-heading">Automatische back-ups</h4>
+          <p className="muted backup-hint">
+            {scheduled === null ? (
+              "Laden…"
+            ) : scheduled.enabled ? (
+              <>
+                Elke dag om <strong>{scheduled.time}</strong> schrijft de app een momentopname
+                naar <code>/data/backups</code> en houdt de laatste{" "}
+                <strong>{scheduled.keep}</strong> over. Dat is een exacte kopie van de database
+                en de foto's: die zet je op de server terug, niet via de app.
+              </>
+            ) : scheduled.time ? (
+              <>
+                Er staat een tijd ingesteld (<code>{scheduled.time}</code>) die de app niet kan
+                lezen, dus er wordt <strong>niets</strong> automatisch bewaard. Verwacht is{" "}
+                <code>UU:MM</code>; het logboek zegt het er ook bij.
+              </>
+            ) : (
+              <>
+                Staan <strong>uit</strong>. Zet <code>WARDROBE_BACKUP_TIME</code> op bijvoorbeeld{" "}
+                <code>03:30</code> bij het starten van de container — zie de README. Je kunt er
+                hieronder ook los een maken.
+              </>
+            )}
+          </p>
+
+          <div className="backup-actions">
+            <button
+              className="btn-ghost"
+              disabled={busy !== null}
+              onClick={() =>
+                run(
+                  "auto",
+                  async () => {
+                    await api.runScheduledBackup();
+                    await refreshScheduled();
+                  },
+                  "De back-up is gemaakt en staat op de server.",
+                )
+              }
+            >
+              {busy === "auto" ? "Bezig…" : "💾 Nu een back-up maken"}
+            </button>
+          </div>
+
+          {scheduled !== null && scheduled.backups.length > 0 && (
+            <ul className="backup-list">
+              {scheduled.backups.map((b) => (
+                <li key={b.name}>
+                  <span>
+                    {new Date(b.created_at).toLocaleString("nl-NL", {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    })}{" "}
+                    <span className="muted">({fileSize(b.size_bytes)})</span>
+                  </span>
+                  <button
+                    className="btn-ghost"
+                    disabled={busy !== null}
+                    onClick={() =>
+                      run(`dl-${b.name}`, () => api.downloadScheduledBackup(b.name))
+                    }
+                  >
+                    {busy === `dl-${b.name}` ? "Bezig…" : "⬇"}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {scheduled !== null && scheduled.backups.length === 0 && (
+            <p className="muted backup-hint">Er staat nog geen back-up op de server.</p>
+          )}
 
           <hr className="rule" />
           <h4 className="backup-heading">Terugzetten</h4>

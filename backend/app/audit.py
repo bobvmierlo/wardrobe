@@ -63,6 +63,7 @@ ACTION_LABELS: dict[str, str] = {
     "backup.export": "Kast geëxporteerd",
     "backup.export_full": "Volledige back-up gemaakt",
     "backup.snapshot": "Momentopname gedownload",
+    "backup.scheduled": "Automatische back-up",
     "backup.restore": "Back-up teruggezet",
 }
 

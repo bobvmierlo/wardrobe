@@ -22,13 +22,16 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
+from starlette.concurrency import run_in_threadpool
 
-from .. import audit, backup
+from .. import audit, backup, scheduled_backup
 from ..access import require_view
 from ..database import get_db
 from ..deps import get_current_user, require_admin
 from ..logging_setup import get_logger
+from ..config import settings
 from ..models import User, Wardrobe
+from ..schemas import ScheduledBackupOut, ScheduledBackupsOut
 
 log = get_logger("backup")
 
@@ -227,3 +230,65 @@ def restorable_wardrobes(
         {"id": w.id, "name": w.name, "owner": w.owner.display_name}
         for w in db.query(Wardrobe).order_by(Wardrobe.name).all()
     ]
+
+
+# ---------------------------------------------------------------------------
+# The automatic ones
+# ---------------------------------------------------------------------------
+#
+# A schedule nobody can see is indistinguishable from a schedule that silently
+# stopped, so these three exist: what is on disk, make one now, and take one
+# away with you.
+
+
+def _as_out(file: scheduled_backup.BackupFile) -> ScheduledBackupOut:
+    return ScheduledBackupOut(
+        name=file.name, size_bytes=file.size, created_at=file.created_at
+    )
+
+
+@router.get("/scheduled", response_model=ScheduledBackupsOut)
+def scheduled_backups(_: User = Depends(require_admin)):
+    """What the schedule is, and what it has produced so far."""
+    return ScheduledBackupsOut(
+        time=settings.backup_time.strip(),
+        keep=settings.backup_keep,
+        enabled=scheduled_backup.parse_time(settings.backup_time) is not None,
+        backups=[_as_out(f) for f in scheduled_backup.list_backups()],
+    )
+
+
+@router.post("/scheduled/run", response_model=ScheduledBackupOut, status_code=201)
+async def run_scheduled_backup(
+    admin: User = Depends(require_admin),
+):
+    """Make one now, without waiting for tonight.
+
+    Also the answer to "does this actually work on my machine?", which is worth
+    being able to ask before trusting a schedule with it.
+    """
+    try:
+        # Blocking work: SQLite's backup API and a zip of every photo. In a
+        # thread so the rest of the app keeps answering.
+        file = await run_in_threadpool(
+            scheduled_backup.run_once, reason=f"met de hand door {admin.display_name}"
+        )
+    except Exception as exc:
+        log.exception("Handmatige back-up mislukt")
+        raise HTTPException(
+            status_code=500, detail=f"De back-up is mislukt: {exc}"
+        ) from exc
+    return _as_out(file)
+
+
+@router.get("/scheduled/{name}")
+def download_scheduled_backup(name: str, _: User = Depends(require_admin)):
+    """Hand over one of the automatic backups.
+
+    No cleanup task on this one, unlike every other download here: this file is
+    the backup, not a temporary copy of it.
+    """
+    path = scheduled_backup.resolve(name)
+    if path is None:
+        raise HTTPException(status_code=404, detail="Deze back-up bestaat niet (meer)")
+    return FileResponse(path, media_type=ZIP_MIME, filename=path.name)

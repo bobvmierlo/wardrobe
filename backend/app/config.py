@@ -92,6 +92,16 @@ class Settings(BaseSettings):
     # certificate is sorted locks people out of their own wardrobe.
     hsts_seconds: int = 0
 
+    # ---- Automatic backups ----
+    #
+    # Time of day to write a snapshot into <data>/backups, as "UU:MM" in the
+    # container's own timezone (set TZ to move it). Empty switches it off, which
+    # is the default: writing files on a schedule is not something to start
+    # doing to somebody's disk without being asked.
+    backup_time: str = ""
+    # How many to keep. The oldest beyond this are deleted after each run.
+    backup_keep: int = 7
+
     # Run the orphan/repair sweep even on a database that is already up to
     # date. Normally it runs once, as a migration; this asks for it again, which
     # is the obvious thing to want after putting a backup back by hand.

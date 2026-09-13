@@ -63,6 +63,9 @@ services:
       - WARDROBE_HSTS_SECONDS
       - WARDROBE_FETCH_ALLOW_PRIVATE
       - WARDROBE_REPAIR_ON_START
+      # ---- Automatische back-ups ----
+      - WARDROBE_BACKUP_TIME
+      - WARDROBE_BACKUP_KEEP
       # ---- Inloggen via SSO (OpenID Connect), optioneel ----
       - WARDROBE_OIDC_ENABLED
       - WARDROBE_OIDC_ISSUER

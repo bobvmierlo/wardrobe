@@ -323,3 +323,21 @@ export interface RestoreTarget {
   name: string;
   owner: string;
 }
+
+// ---- automatic backups ----
+/** One backup file the schedule has written. */
+export interface ScheduledBackup {
+  name: string;
+  size_bytes: number;
+  created_at: string;
+}
+
+/** The schedule, and what it has produced so far. */
+export interface ScheduledBackups {
+  /** "UU:MM", or empty when no schedule is set. */
+  time: string;
+  keep: number;
+  /** False when unset *or* unparseable — the log says which. */
+  enabled: boolean;
+  backups: ScheduledBackup[];
+}
