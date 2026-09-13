@@ -8,6 +8,7 @@ a name arriving from a URL cannot address anything outside the folder.
 """
 
 import asyncio
+import pathlib
 import zipfile
 from datetime import datetime, timedelta
 
@@ -109,7 +110,9 @@ def test_the_backup_shows_up_in_the_listing(client):
     listed = sb.list_backups()
     assert len(listed) == 1
     assert listed[0].size > 0
-    assert listed[0].size_mb >= 0
+    # size_mb is what the log line prints; it has to track the real size rather
+    # than just being non-negative, which was all the old assertion checked.
+    assert listed[0].size_mb == round(listed[0].size / (1024 * 1024), 1)
 
 
 def test_it_is_recorded_in_the_audit_trail(client):
@@ -119,6 +122,53 @@ def test_it_is_recorded_in_the_audit_trail(client):
     ).json()
     assert trail["total"] >= 1
     assert "voor de test" in trail["entries"][0]["detail"]
+
+
+def test_a_failed_copy_leaves_nothing_that_looks_like_a_backup(client, monkeypatch):
+    """A truncated zip under a normal name is worse than no backup at all.
+
+    It looks like one. So the bytes land under a name the listing ignores and
+    only get the real name once they are all there.
+    """
+    def full_disk(*_args, **_kwargs):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(sb.shutil, "move", full_disk)
+    with pytest.raises(OSError):
+        sb.run_once()
+
+    assert sb.list_backups() == []
+    leftovers = list(sb.backups_dir().iterdir())
+    assert leftovers == [], leftovers
+
+
+def test_a_failure_between_copy_and_rename_keeps_yesterdays_backup(client, monkeypatch):
+    """The destination may well be a perfectly good older backup."""
+    _fake_backup(f"{sb.PREFIX}gisteren.zip", age_days=1)
+
+    def failing_rename(self, _target):
+        raise OSError(5, "I/O error")
+
+    monkeypatch.setattr(pathlib.Path, "replace", failing_rename)
+    with pytest.raises(OSError):
+        sb.run_once()
+
+    # Yesterday's is still there, and no half-written file joined it.
+    assert [f.name for f in sb.list_backups()] == [f"{sb.PREFIX}gisteren.zip"]
+    assert not any(p.name.endswith(".incomplete") for p in sb.backups_dir().iterdir())
+
+
+def test_two_backups_in_the_same_second_do_not_overwrite_each_other(client):
+    """One double-click on "nu maken" is all it takes."""
+    moment = datetime(2026, 9, 13, 3, 30, 0)
+    first = sb._free_destination(moment)
+    first.write_bytes(b"de eerste")
+    second = sb._free_destination(moment)
+    assert second != first
+    assert second.name.startswith(sb.PREFIX)
+    second.write_bytes(b"de tweede")
+    assert first.read_bytes() == b"de eerste"
+    assert len(sb.list_backups()) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -144,12 +194,25 @@ def test_rotation_keeps_the_newest_and_drops_the_rest():
 
 
 def test_rotation_never_touches_a_file_it_did_not_write():
-    """Somebody's own copy in that folder is theirs, not ours to tidy up."""
-    _fake_backup(f"{sb.PREFIX}oud.zip", age_days=9)
+    """Somebody's own copy in that folder is theirs, not ours to tidy up.
+
+    Deliberately the *oldest* file in the folder: a rotation that forgot to look
+    at the prefix sorts by age and would reach this one first. Written newest,
+    this test passed even with that bug — found by mutating the prefix filter
+    away and watching nothing fail.
+    """
     mine = sb.backups_dir() / "mijn-eigen-backup.zip"
     mine.write_bytes(b"van mij")
+    import os
+    ancient = (datetime.now() - timedelta(days=30)).timestamp()
+    os.utime(mine, (ancient, ancient))
+
+    for day in range(3):
+        _fake_backup(f"{sb.PREFIX}d{day}.zip", age_days=day)
+
     sb.rotate(keep=1)
-    assert mine.exists()
+    assert mine.exists(), "rotation deleted a file it did not write"
+    assert len(sb.list_backups()) == 1
 
 
 def test_keeping_zero_still_keeps_one():
@@ -282,8 +345,13 @@ def test_a_beheerder_can_make_one_now(client):
     token = admin_token(client)
     created = client.post("/api/backup/scheduled/run", headers=h(token))
     assert created.status_code == 201, created.text
-    name = created.json()["name"]
+    body = created.json()
+    name = body["name"]
     assert name.startswith(sb.PREFIX)
+    # Bytes, not a rounded megabyte: a fresh kast backs up to a few kB and
+    # "0.0 MB" would read as "nothing was saved".
+    assert body["size_bytes"] > 0
+    assert body["size_bytes"] == (sb.backups_dir() / name).stat().st_size
 
     listed = client.get("/api/backup/scheduled", headers=h(token)).json()
     assert [b["name"] for b in listed["backups"]] == [name]
@@ -308,15 +376,23 @@ def test_an_unknown_backup_is_a_404(client):
 
 @pytest.mark.parametrize(
     "name",
-    [
-        "../wardrobe.db",
-        "../../etc/passwd",
-        "wardrobe.db",
-        "auto-../../wardrobe.db",
-        "mijn-eigen-backup.zip",
-    ],
+    ["../wardrobe.db", "../../etc/passwd", "wardrobe.db", "auto-../../wardrobe.db", ""],
 )
 def test_a_name_cannot_reach_outside_the_backup_folder(name):
-    """The name comes from a URL, so it is matched against what is there rather
-    than joined onto a path."""
+    """The name comes from a URL, so it is matched against what is actually in
+    the folder rather than joined onto a path."""
     assert sb.resolve(name) is None
+
+
+def test_a_file_in_the_folder_that_is_not_ours_is_not_handed_over():
+    """What the prefix check is actually for.
+
+    The traversal cases above return None because no such file exists, which
+    would be just as true without any check at all — mutating the prefix guard
+    away broke nothing. This is the case that needs it: a real, readable file
+    sitting in the folder that the app did not write.
+    """
+    mine = sb.backups_dir() / "mijn-eigen-backup.zip"
+    mine.write_bytes(b"van mij")
+    assert mine.exists()
+    assert sb.resolve("mijn-eigen-backup.zip") is None

@@ -34,7 +34,8 @@ welke stukken bij elkaar passen — via een **Tinder-achtige swipe**.
   onbereikbare inlogdienst je nooit buitensluit.
 - 💾 **Back-up & export** – iedereen kan z'n eigen kast downloaden als Excel-bestand
   met de foto's erbij; een beheerder maakt een volledige back-up of een exacte
-  momentopname, en kan een export weer terugzetten.
+  momentopname, en kan een export weer terugzetten. Of laat het de app **elke
+  nacht zelf doen**, met rotatie — want niemand klikt elke week op een knop.
 - 📋 **Logboek** – een beheerder ziet in de app wie wat wijzigde, goedkeurde of afkeurde,
   plus de technische logregels van de server.
 - 👥 **Accounts** – jij én je partner een eigen login. Een **beheerder** kan bij
@@ -133,6 +134,8 @@ Voor **beveiliging** — alle standaarden zijn al de veilige keuze, zie
 | `WARDROBE_HSTS_SECONDS` | `0` (uit) | HSTS op https. Zet dit pas aan als je certificaat staat. |
 | `WARDROBE_FETCH_ALLOW_PRIVATE` | `false` | Of de foto-URL- en importfuncties adressen in je eigen netwerk mogen ophalen. |
 | `WARDROBE_REPAIR_ON_START` | `false` | Draai de opruimcontrole ook als de database al bij is — zie [Opstarten](#opstarten-migraties-en-healthcheck). |
+| `WARDROBE_BACKUP_TIME` | — (uit) | Tijd (`UU:MM`) waarop er elke dag een momentopname wordt gemaakt — zie [Automatische back-ups](#automatische-back-ups). |
+| `WARDROBE_BACKUP_KEEP` | `7` | Hoeveel automatische back-ups bewaard blijven. |
 
 Voor **inloggen via SSO** (optioneel, standaard uit):
 
@@ -206,6 +209,8 @@ heeft. Er zijn drie soorten bestanden, allemaal één ZIP:
 | **Volledige back-up** | beheerder | hetzelfde, maar voor álle kasten, plus accounts, categorieën, maten en kleurregels |
 | **Momentopname** | beheerder | een exacte kopie van `wardrobe.db` en de map `uploads/` |
 
+Die laatste kan ook [elke nacht automatisch](#automatische-back-ups), met rotatie.
+
 ### Het exportbestand
 
 `Kledingkast.xlsx` is bedoeld om zelf te openen: elke regel is een kledingstuk
@@ -234,6 +239,82 @@ kies je de kast en:
 
 Beide gaan in één transactie: mislukt er iets halverwege, dan is er niets
 gewijzigd. Elke export en elke restore komt in het logboek te staan.
+
+### Automatische back-ups
+
+De app heeft al een tijd een knop voor een volledige back-up en een voor een
+momentopname. Niemand klikt die elke week. Dat is geen kwestie van discipline —
+zo werken knoppen — en het betekende dat de eerlijke omschrijving van de
+back-upsituatie was: "er zijn back-upknoppen". Dat is iets anders dan "er zijn
+back-ups".
+
+Zet daarom een tijd:
+
+```bash
+WARDROBE_BACKUP_TIME=03:30     # elke dag om half vier 's nachts
+WARDROBE_BACKUP_KEEP=7         # de laatste zeven blijven staan
+```
+
+Dan schrijft de app elke dag een **momentopname** naar `/data/backups` en
+verwijdert wat daarbuiten valt. Leeg laten (de standaard) zet het uit.
+
+De tijd is die van de **container**, niet die van je browser. Staat je server op
+UTC en wil je Nederlandse tijd, zet dan `TZ=Europe/Amsterdam` in je
+`docker-compose.yml`.
+
+#### Waarom een momentopname en geen export
+
+De export is degene die de app via z'n eigen schermen kan terugzetten, dus die
+lijkt de logischere keuze. Dat is 'ie niet: een momentopname is een exacte kopie
+van de database plús de foto's, en zet dus **alles** terug — accounts,
+uitnodigingen, het logboek, de catalogus — waar een export de inhoud van een
+kast terugzet. Als een schijf overlijdt is "alles" de enige nuttige hoeveelheid.
+
+Hij is ook goedkoper: de momentopname gebruikt SQLite's eigen backup-API in
+plaats van elk kledingstuk via de ORM langs te lopen. Dat is sneller én veilig
+terwijl de app verzoeken afhandelt.
+
+De prijs is dat terugzetten een bestandskopie is in plaats van een knop — zie
+[Momentopname terugzetten](#momentopname-terugzetten). De volledige export onder
+**Instellingen → Back-up & export** blijft staan voor de variant die de app wél
+zelf kan terugzetten.
+
+#### Wat je ervan ziet
+
+Onder **Instellingen → Back-up & export** staat wat het schema is en wat het tot
+nu toe heeft opgeleverd, met per back-up een downloadknop. Daar zit ook **Nu een
+back-up maken**, voor als je niet tot vannacht wilt wachten — en om te
+controleren dat het op jouw machine überhaupt werkt voordat je een schema
+vertrouwt.
+
+Een schema dat niemand kan zien is namelijk niet te onderscheiden van een schema
+dat stilletjes gestopt is. Elke ronde komt ook in het **logboek**:
+
+```
+INFO  Back-up gemaakt: auto-20260913-033000.zip (48.2 MB) in 1.4s; 1 oude verwijderd
+```
+
+#### Als er een nacht misgaat
+
+Dan schrijft de app een luide regel en wacht tot morgen. De lus gaat nooit
+dood — een scheduler die bij de eerste fout opgeeft is erger dan geen
+scheduler, want die lijkt te werken.
+
+Een half weggeschreven bestand komt er nooit in te staan: de bytes landen eerst
+onder een naam die geen back-upnaam is en krijgen de echte naam pas als ze er
+allemaal zijn. Een afgekapte zip onder een normale naam is namelijk erger dan
+geen back-up, omdat het er als een back-up uitziet.
+
+#### Wat er niet bij hoort
+
+- **Het staat op dezelfde schijf.** Een momentopname in `/data/backups`
+  overleeft een foute restore, een kapotte migratie en een per ongeluk
+  verwijderd account — niet het overlijden van de schijf zelf. Haal ze er
+  periodiek af (de downloadknop, of `docker cp`, of een rsync van het volume).
+- **Ze bevatten de gegevens van iedereen**, wachtwoord-hashes incluis. Bewaar ze
+  net zo zorgvuldig als de server zelf.
+- **Bestanden die jij er zelf in zet blijven staan.** De rotatie raakt alleen
+  wat de app zelf geschreven heeft.
 
 ### Momentopname terugzetten
 
@@ -335,6 +416,7 @@ backend/            FastAPI-app (Python)
                     color_rules, imports, invitations, admin_log
     app_settings.py instellingen die een beheerder in de app omzet (zelf registreren)
     migrations.py   genummerde schemastappen (één keer) + seeds (elke start)
+    scheduled_backup.py  dagelijkse momentopname in <data>/backups, met rotatie
     oidc.py         federated login: discovery, PKCE, tokencontrole, groep → beheerder
     throttle.py     mislukte inlogpogingen afremmen
     fetching.py     URL's die een gebruiker typt ophalen zónder je eigen netwerk te raken

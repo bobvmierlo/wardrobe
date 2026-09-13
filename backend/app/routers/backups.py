@@ -243,7 +243,7 @@ def restorable_wardrobes(
 
 def _as_out(file: scheduled_backup.BackupFile) -> ScheduledBackupOut:
     return ScheduledBackupOut(
-        name=file.name, size_mb=file.size_mb, created_at=file.created_at
+        name=file.name, size_bytes=file.size, created_at=file.created_at
     )
 
 

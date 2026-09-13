@@ -379,9 +379,14 @@ class LogEntryOut(BaseModel):
 
 # ---- Automatic backups ----
 class ScheduledBackupOut(BaseModel):
-    """One backup file sitting in <data>/backups."""
+    """One backup file sitting in <data>/backups.
+
+    The size in bytes rather than a rounded megabyte: a fresh installation's
+    backup is a few kilobytes, and "0.0 MB" reads as "nothing was saved".
+    Choosing the unit is the screen's job.
+    """
     name: str
-    size_mb: float
+    size_bytes: int
     created_at: datetime
 
 

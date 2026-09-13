@@ -18,6 +18,8 @@ import type {
   RejectedPartner,
   RestoreResult,
   RestoreTarget,
+  ScheduledBackup,
+  ScheduledBackups,
   ScrapeResult,
   SizeOption,
   Stats,
@@ -204,6 +206,13 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     }),
+
+  // ---- automatic backups (beheerder) ----
+  scheduledBackups: () => request<ScheduledBackups>("/api/backup/scheduled"),
+  runScheduledBackup: () =>
+    request<ScheduledBackup>("/api/backup/scheduled/run", { method: "POST" }),
+  downloadScheduledBackup: (name: string) =>
+    download(`/api/backup/scheduled/${encodeURIComponent(name)}`, name),
 
   // ---- users ----
   listUsers: () => request<User[]>("/api/users"),

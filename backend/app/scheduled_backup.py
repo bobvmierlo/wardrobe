@@ -161,16 +161,46 @@ def rotate(keep: int) -> list[str]:
     return removed
 
 
+def _free_destination(moment: datetime) -> Path:
+    """A name no existing backup has.
+
+    Two runs in the same second would otherwise land on the same name, and a
+    move onto an existing file overwrites it without a word. Unlikely on a daily
+    schedule; one double-click on "nu maken" away otherwise.
+    """
+    stamp = moment.strftime("%Y%m%d-%H%M%S")
+    base = backups_dir() / f"{PREFIX}{stamp}.zip"
+    if not base.exists():
+        return base
+    for suffix in range(2, 100):
+        candidate = backups_dir() / f"{PREFIX}{stamp}-{suffix}.zip"
+        if not candidate.exists():
+            return candidate
+    raise RuntimeError("Te veel back-ups met dezelfde tijdstempel")
+
+
 def run_once(*, reason: str = "automatisch") -> BackupFile:
     """Write one snapshot and rotate the old ones. Blocking; call in a thread."""
     started = datetime.now()
     temporary = backup.write_snapshot()
-    stamp = started.strftime("%Y%m%d-%H%M%S")
-    destination = backups_dir() / f"{PREFIX}{stamp}.zip"
+    destination = _free_destination(started)
+
+    # The bytes arrive under a name that is *not* a backup's, and only get the
+    # real name once they are all there. A move straight onto the destination
+    # can leave a half-written file behind when the disk fills up mid-copy — and
+    # a truncated zip sitting in the folder under a perfectly normal name is
+    # worse than no backup, because it looks like one. The leading dot keeps it
+    # out of the listing and out of rotation either way; the rename is atomic on
+    # one filesystem.
+    staging = backups_dir() / f".{destination.name}.incomplete"
     try:
-        # Move rather than copy: write_snapshot already wrote the bytes once, in
-        # the system temp dir, and on the same filesystem this is a rename.
-        shutil.move(str(temporary), destination)
+        shutil.move(str(temporary), staging)
+        staging.replace(destination)
+    except BaseException:
+        # Only the staging file: a failed replace leaves the destination
+        # untouched, and that may well be yesterday's perfectly good backup.
+        staging.unlink(missing_ok=True)
+        raise
     finally:
         Path(temporary).unlink(missing_ok=True)
 
