@@ -94,6 +94,8 @@ export default function Combine() {
   const [pending, setPending] = useState<PendingVerdict[]>([]);
   const online = useOnline();
   const cardRef = useRef<SwipeCardHandle>(null);
+  // Whether the server has already been asked whether an empty queue is the end.
+  const askedForMore = useRef(false);
 
   const pair = queue[0] ?? null;
   const pendingKeys = new Set(pending.map((p) => pairKey(p.a, p.b)));
@@ -176,8 +178,18 @@ export default function Combine() {
   /** Quietly extend the queue when it runs low, without moving the top card. */
   async function topUp(fallbackAnchor?: number) {
     if (!current || !online || queue.length > 5) return;
+    const anchor = queueAnchor ?? fallbackAnchor;
     try {
-      const fresh = await api.pairQueue(current.id, queueAnchor ?? fallbackAnchor);
+      let fresh = await api.pairQueue(current.id, anchor);
+      // That one garment is done; the wardrobe is not. Topping up anchored on
+      // the garment just judged keeps a run together, but when it runs out the
+      // queue must widen rather than drain — otherwise the last card of one
+      // garment looks like the last card there is.
+      if (fresh.length === 0 && anchor != null) {
+        fresh = await api.pairQueue(current.id);
+        // The anchor that was asked for is exhausted: stop asking for it.
+        if (queueAnchor != null) setQueueAnchor(undefined);
+      }
       setQueue((held) => {
         const have = new Set(held.map((p) => pairKey(p.anchor.id, p.candidate.id)));
         const extra = fresh.filter((p) => {
@@ -193,8 +205,27 @@ export default function Combine() {
     }
   }
 
+  /** Out of pairs in hand: ask the server before declaring the wardrobe done.
+   *
+   *  What we hold is a stretch of the queue, not the whole of it, and running
+   *  out of it says nothing about what is left in the wardrobe. So an empty
+   *  queue is a question, not an answer: fetch once more, unanchored, and let
+   *  that decide whether it really is over. Once per empty run — a fetch that
+   *  fails must not turn into a loop of failing fetches. */
+  useEffect(() => {
+    if (queue.length > 0 || !online) {
+      askedForMore.current = false;
+      return;
+    }
+    if (!current || loading || done || askedForMore.current) return;
+    askedForMore.current = true;
+    loadQueue();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current?.id, online, loading, done, queue.length]);
+
   useEffect(() => {
     if (!current) return;
+    askedForMore.current = false;
     setLast(null);
     setLastAccepted(null);
     setPending(listPending(current.id));
@@ -460,9 +491,12 @@ export default function Combine() {
           </div>
         )}
 
-        {loading && !pair ? (
+        {!pair && (loading || (online && !done && !error)) ? (
+          // Either the first load, or the queue ran out and the server has not
+          // yet said whether that was the end of it. Offline, or after a failed
+          // fetch, there is nothing to wait for and the message below says so.
           <div className="spinner" />
-        ) : done || !pair ? (
+        ) : !pair ? (
           <div className="empty">
             <div className="big">🎉</div>
             {!online ? (
