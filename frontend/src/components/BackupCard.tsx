@@ -290,6 +290,9 @@ export default function BackupCard({ ownWardrobe, isAdmin }: Props) {
                     <strong>{preview.photos}</strong> foto's
                   </li>
                   <li>
+                    <strong>{preview.outfits ?? 0}</strong> looks
+                  </li>
+                  <li>
                     <strong>{preview.combinations}</strong> combinaties
                   </li>
                   <li>
@@ -352,7 +355,8 @@ export default function BackupCard({ ownWardrobe, isAdmin }: Props) {
           {result && (
             <div className="notice">
               Teruggezet in <strong>{result.wardrobe}</strong>: {result.added} toegevoegd,{" "}
-              {result.updated} bijgewerkt, {result.combinations} combinaties en {result.photos}{" "}
+              {result.updated} bijgewerkt, {result.outfits ?? 0} looks, {result.combinations} combinaties en{" "}
+              {result.photos}{" "}
               foto's.
             </div>
           )}

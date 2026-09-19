@@ -51,6 +51,7 @@ from .models import (
     Item,
     Match,
     MatchSkip,
+    OccasionOption,
     SizeOption,
     User,
     Wardrobe,
@@ -58,6 +59,7 @@ from .models import (
 )
 from .security import hash_password
 from .suggestions import DEFAULT_BAD_PAIRS, DEFAULT_GOOD_PAIRS
+from .tags import DEFAULT_OCCASIONS
 
 log = get_logger("migrations")
 
@@ -160,6 +162,24 @@ def migrate_size_uniqueness() -> None:
         conn.exec_driver_sql("ALTER TABLE sizes_new RENAME TO sizes")
 
 
+def _add_item_tag_columns(conn) -> None:
+    """Add ``items.occasion``/``weather``/``style`` when they are missing.
+
+    Called from two steps on purpose. A database at version 0 has to get these
+    in :func:`migrate_schema`, because the steps after it query ``items``
+    through the ORM and a mapped column the database lacks makes *every* one of
+    those queries fail. A database that already passed that step never runs it
+    again, so :func:`migrate_outfits_and_tags` adds them there instead. Both
+    check first, so whichever runs second does nothing.
+    """
+    cols = [c[1] for c in conn.exec_driver_sql("PRAGMA table_info(items)").fetchall()]
+    if not cols:
+        return  # fresh install: create_all already made the full schema
+    for column in ("occasion", "weather", "style"):
+        if column not in cols:
+            conn.exec_driver_sql(f"ALTER TABLE items ADD COLUMN {column} VARCHAR(200)")
+
+
 def migrate_schema() -> None:
     """Create new tables and add columns an older database is missing.
 
@@ -195,6 +215,27 @@ def migrate_schema() -> None:
         # a table that already exists, so an index does the same job here.
         conn.exec_driver_sql(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_item_wardrobe_uid ON items (wardrobe_id, uid)"
+        )
+        # Must happen here rather than only in the step that introduced them:
+        # every step below this one reads ``items`` through the ORM.
+        _add_item_tag_columns(conn)
+
+
+def migrate_outfits_and_tags() -> None:
+    """Add the tables and columns that outfits, the planner and the weather need.
+
+    ``create_all`` makes every new *table* (outfits, wear logs, trips, per-user
+    preferences); only the three new tag columns on ``items`` need adding by
+    hand, because it never touches a table that already exists.
+    """
+    Base.metadata.create_all(bind=engine)
+    with engine.begin() as conn:
+        _add_item_tag_columns(conn)
+        # Same reasoning as items: a constraint cannot be added to an existing
+        # table, and a unique index does the same job.
+        conn.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_outfit_wardrobe_uid"
+            " ON outfits (wardrobe_id, uid)"
         )
 
 
@@ -520,6 +561,25 @@ def seed_catalog() -> None:
         db.close()
 
 
+def seed_occasions() -> None:
+    """Fill the occasion list on first run, and top up ones added later.
+
+    Same deal as the categories: a release that introduces a new default
+    occasion should reach an installation that already has a list, so this
+    adds what is missing instead of only filling an empty table.
+    """
+    db = SessionLocal()
+    try:
+        existing = {o.name.lower() for o in db.query(OccasionOption).all()}
+        base = db.query(OccasionOption).count()
+        for i, name in enumerate(DEFAULT_OCCASIONS):
+            if name.lower() not in existing:
+                db.add(OccasionOption(name=name, position=base + i))
+        db.commit()
+    finally:
+        db.close()
+
+
 def seed_color_rules() -> None:
     """Seed the editable colour-combination rules from the built-in defaults on
     first run, so admins have a sensible starting point to tweak."""
@@ -608,8 +668,9 @@ STEPS: tuple[tuple[int, str, object], ...] = (
     (7, "kasten", migrate_wardrobes),
     (8, "merken", migrate_brands),
     (9, "index op fotobestandsnamen", migrate_photo_indexes),
+    (10, "outfits, weer en tags", migrate_outfits_and_tags),
     # Data repair last, on everything the steps above have settled.
-    (10, "opruimcontrole", migrate_orphans),
+    (11, "opruimcontrole", migrate_orphans),
 )
 
 SCHEMA_VERSION = max(version for version, _name, _fn in STEPS)
@@ -666,7 +727,7 @@ def run_migrations() -> None:
 
 
 def run_seeds() -> None:
-    """The bootstrap account, the catalogue and the colour rules.
+    """The bootstrap account, the catalogue, the occasions and the colour rules.
 
     Every boot, unlike the migrations, and each one a no-op when there is
     nothing to add. Worth the two counting queries: ``seed_catalog`` does not
@@ -677,6 +738,7 @@ def run_seeds() -> None:
     """
     seed_admin()
     seed_catalog()
+    seed_occasions()
     seed_color_rules()
 
 

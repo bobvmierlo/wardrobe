@@ -1,6 +1,6 @@
-"""Admin-managed lists: clothing categories and sizes.
+"""Admin-managed lists: clothing categories, sizes and occasions.
 
-Both are simple ordered name lists that everyone can read but only admins
+All three are simple ordered name lists that everyone can read but only admins
 can change, so the mobile UI can offer a real dropdown instead of free text.
 """
 
@@ -10,11 +10,12 @@ from sqlalchemy.orm import Session
 from .. import audit
 from ..database import get_db
 from ..deps import get_current_user, require_admin
-from ..models import Category, Item, SizeOption, User
-from ..schemas import CategoryOut, LabelIn, NameIn, SizeOut
+from ..models import Category, Item, OccasionOption, SizeOption, User
+from ..schemas import CategoryOut, LabelIn, NameIn, OccasionOut, SizeOut
 
 categories_router = APIRouter(prefix="/api/categories", tags=["categories"])
 sizes_router = APIRouter(prefix="/api/sizes", tags=["sizes"])
+occasions_router = APIRouter(prefix="/api/occasions", tags=["occasions"])
 
 
 # ---- Categories ----
@@ -131,4 +132,57 @@ def delete_size(
         "size.delete",
         f"Maat '{label}' verwijderd" + (f" (nog in gebruik door {in_use} stuk(ken))" if in_use else ""),
         user=admin, entity_type="size", entity_id=size_id,
+    )
+
+
+# ---- Occasions ----
+@occasions_router.get("", response_model=list[OccasionOut])
+def list_occasions(
+    _: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return db.query(OccasionOption).order_by(OccasionOption.position, OccasionOption.name).all()
+
+
+@occasions_router.post("", response_model=OccasionOut, status_code=201)
+def create_occasion(
+    body: NameIn,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    name = body.name.strip()
+    if db.query(OccasionOption).filter(OccasionOption.name == name).first():
+        raise HTTPException(status_code=409, detail="Gelegenheid bestaat al")
+    last = db.query(OccasionOption).order_by(OccasionOption.position.desc()).first()
+    occasion = OccasionOption(name=name, position=(last.position + 1) if last else 0)
+    db.add(occasion)
+    db.commit()
+    db.refresh(occasion)
+    audit.record(
+        db, "occasion.create", f"Gelegenheid '{occasion.name}' toegevoegd",
+        user=admin, entity_type="occasion", entity_id=occasion.id,
+    )
+    return occasion
+
+
+@occasions_router.delete("/{occasion_id}", status_code=204)
+def delete_occasion(
+    occasion_id: int,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Remove an occasion from the list.
+
+    Garments keep the label they were tagged with — it is free text on the
+    item, exactly like a size — so this only takes it out of the dropdown.
+    """
+    occasion = db.get(OccasionOption, occasion_id)
+    if not occasion:
+        raise HTTPException(status_code=404, detail="Gelegenheid niet gevonden")
+    name = occasion.name
+    db.delete(occasion)
+    db.commit()
+    audit.record(
+        db, "occasion.delete", f"Gelegenheid '{name}' verwijderd",
+        user=admin, entity_type="occasion", entity_id=occasion_id,
     )

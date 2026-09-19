@@ -3,15 +3,25 @@ import { api, photoUrl } from "../api";
 import {
   SEASONS,
   SIZE_KIND_LABELS,
+  WEATHER_TAGS,
   compareSizes,
   sizeKindForCategory,
   type Category,
   type Item,
+  type Occasion,
   type SizeKind,
   type SizeOption,
 } from "../types";
 import PhotoEditor from "./PhotoEditor";
 import ImportDialog, { type ImportResult } from "./ImportDialog";
+import TagPicker from "./TagPicker";
+
+/** Style words offered on the form. Free text underneath — this list only
+ *  saves the typing, mirroring DEFAULT_STYLES in app/tags.py. */
+const STYLE_SUGGESTIONS = [
+  "Casual", "Zakelijk", "Sportief", "Klassiek", "Gelaagd", "Minimalistisch",
+  "Stoer", "Chic", "Streetstyle", "Comfortabel",
+];
 
 const ALL_SEASONS = "Alle seizoenen";
 // Sentinel option that switches the brand picker to free-text entry.
@@ -30,6 +40,9 @@ export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormPro
   const [color, setColor] = useState(initial?.color ?? "");
   const [size, setSize] = useState(initial?.size ?? "");
   const [seasons, setSeasons] = useState<string[]>(initial?.seasons ?? []);
+  const [occasions, setOccasions] = useState<string[]>(initial?.occasions ?? []);
+  const [weatherTags, setWeatherTags] = useState<string[]>(initial?.weather_tags ?? []);
+  const [styleTags, setStyleTags] = useState<string[]>(initial?.style_tags ?? []);
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [favorite, setFavorite] = useState(initial?.is_favorite ?? false);
 
@@ -38,6 +51,7 @@ export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormPro
   const [preview, setPreview] = useState<string | null>(initial ? photoUrl(initial) : null);
 
   const [categories, setCategories] = useState<Category[]>([]);
+  const [occasionOptions, setOccasionOptions] = useState<Occasion[]>([]);
   const [sizes, setSizes] = useState<SizeOption[]>([]);
   const [brands, setBrands] = useState<string[]>([]);
   // Typing a brand by hand instead of picking an existing one.
@@ -54,6 +68,8 @@ export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormPro
     // Brands already in use, so Merk is normally a pick from a list instead of
     // retyping (and misspelling) the same brand on every garment.
     api.listBrands().then(setBrands).catch(() => setBrands([]));
+    // The occasion list is admin-managed, like categories and sizes.
+    api.listOccasions().then(setOccasionOptions).catch(() => setOccasionOptions([]));
   }, []);
 
   // Include a legacy free-text value so an existing item stays selectable.
@@ -145,6 +161,9 @@ export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormPro
     form.set("color", color);
     form.set("size", size);
     form.set("season", seasons.join(","));
+    form.set("occasion", occasions.join(","));
+    form.set("weather", weatherTags.join(","));
+    form.set("style", styleTags.join(","));
     form.set("notes", notes);
     form.set("is_favorite", favorite ? "true" : "false");
     if (file) form.set("photo", file);
@@ -303,6 +322,34 @@ export default function ItemForm({ initial, submitLabel, onSubmit }: ItemFormPro
           ))}
         </div>
       </div>
+
+      {/* The three tag rows below are what "Vandaag", "Ontdekken" and the
+          suggestions read. All optional: an untagged garment is never filtered
+          away, it just cannot be picked *because* it suits the occasion. */}
+      <TagPicker
+        label="Gelegenheid (meerdere mogelijk)"
+        hint="Waar draag je dit? Hiermee weet de app wanneer het past."
+        options={occasionOptions.map((o) => o.name)}
+        value={occasions}
+        onChange={setOccasions}
+      />
+
+      <TagPicker
+        label="Weer (meerdere mogelijk)"
+        hint="Bij welk weer draag je dit? Dit stuurt de aanbevelingen voor vandaag."
+        options={WEATHER_TAGS}
+        value={weatherTags}
+        onChange={setWeatherTags}
+      />
+
+      <TagPicker
+        label="Stijl"
+        hint="Eigen woorden mogen ook — ze komen terug in je stijl-DNA."
+        options={STYLE_SUGGESTIONS}
+        value={styleTags}
+        onChange={setStyleTags}
+        allowCustom
+      />
 
       <div className="field">
         <label>Notities</label>

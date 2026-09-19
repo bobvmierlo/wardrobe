@@ -1,3 +1,8 @@
+/* Every colour in the app comes from these eight variables, which is what
+ * makes a per-user theme a matter of swapping them rather than restyling
+ * anything. The default is the dark scheme the app has always had; the others
+ * live below under [data-theme="…"] and are applied to <html> by
+ * src/theme.tsx from the signed-in user's own preferences. */
 :root {
   --bg: #0f172a;
   --surface: #1e293b;
@@ -13,6 +18,75 @@
   --radius: 16px;
   --nav-h: 64px;
   --maxw: 640px;
+  /* Which of light/dark the browser should style its own bits (scrollbars,
+   * form controls, the on-screen keyboard) for. A light palette that forgets
+   * this gets a dark dropdown on top of a cream page. */
+  color-scheme: dark;
+}
+
+/* Warm zand — light, papery and warm, with cognac as the accent. The palette
+ * this app's sibling project uses, and the reason themes exist at all. */
+:root[data-theme="warmzand"] {
+  --bg: #f6f1e8;
+  --surface: #fffdf9;
+  --surface-2: #efe7d9;
+  --border: #ddd0bb;
+  --text: #2f2921;
+  --muted: #7d7263;
+  --primary: #9a5b34;
+  --primary-ink: #fff8f0;
+  --yes: #5f7a3f;
+  --no: #b3402f;
+  --fav: #c58a1e;
+  color-scheme: light;
+}
+
+/* Olijf — muted green on a soft, warm ground. */
+:root[data-theme="olijf"] {
+  --bg: #f3f2ea;
+  --surface: #fbfbf6;
+  --surface-2: #e8e8db;
+  --border: #d2d3c0;
+  --text: #2a2e23;
+  --muted: #6f7463;
+  --primary: #5d6b3f;
+  --primary-ink: #f7f9f0;
+  --yes: #4f7a45;
+  --no: #b0402f;
+  --fav: #c18f24;
+  color-scheme: light;
+}
+
+/* Bos — dark like the default, but green and warmer. */
+:root[data-theme="bos"] {
+  --bg: #131a15;
+  --surface: #1d2720;
+  --surface-2: #27332a;
+  --border: #38483b;
+  --text: #edf3ed;
+  --muted: #9aab9c;
+  --primary: #7fb685;
+  --primary-ink: #0d1a10;
+  --yes: #6fbf73;
+  --no: #e8705f;
+  --fav: #e0b457;
+  color-scheme: dark;
+}
+
+/* Inkt — nearly black, one bright accent, easy on the eyes at night. */
+:root[data-theme="inkt"] {
+  --bg: #101014;
+  --surface: #1b1b21;
+  --surface-2: #26262e;
+  --border: #383842;
+  --text: #ebebf0;
+  --muted: #9b9bab;
+  --primary: #c9a227;
+  --primary-ink: #14140f;
+  --yes: #63c07a;
+  --no: #e2604f;
+  --fav: #e6c14b;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -51,7 +125,7 @@ button:disabled { opacity: 0.5; cursor: default; }
   color: var(--primary-ink);
   font-weight: 700;
 }
-.btn-danger { background: color-mix(in srgb, var(--no) 20%, transparent); color: #fca5a5; }
+.btn-danger { background: color-mix(in srgb, var(--no) 20%, transparent); color: color-mix(in srgb, var(--no) 70%, var(--text)); }
 .btn-block { width: 100%; }
 .btn-ghost { background: transparent; border: 1px solid var(--border); }
 
@@ -286,7 +360,7 @@ label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0 0 6px
 
 .error {
   background: color-mix(in srgb, var(--no) 18%, transparent);
-  color: #fecaca;
+  color: color-mix(in srgb, var(--no) 70%, var(--text));
   border: 1px solid color-mix(in srgb, var(--no) 40%, transparent);
   padding: 10px 14px;
   border-radius: 12px;
@@ -295,7 +369,7 @@ label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0 0 6px
 .notice {
   background: color-mix(in srgb, var(--primary) 14%, transparent);
   border: 1px solid color-mix(in srgb, var(--primary) 35%, transparent);
-  color: #bae6fd;
+  color: color-mix(in srgb, var(--primary) 65%, var(--text));
   padding: 10px 14px; border-radius: 12px; font-size: 0.88rem;
 }
 
@@ -573,7 +647,7 @@ a.btn-ghost {
   padding: 0;
   background: var(--primary); color: var(--primary-ink);
   display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 8px 20px rgba(56,189,248,0.4);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--primary) 40%, transparent);
   z-index: 15;
 }
 .fab svg { display: block; }
@@ -642,7 +716,7 @@ a.btn-ghost {
 .pick-card:hover .pick-name { color: var(--text); }
 .pick-card.active .pick-photo {
   border-color: var(--primary); transform: translateY(-2px);
-  box-shadow: 0 0 0 2px var(--primary), 0 8px 18px rgba(56,189,248,0.28);
+  box-shadow: 0 0 0 2px var(--primary), 0 8px 18px color-mix(in srgb, var(--primary) 28%, transparent);
 }
 .pick-card.active .pick-name { color: var(--primary); font-weight: 700; }
 
@@ -659,7 +733,7 @@ a.btn-ghost {
 .cta-link {
   display: inline-flex; align-items: center; gap: 8px;
   margin-top: 12px; padding: 12px 22px; border-radius: 999px;
-  font-size: 0.95rem; box-shadow: 0 6px 18px rgba(56,189,248,0.28);
+  font-size: 0.95rem; box-shadow: 0 6px 18px color-mix(in srgb, var(--primary) 28%, transparent);
 }
 
 /* ---- suggestion cards ---- */
@@ -903,7 +977,7 @@ a.btn-ghost {
   padding: 1px 7px; border-radius: 999px; background: var(--surface-2);
 }
 .level-badge.WARNING { background: color-mix(in srgb, var(--fav) 22%, transparent); color: var(--fav); }
-.level-badge.ERROR, .level-badge.CRITICAL { background: color-mix(in srgb, var(--no) 22%, transparent); color: #fca5a5; }
+.level-badge.ERROR, .level-badge.CRITICAL { background: color-mix(in srgb, var(--no) 22%, transparent); color: color-mix(in srgb, var(--no) 70%, var(--text)); }
 .log-pager { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; }
 
 
@@ -1268,3 +1342,80 @@ a.btn-ghost {
 }
 .backup-list li:last-child { border-bottom: none; }
 .backup-list button { padding: 4px 10px; }
+
+/* ---- outfits, the weather card and the week planner ---- */
+.outfit-strip { display: flex; gap: 8px; flex-wrap: wrap; }
+.outfit-thumb {
+  flex: none; width: 72px; height: 72px; padding: 0;
+  border-radius: 12px; overflow: hidden;
+  border: 1px solid var(--border); background: var(--surface-2);
+  display: flex; align-items: center; justify-content: center;
+}
+.outfit-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.outfit-noimg { font-size: 1.5rem; opacity: 0.55; }
+
+.weather-card { padding: 16px; }
+.weather-now { display: flex; align-items: center; gap: 14px; }
+.weather-ico { font-size: 2.6rem; line-height: 1; }
+.weather-temp { font-size: 1.9rem; font-weight: 700; line-height: 1.1; }
+.weather-meta { display: flex; flex-wrap: wrap; gap: 10px; font-size: 0.8rem; margin-top: 10px; }
+.weather-advice {
+  margin: 12px 0 0; padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+/* A recommendation: the outfit, then the sentence that argues for it. */
+.rec-card { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.rec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.rec-title { font-weight: 600; }
+.rec-reason { font-size: 0.85rem; color: var(--muted); }
+.rec-source {
+  font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--muted); white-space: nowrap;
+}
+
+.week-grid { display: grid; gap: 10px; }
+.day-card { padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.day-card.today { border-color: color-mix(in srgb, var(--primary) 55%, var(--border)); }
+.day-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.day-name { font-weight: 600; text-transform: capitalize; }
+.day-weather { font-size: 0.8rem; color: var(--muted); white-space: nowrap; }
+
+/* Stat tiles (Inzichten) and the palette bar under them. */
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+.stat-tile { padding: 14px; text-align: center; }
+.stat-value { font-size: 1.7rem; font-weight: 700; line-height: 1.1; }
+.stat-label { font-size: 0.74rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; font-size: 0.85rem; }
+.bar-label { flex: none; width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-track { flex: 1; height: 10px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.bar-fill { height: 100%; background: var(--primary); }
+.bar-count { flex: none; width: 28px; text-align: right; color: var(--muted); }
+
+/* The theme picker in Instellingen. */
+.theme-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.theme-card {
+  padding: 12px; text-align: left; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--surface);
+}
+.theme-card.active { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+.theme-swatch { display: flex; gap: 4px; margin-bottom: 8px; }
+.theme-swatch span { width: 22px; height: 22px; border-radius: 6px; border: 1px solid var(--border); }
+
+/* The "Meer" hub: one tile per screen that does not fit in the bar. */
+.hub-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.hub-tile {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 16px; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+}
+.hub-tile .ico { font-size: 1.5rem; }
+.hub-tile .hub-label { font-weight: 600; }
+.hub-tile .hub-hint { font-size: 0.78rem; color: var(--muted); }
+
+/* A packing list row. */
+.pack-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.pack-row:last-child { border-bottom: none; }
+.pack-row.done .pack-name { text-decoration: line-through; color: var(--muted); }
+.pack-name { flex: 1; }

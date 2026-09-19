@@ -13,6 +13,7 @@ from itertools import product
 
 from .matching import group_of, seasons_compatible
 from .models import Item
+from .tags import has_any, overlap, split_tags
 
 # Map many Dutch (and a few English) colour words onto a small base palette.
 _COLOR_ALIASES: dict[str, str] = {
@@ -145,6 +146,33 @@ def is_combination(items: list[Item], approved_pairs: set[frozenset[int]]) -> bo
     return bool(pairs) and pairs <= approved_pairs
 
 
+#: Weather that asks for something over the top. Used both to let an outer
+#: layer into a suggestion more easily and to keep one out of a warm day.
+COVER_WEATHER = {"koud", "regen", "sneeuw", "winderig"}
+
+
+def wants_outerwear(weather_tags: list[str] | None) -> bool:
+    return any(t.lower() in COVER_WEATHER for t in (weather_tags or []))
+
+
+def fits_context(
+    item: Item,
+    occasion: str | None = None,
+    weather_tags: list[str] | None = None,
+) -> bool:
+    """Whether a garment belongs in an outfit for this occasion and weather.
+
+    Untagged garments always fit — see :func:`app.tags.has_any`. A garment that
+    *is* tagged has to mention the occasion asked for, and share at least one
+    weather tag with the forecast.
+    """
+    if occasion and not has_any(item.occasion, [occasion]):
+        return False
+    if weather_tags and not has_any(item.weather, weather_tags):
+        return False
+    return True
+
+
 def suggest_outfits(
     items: list[Item],
     rejected_pairs: set[frozenset[int]],
@@ -153,11 +181,18 @@ def suggest_outfits(
     good_pairs: set[frozenset[str]] | None = None,
     bad_pairs: set[frozenset[str]] | None = None,
     must_include: int | None = None,
+    occasion: str | None = None,
+    weather_tags: list[str] | None = None,
 ) -> list[dict]:
     """Build and rank outfit suggestions from the wardrobe.
 
     When ``must_include`` is given, only outfits containing that item id are
     returned — used to show suggestions on a single item's page.
+
+    ``occasion`` and ``weather_tags`` narrow the wardrobe before anything is
+    combined: with them, only garments tagged for that occasion and that
+    weather (or tagged with nothing at all) take part, and an outer layer is
+    added readily when it is cold, wet or windy and left out when it is not.
 
     Outfits the household already settled are left out entirely: a pair anyone
     rejected is never combined, and an outfit whose every pair is approved is
@@ -171,6 +206,8 @@ def suggest_outfits(
 
     by_group: dict[str, list[Item]] = {}
     for it in items:
+        if not fits_context(it, occasion, weather_tags):
+            continue
         by_group.setdefault(group_of(it.category), []).append(it)
 
     tops = by_group.get("top", []) + by_group.get("dress", [])
@@ -231,14 +268,34 @@ def suggest_outfits(
             os_ = sum(cscore(ow.color, b.color)[0] for b in base)
             if os_ > best_outer_score:
                 best_outer, best_outer_score = ow, os_
-        if best_outer is not None and best_outer_score >= len(base):
+        # How readily an outer layer joins depends on the weather: on a cold or
+        # wet day a coat belongs there even if its colour is only adequate, and
+        # on a warm one it does not belong there at all.
+        cover = wants_outerwear(weather_tags)
+        threshold = 0 if cover else len(base)
+        if weather_tags and not cover:
+            best_outer = None
+        if best_outer is not None and best_outer_score >= threshold:
             base.append(best_outer)
             score += max(best_outer_score // len(base), 0)
+            if cover:
+                score += 2
+                reasons.append("met een laag eroverheen voor dit weer")
 
         season_score, season_name = _season_overlap(base)
         score += season_score
         if season_name:
             reasons.append(f"geschikt voor {season_name}")
+
+        # A garment explicitly tagged for this occasion or this weather is a
+        # better answer than one that merely was not ruled out.
+        if occasion and all(overlap(split_tags(it.occasion), [occasion]) for it in base):
+            score += 3
+            reasons.append(f"gekleed voor {occasion.lower()}")
+        if weather_tags:
+            tagged = [it for it in base if overlap(split_tags(it.weather), weather_tags)]
+            if tagged:
+                score += min(len(tagged), 3)
 
         if is_combination(base, approved_pairs):
             continue  # already an approved combination, not a suggestion

@@ -50,6 +50,7 @@ SECRET_FIELDS = frozenset({"secret_key", "admin_password", "oidc_client_secret"}
 GROUPS: tuple[tuple[str, str], ...] = (
     ("data_dir", "Opslag en basis"),
     ("login_max_attempts", "Beveiliging"),
+    ("weather_enabled", "Weer"),
     ("oidc_enabled", "Inloggen via SSO (OpenID Connect)"),
     ("frontend_dir", "Intern"),
 )

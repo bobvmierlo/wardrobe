@@ -146,6 +146,13 @@ class Item(Base):
     size: Mapped[str | None] = mapped_column(String(40), nullable=True)
     # One or more seasons, stored comma-separated (e.g. "Lente,Zomer").
     season: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # Three more comma-separated tag columns in the same shape as ``season``;
+    # see app/tags.py for why these are not join tables. ``occasion`` is picked
+    # from an admin-managed list, ``weather`` from a fixed vocabulary the
+    # forecast can actually produce, and ``style`` is free text.
+    occasion: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    weather: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    style: Mapped[str | None] = mapped_column(String(200), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Indexed because serving a photo looks the garment up by filename, to
     # apply the access rules of the kast it belongs to — once per image, and a
@@ -171,6 +178,283 @@ class Item(Base):
     def brand(self) -> str | None:
         """The brand name, so the API keeps exposing a plain string."""
         return self.brand_ref.name if self.brand_ref else None
+
+
+class Outfit(Base):
+    """A whole outfit somebody saved: several garments under one name.
+
+    Deliberately *not* the same thing as an approved combination. A ``Match``
+    records a verdict about two garments — "these two go together" — and the
+    Outfits screen assembles those into what fits with what. An ``Outfit`` is a
+    decision about a specific set of clothes as a set, with the tags that say
+    when to wear it: the weather, the occasion, the season. Only something that
+    exists as one row can carry those, which is why recommending "wear this
+    today" needed this table before anything else.
+    """
+
+    __tablename__ = "outfits"
+    # Unique per kast rather than globally, for the same reason ``Item.uid`` is:
+    # a backup restored beside its original must not collide with it.
+    __table_args__ = (
+        UniqueConstraint("wardrobe_id", "uid", name="uq_outfit_wardrobe_uid"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    uid: Mapped[str] = mapped_column(
+        String(32), index=True, default=lambda: uuid.uuid4().hex
+    )
+    name: Mapped[str] = mapped_column(String(120))
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Comma-separated, like their namesakes on Item. See app/tags.py.
+    season: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    occasion: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    weather: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    style: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    wardrobe_id: Mapped[int] = mapped_column(
+        ForeignKey("wardrobes.id", ondelete="CASCADE"), index=True
+    )
+    created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_by: Mapped[User] = relationship()
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, onupdate=utcnow
+    )
+
+    entries: Mapped[list["OutfitItem"]] = relationship(
+        back_populates="outfit",
+        cascade="all, delete-orphan",
+        order_by="OutfitItem.position",
+    )
+    wears: Mapped[list["WearLog"]] = relationship(
+        back_populates="outfit", cascade="all, delete-orphan"
+    )
+
+    @property
+    def items(self) -> list["Item"]:
+        """The garments themselves, in the order they were put together."""
+        return [entry.item for entry in self.entries if entry.item is not None]
+
+
+class OutfitItem(Base):
+    """One garment's place in one outfit."""
+
+    __tablename__ = "outfit_items"
+    __table_args__ = (
+        UniqueConstraint("outfit_id", "item_id", name="uq_outfit_item"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    outfit_id: Mapped[int] = mapped_column(
+        ForeignKey("outfits.id", ondelete="CASCADE"), index=True
+    )
+    item_id: Mapped[int] = mapped_column(
+        ForeignKey("items.id", ondelete="CASCADE"), index=True
+    )
+    position: Mapped[int] = mapped_column(Integer, default=0)
+
+    outfit: Mapped[Outfit] = relationship(back_populates="entries")
+    item: Mapped[Item] = relationship(lazy="joined")
+
+
+class WearLog(Base):
+    """"I wore this outfit on this day", by one person.
+
+    Per user, not per wardrobe: two people sharing a kast wear different
+    things, and only your own history should decide what the app suggests to
+    you. Whether it is kept at all is each user's own choice — see
+    ``UserPreference.wear_log_enabled``.
+    """
+
+    __tablename__ = "wear_logs"
+    __table_args__ = (
+        UniqueConstraint("outfit_id", "user_id", "worn_on", name="uq_wear_once_a_day"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    outfit_id: Mapped[int] = mapped_column(
+        ForeignKey("outfits.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    #: The day itself, as "JJJJ-MM-DD". A plain date: which calendar day
+    #: something was worn on is the whole point, and a timestamp would drag a
+    #: timezone into a question that does not have one.
+    worn_on: Mapped[str] = mapped_column(String(10), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    outfit: Mapped[Outfit] = relationship(back_populates="wears")
+
+
+class DayPlan(Base):
+    """"On this day I am wearing that outfit" — one square of the week planner.
+
+    Per user as well as per wardrobe: a planner is a personal diary of what you
+    intend to wear, and two people sharing a kast plan their own weeks.
+    """
+
+    __tablename__ = "day_plans"
+    __table_args__ = (
+        UniqueConstraint("user_id", "day", name="uq_day_plan_once"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    wardrobe_id: Mapped[int] = mapped_column(
+        ForeignKey("wardrobes.id", ondelete="CASCADE"), index=True
+    )
+    #: "JJJJ-MM-DD", like ``WearLog.worn_on`` and for the same reason.
+    day: Mapped[str] = mapped_column(String(10), index=True)
+    outfit_id: Mapped[int] = mapped_column(
+        ForeignKey("outfits.id", ondelete="CASCADE"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    outfit: Mapped[Outfit] = relationship(lazy="joined")
+
+
+class Trip(Base):
+    """A journey to pack for: some days, some outfits, and a packing list."""
+
+    __tablename__ = "trips"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120))
+    destination: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    #: Both "JJJJ-MM-DD", both optional: a weekend away that is not planned to
+    #: the day is still worth a packing list.
+    starts_on: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    ends_on: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    wardrobe_id: Mapped[int] = mapped_column(
+        ForeignKey("wardrobes.id", ondelete="CASCADE"), index=True
+    )
+    created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    outfits: Mapped[list["TripOutfit"]] = relationship(
+        back_populates="trip", cascade="all, delete-orphan"
+    )
+    packed: Mapped[list["TripPacked"]] = relationship(
+        back_populates="trip", cascade="all, delete-orphan"
+    )
+
+
+class TripOutfit(Base):
+    """An outfit taken along on a trip."""
+
+    __tablename__ = "trip_outfits"
+    __table_args__ = (UniqueConstraint("trip_id", "outfit_id", name="uq_trip_outfit"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    trip_id: Mapped[int] = mapped_column(
+        ForeignKey("trips.id", ondelete="CASCADE"), index=True
+    )
+    outfit_id: Mapped[int] = mapped_column(
+        ForeignKey("outfits.id", ondelete="CASCADE"), index=True
+    )
+
+    trip: Mapped[Trip] = relationship(back_populates="outfits")
+    outfit: Mapped[Outfit] = relationship(lazy="joined")
+
+
+class TripPacked(Base):
+    """A garment ticked off a trip's packing list.
+
+    The list itself is *derived* — every garment in every outfit taken along —
+    so it cannot go stale when an outfit changes. Only the ticks are stored,
+    and a tick for a garment no longer on the list simply never shows up.
+    """
+
+    __tablename__ = "trip_packed"
+    __table_args__ = (UniqueConstraint("trip_id", "item_id", name="uq_trip_packed"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    trip_id: Mapped[int] = mapped_column(
+        ForeignKey("trips.id", ondelete="CASCADE"), index=True
+    )
+    item_id: Mapped[int] = mapped_column(
+        ForeignKey("items.id", ondelete="CASCADE"), index=True
+    )
+
+    trip: Mapped[Trip] = relationship(back_populates="packed")
+
+
+class StyleProfile(Base):
+    """Someone's "stijl-DNA": the colours and words they dress by.
+
+    Per user, and read by the recommendation engine: an outfit in your own
+    palette, in the style words you picked, is scored above one that merely
+    matches the weather. It is a preference, never a filter — a kast you share
+    with someone whose taste differs must keep working for both of you.
+    """
+
+    __tablename__ = "style_profiles"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    #: Comma-separated base colour names (see app/suggestions.BASE_COLORS).
+    colors: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    #: Comma-separated style words, the same vocabulary garments carry.
+    styles: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    #: Occasions this person dresses for most, used to order suggestions.
+    occasions: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, onupdate=utcnow
+    )
+
+
+class OccasionOption(Base):
+    """An occasion ("Werk", "Uit eten"), managed by admins like categories."""
+
+    __tablename__ = "occasions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(60), unique=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class UserPreference(Base):
+    """Per-user choices that are nobody else's business.
+
+    One row per account, created on first read. Everything here is personal
+    rather than per wardrobe on purpose: two people sharing a kast can want a
+    different colour scheme, a different location for the forecast, and one of
+    them may not want a wear log at all.
+    """
+
+    __tablename__ = "user_preferences"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    #: Key of a palette in the frontend's theme list. Free text rather than an
+    #: enum: adding a palette is a frontend change, and a server that rejects
+    #: an unknown name would make that a two-sided release.
+    theme: Mapped[str] = mapped_column(String(40), default="midnight")
+    #: Whether this user keeps a wear log at all. Off by default — it is a
+    #: feature you opt into, not a thing the app starts recording about you.
+    wear_log_enabled: Mapped[bool] = mapped_column(default=False)
+    #: Where to fetch the forecast. Set either by the browser's location
+    #: permission or by searching for a place; blank means "never asked".
+    location_label: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    latitude: Mapped[float | None] = mapped_column(nullable=True)
+    longitude: Mapped[float | None] = mapped_column(nullable=True)
+    #: "auto" fetches the forecast, "manual" uses ``manual_weather`` — for
+    #: somebody who would rather not share a location, or a server with no way
+    #: out to the internet.
+    weather_mode: Mapped[str] = mapped_column(String(10), default="auto")
+    #: Comma-separated weather tags, used when ``weather_mode`` is "manual".
+    manual_weather: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, onupdate=utcnow
+    )
 
 
 class Category(Base):

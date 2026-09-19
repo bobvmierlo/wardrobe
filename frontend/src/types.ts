@@ -17,6 +17,13 @@ export interface Item {
   size: string | null;
   season: string | null;
   seasons: string[];
+  /** Comma-separated on the wire; the arrays beside them are what to read. */
+  occasion: string | null;
+  occasions: string[];
+  weather: string | null;
+  weather_tags: string[];
+  style: string | null;
+  style_tags: string[];
   notes: string | null;
   is_favorite: boolean;
   photo_filename: string | null;
@@ -301,6 +308,7 @@ export interface BackupPreview {
   wardrobes: number;
   people: number;
   items: number;
+  outfits: number;
   combinations: number;
   skipped: number;
   photos: number;
@@ -312,6 +320,7 @@ export interface RestoreResult {
   wardrobe: string;
   added: number;
   updated: number;
+  outfits: number;
   combinations: number;
   skipped_pairs: number;
   photos: number;
@@ -341,3 +350,235 @@ export interface ScheduledBackups {
   enabled: boolean;
   backups: ScheduledBackup[];
 }
+
+// ---- Tags, outfits and everything built on them ----
+
+/** The weather vocabulary garments and outfits are tagged with. Mirrors
+ *  ``app/tags.py``; the backend also serves it at /api/weather/tags. */
+export const WEATHER_TAGS = [
+  "Zonnig",
+  "Bewolkt",
+  "Regen",
+  "Sneeuw",
+  "Winderig",
+  "Koud",
+  "Mild",
+  "Warm",
+  "Heet",
+];
+
+/** Which of those are temperatures rather than skies — the planner and the
+ *  "Vandaag" card draw them differently. */
+export const TEMPERATURE_TAGS = ["Koud", "Mild", "Warm", "Heet"];
+
+export const WEATHER_ICONS: Record<string, string> = {
+  Zonnig: "☀️",
+  Bewolkt: "☁️",
+  Regen: "🌧️",
+  Sneeuw: "❄️",
+  Winderig: "💨",
+  Koud: "🥶",
+  Mild: "🌤️",
+  Warm: "🌞",
+  Heet: "🔥",
+};
+
+export interface Occasion {
+  id: number;
+  name: string;
+}
+
+export interface Outfit {
+  id: number;
+  name: string;
+  notes: string | null;
+  items: Item[];
+  seasons: string[];
+  occasions: string[];
+  weather_tags: string[];
+  style_tags: string[];
+  created_by_id: number;
+  created_at: string;
+  /** Your own history only — never anybody else's. */
+  wear_count: number;
+  last_worn: string | null;
+}
+
+export interface OutfitDraft {
+  name: string;
+  item_ids: number[];
+  notes?: string | null;
+  seasons?: string[];
+  occasions?: string[];
+  weather_tags?: string[];
+  style_tags?: string[];
+}
+
+export interface Weather {
+  location: string;
+  description: string;
+  temperature: number;
+  apparent_temperature: number;
+  wind_speed: number;
+  precipitation: number;
+  precipitation_chance: number | null;
+  high: number | null;
+  low: number | null;
+  is_day: boolean;
+  tags: string[];
+  mode: string;
+}
+
+export interface Place {
+  name: string;
+  label: string;
+  latitude: number;
+  longitude: number;
+  region: string | null;
+  country: string | null;
+  postcode: string | null;
+}
+
+export interface Recommendation {
+  items: Item[];
+  score: number;
+  reason: string;
+  /** "saved" = an outfit you put together before, "new" = assembled just now. */
+  source: "saved" | "new";
+  outfit_id: number | null;
+  outfit_name: string | null;
+  last_worn: string | null;
+}
+
+export interface RecommendationPage {
+  weather: Weather | null;
+  advice: string;
+  occasion: string | null;
+  recommendations: Recommendation[];
+  empty_reason: string | null;
+}
+
+export interface Preferences {
+  theme: string;
+  wear_log_enabled: boolean;
+  location_label: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  weather_mode: "auto" | "manual";
+  manual_weather: string[];
+  weather_available: boolean;
+}
+
+export interface DayPlan {
+  day: string;
+  outfit: Outfit | null;
+  weather: Weather | null;
+}
+
+export interface Week {
+  start: string;
+  days: DayPlan[];
+}
+
+export interface PackingEntry {
+  item: Item;
+  packed: boolean;
+  used_in: number;
+}
+
+export interface Trip {
+  id: number;
+  name: string;
+  destination: string | null;
+  starts_on: string | null;
+  ends_on: string | null;
+  notes: string | null;
+  outfit_count: number;
+  item_count: number;
+  packed_count: number;
+}
+
+export interface TripDetail extends Trip {
+  outfits: Outfit[];
+  packing: PackingEntry[];
+}
+
+export interface StyleProfile {
+  colors: string[];
+  styles: string[];
+  occasions: string[];
+  notes: string | null;
+  available_colors: string[];
+  available_styles: string[];
+  available_occasions: string[];
+}
+
+export interface GuideColor {
+  color: string;
+  count: number;
+  goes_with: string[];
+  clashes_with: string[];
+  in_profile: boolean;
+}
+
+export interface StyleGuide {
+  colors: GuideColor[];
+  neutrals: string[];
+  gaps: { title: string; detail: string }[];
+  uncovered_weather: string[];
+  tips: string[];
+}
+
+export interface Insights {
+  item_count: number;
+  outfit_count: number;
+  favorite_count: number;
+  unused_items: Item[];
+  by_category: { label: string; count: number }[];
+  by_season: { label: string; count: number }[];
+  by_occasion: { label: string; count: number }[];
+  palette: { color: string; count: number }[];
+  wear_log_enabled: boolean;
+  total_wears: number;
+  most_worn: Outfit[];
+  neglected: Item[];
+}
+
+/** The colour schemes someone can pick in Instellingen.
+ *
+ * The key is what the server stores; the palette itself lives in styles.css
+ * under ``[data-theme="…"]``. Adding one is a change in two places on purpose:
+ * the server deliberately does not validate the name, so a new palette needs
+ * no backend release. */
+export const THEMES: { id: string; label: string; hint: string; swatch: string[] }[] = [
+  {
+    id: "midnight",
+    label: "Middernacht",
+    hint: "Donker en rustig — de vertrouwde kleuren van de app.",
+    swatch: ["#0f172a", "#1e293b", "#38bdf8"],
+  },
+  {
+    id: "warmzand",
+    label: "Warm zand",
+    hint: "Licht, warm en papierachtig, met cognac als accent.",
+    swatch: ["#f6f1e8", "#fffdf9", "#9a5b34"],
+  },
+  {
+    id: "olijf",
+    label: "Olijf",
+    hint: "Gedempt groen op een zachte, warme ondergrond.",
+    swatch: ["#f3f2ea", "#fbfbf6", "#5d6b3f"],
+  },
+  {
+    id: "bos",
+    label: "Bos",
+    hint: "Donker met groen — als middernacht, maar warmer.",
+    swatch: ["#131a15", "#1d2720", "#7fb685"],
+  },
+  {
+    id: "inkt",
+    label: "Inkt",
+    hint: "Bijna zwart, met één helder accent. Rustig voor de ogen.",
+    swatch: ["#101014", "#1b1b21", "#c9a227"],
+  },
+];

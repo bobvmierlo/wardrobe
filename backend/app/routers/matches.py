@@ -35,6 +35,20 @@ def _wardrobe_items(db: Session, wardrobe_id: int) -> list[Item]:
     return db.query(Item).filter(Item.wardrobe_id == wardrobe_id).all()
 
 
+#: Public names for the two reads the recommendation screens also need. A
+#: second implementation of "which garments are in this kast" and "which pairs
+#: were rejected" is a disagreement waiting to happen, and the second one would
+#: be the one that suggests a combination somebody already said no to.
+def wardrobe_items(db: Session, wardrobe_id: int) -> list[Item]:
+    return _wardrobe_items(db, wardrobe_id)
+
+
+def verdict_pairs(
+    db: Session, item_ids: set[int]
+) -> tuple[set[frozenset[int]], set[frozenset[int]]]:
+    return _verdict_pairs(db, item_ids)
+
+
 def _judged_pairs(db: Session, user_id: int, item_ids: set[int]) -> set[frozenset[int]]:
     rows = db.query(Match.item_a_id, Match.item_b_id).filter(Match.user_id == user_id).all()
     return {frozenset((a, b)) for a, b in rows if a in item_ids and b in item_ids}

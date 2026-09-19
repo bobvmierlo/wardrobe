@@ -49,6 +49,9 @@ _TRACKED_FIELDS: dict[str, str] = {
     "color": "kleur",
     "size": "maat",
     "season": "seizoen",
+    "occasion": "gelegenheid",
+    "weather": "weer",
+    "style": "stijl",
     "notes": "notities",
     "is_favorite": "favoriet",
     "photo_filename": "foto",
@@ -103,6 +106,8 @@ def _brand(db: Session, name: str | None) -> Brand | None:
 def list_items(
     wardrobe_id: int,
     category: str | None = None,
+    occasion: str | None = None,
+    weather: str | None = None,
     q: str | None = None,
     favorites: bool = False,
     user: User = Depends(get_current_user),
@@ -112,6 +117,12 @@ def list_items(
     query = db.query(Item).filter(Item.wardrobe_id == wardrobe_id)
     if category:
         query = query.filter(Item.category == category)
+    # Tags are stored comma-separated, so this is a substring match. Good
+    # enough for a list nobody types into: the values come from a dropdown.
+    if occasion:
+        query = query.filter(Item.occasion.ilike(f"%{occasion}%"))
+    if weather:
+        query = query.filter(Item.weather.ilike(f"%{weather}%"))
     if favorites:
         query = query.filter(Item.is_favorite.is_(True))
     if q:
@@ -144,6 +155,9 @@ def create_item(
     color: str | None = Form(None),
     size: str | None = Form(None),
     season: str | None = Form(None),
+    occasion: str | None = Form(None),
+    weather: str | None = Form(None),
+    style: str | None = Form(None),
     notes: str | None = Form(None),
     is_favorite: bool = Form(False),
     photo: UploadFile | None = File(None),
@@ -165,6 +179,9 @@ def create_item(
         color=_clean(color),
         size=_clean(size),
         season=_clean(season),
+        occasion=_clean(occasion),
+        weather=_clean(weather),
+        style=_clean(style),
         notes=_clean(notes),
         is_favorite=is_favorite,
         photo_filename=photo_name,
@@ -207,6 +224,9 @@ def duplicate_item(
         color=src.color,
         size=src.size,
         season=src.season,
+        occasion=src.occasion,
+        weather=src.weather,
+        style=src.style,
         notes=src.notes,
         is_favorite=src.is_favorite,
         photo_filename=photo_name,
@@ -238,6 +258,9 @@ def update_item(
     color: str | None = Form(None),
     size: str | None = Form(None),
     season: str | None = Form(None),
+    occasion: str | None = Form(None),
+    weather: str | None = Form(None),
+    style: str | None = Form(None),
     notes: str | None = Form(None),
     is_favorite: bool | None = Form(None),
     photo: UploadFile | None = File(None),
@@ -266,6 +289,12 @@ def update_item(
         item.size = _clean(size)
     if "season" in submitted:
         item.season = _clean(season)
+    if "occasion" in submitted:
+        item.occasion = _clean(occasion)
+    if "weather" in submitted:
+        item.weather = _clean(weather)
+    if "style" in submitted:
+        item.style = _clean(style)
     if "notes" in submitted:
         item.notes = _clean(notes)
     if "is_favorite" in submitted:

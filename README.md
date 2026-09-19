@@ -13,7 +13,29 @@ welke stukken bij elkaar passen — via een **Tinder-achtige swipe**.
   plaats van één grote kaart met een klein duimnageltje ernaast. Die keuze onthoudt
   de app. Eén tik op ⤢ (of op een foto) zet ze schermvullend naast elkaar — daar
   kun je meteen ✕, ⏭ of ♥ kiezen, en wisselen tussen naast en onder elkaar.
-- ✨ **Outfits** – bekijk per stuk alle goedgekeurde combinaties, met wie ze goedkeurde.
+- 🌤️ **Vandaag** – de app haalt de echte weersverwachting op voor jouw plek en zegt
+  wat je aan zou kunnen trekken. Ook rekening houdend met de **gelegenheid**:
+  sjiek uit eten vraagt iets anders dan een zaterdag op de bank.
+- 🧵 **Looks** – stel hele outfits samen en bewaar ze, met de gelegenheid, het weer
+  en het seizoen waar ze bij horen. Dat is precies waar "Vandaag" uit kiest.
+- 🗓️ **Weekplanner** – plan per dag vooruit, met de verwachting ernaast; de app
+  zegt het als een look niet bij dat weer past.
+- 🧭 **Ontdekken** – laat de app iets samenstellen uit je kast, op gelegenheid,
+  seizoen en weer.
+- 📊 **Inzichten** – wat zit er in je kast, welke kleuren, en wat draag je eigenlijk
+  nooit. Inclusief een **opruimlijst**.
+- 🧳 **Reistas** – kies welke looks meegaan; de **paklijst** rolt er automatisch uit
+  (en telt een spijkerbroek die in drie looks zit één keer).
+- 💎 **Stijl-DNA** – jouw kleuren en stijlwoorden. Outfits die daarbij passen komen
+  bovenaan — het filtert nooit iets weg, en het geldt alleen voor jou.
+- ✨ **Stijlgids** – wat past bij wat in jóúw kast, afgeleid uit de kleurregels van
+  deze installatie. Geen algemene modepraat.
+- 🎨 **Eigen kleurstelling** – kies per gebruiker een thema; deel je een kast, dan
+  houdt de ander gewoon z'n eigen kleuren.
+- 📓 **Draaglogboek (optioneel)** – hou bij wat je wanneer droeg, zodat de app niet
+  drie dagen dezelfde look voorstelt. Standaard **uit**, per gebruiker aan te
+  zetten, en alleen van jou — niemand anders ziet het.
+- ✨ **Combinaties** – bekijk per stuk alle goedgekeurde combinaties, met wie ze goedkeurde.
   Suggesties van het systeem kun je in één tik **opslaan als combinatie**. Op een
   kledingstuk zie je ook wat er juist **niet** bij past, en wie dat vond. Elke foto
   is met ⤢ **groot te bekijken** — een suggestie opent als hele outfit, een
@@ -137,6 +159,17 @@ Voor **beveiliging** — alle standaarden zijn al de veilige keuze, zie
 | `WARDROBE_BACKUP_TIME` | — (uit) | Tijd (`UU:MM`) waarop er elke dag een momentopname wordt gemaakt — zie [Automatische back-ups](#automatische-back-ups). |
 | `WARDROBE_BACKUP_KEEP` | `7` | Hoeveel automatische back-ups bewaard blijven. |
 
+Voor het **weer** (zie [Vandaag](#vandaag-outfits-op-basis-van-weer-gelegenheid-en-stijl)):
+
+| Variabele | Standaard | Uitleg |
+|---|---|---|
+| `WARDROBE_WEATHER_ENABLED` | `true` | Of de server de verwachting mag ophalen. Uit? Dan stelt iedereen het weer zelf handmatig in. |
+| `WARDROBE_WEATHER_API_URL` | Open-Meteo | Waar de verwachting vandaan komt. Geen account of sleutel nodig. |
+| `WARDROBE_GEOCODING_API_URL` | Open-Meteo | Waar op plaatsnaam gezocht wordt. |
+| `WARDROBE_POSTCODE_API_URL` | Zippopotam | Waar op postcode gezocht wordt. |
+| `WARDROBE_WEATHER_COUNTRY` | `nl` | In welk land een kale postcode (`5421`) verondersteld wordt te liggen. |
+| `WARDROBE_WEATHER_CACHE_MINUTES` | `15` | Hoe lang een opgehaalde verwachting hergebruikt wordt. |
+
 Voor **inloggen via SSO** (optioneel, standaard uit):
 
 | Variabele | Standaard | Uitleg |
@@ -215,7 +248,8 @@ Die laatste kan ook [elke nacht automatisch](#automatische-back-ups), met rotati
 
 `Kledingkast.xlsx` is bedoeld om zelf te openen: elke regel is een kledingstuk
 met een kleine foto erbij, en een link naar het volledige fotobestand in de map
-`photos`. Er zijn tabbladen voor **Kledingstukken**, **Combinaties** (inclusief
+`photos`. Er zijn tabbladen voor **Kledingstukken**, **Looks** (welke kleding erin zit en
+voor welk weer en welke gelegenheid ze bedoeld zijn), **Combinaties** (inclusief
 wie welk oordeel gaf) en, in een volledige back-up, **Gebruikers**. Sorteer je de
 lijst, dan blijven de foto's staan waar ze staan — dat doet Excel nu eenmaal met
 afbeeldingen; de kolom *Fotobestand* blijft wel kloppen.
@@ -234,8 +268,8 @@ kies je de kast en:
 
 * **Samenvoegen** – voegt toe wat ontbreekt en werkt bij wat er al staat. Er
   wordt niets verwijderd.
-* **Vervangen** – leegt de gekozen kast eerst helemaal (inclusief foto's en
-  beoordelingen) en zet daarna het bestand terug.
+* **Vervangen** – leegt de gekozen kast eerst helemaal (inclusief foto's,
+  beoordelingen, looks en reizen) en zet daarna het bestand terug.
 
 Beide gaan in één transactie: mislukt er iets halverwege, dan is er niets
 gewijzigd. Elke export en elke restore komt in het logboek te staan.
@@ -410,10 +444,17 @@ Standaard-admin bij eerste start: `admin` / `changeme`.
 backend/            FastAPI-app (Python)
   app/
     main.py         de app zelf: middleware, healthcheck, serveert de gebouwde frontend
-    models.py       User, Wardrobe, WardrobeMember, Item, Match (SQLAlchemy)
+    models.py       User, Wardrobe, WardrobeMember, Item, Match, Outfit, WearLog,
+                    DayPlan, Trip, StyleProfile, UserPreference (SQLAlchemy)
     access.py       kast-toegang & rollen (eigenaar/beheerder/bewerker/kijker)
     routers/        auth, oidc, users, wardrobes, items, matches, catalog,
-                    color_rules, imports, invitations, admin_log
+                    color_rules, imports, invitations, admin_log, outfits,
+                    planner, trips, insights, weather, me
+    weather.py      echte weersverwachting + plaats/postcode opzoeken (zonder sleutel)
+    recommendations.py  "je zou dit aan kunnen trekken": weer + gelegenheid wegen
+    tags.py         de tagkolommen (gelegenheid, weer, stijl) en hun woordenlijsten
+    outfit_store.py opgeslagen looks lezen en schrijven, plus het draaglogboek
+    preferences.py  persoonlijke instellingen: thema, locatie, draaglogboek, stijl-DNA
     app_settings.py instellingen die een beheerder in de app omzet (zelf registreren)
     migrations.py   genummerde schemastappen (één keer) + seeds (elke start)
     scheduled_backup.py  dagelijkse momentopname in <data>/backups, met rotatie
@@ -429,10 +470,13 @@ frontend/           React + Vite (TypeScript)
   e2e/              één doorloop in een echte browser (Playwright)
   src/*.test.ts     unit-tests voor de offline-logica en de API-laag (vitest)
   src/pages/        Login, Invite, Wardrobe, AddItem, ItemDetail, Combine, Outfits,
-                    Settings, AdminLog
+                    Today, Looks, Week, Discover, Insights, Trips, StyleDna,
+                    StyleGuide, More, Settings, AdminLog
   src/wardrobe.tsx  kast-context (welke kast is actief + je rol)
+  src/theme.tsx     kleurstelling en persoonlijke instellingen van de ingelogde gebruiker
   src/components/   SwipeCard, ItemForm, BottomNav, WardrobeSwitcher, SuggestionList,
-                    JudgedPairList, PartnerGrid, InvitationLinks, QrCode
+                    JudgedPairList, PartnerGrid, InvitationLinks, QrCode,
+                    OutfitStrip, WeatherCard, TagPicker, PersonalSettings
   src/qr.ts         QR-codes voor uitnodigingslinks (geen externe bibliotheek)
 Dockerfile          multi-stage build (frontend → python runtime)
 docker-compose.yml  container + datavolume
@@ -1087,6 +1131,134 @@ goedgekeurd of afgekeurd valt eruit. Bevalt een suggestie? Met **opslaan als
 combinatie** keur je in één keer alle paren erin goed. Bestaat de combinatie al,
 of is er ooit een paar uit afgekeurd, dan weigert de app dat — een suggestie
 overschrijft nooit een beslissing die al genomen is.
+
+---
+
+## Vandaag: outfits op basis van weer, gelegenheid en stijl
+
+Drie dingen bepalen wat de app voorstelt, in deze volgorde van gewicht.
+
+**1. Het weer.** Elk kledingstuk en elke look kan getagd worden met het weer
+waarin je het draagt: `Zonnig`, `Bewolkt`, `Regen`, `Sneeuw`, `Winderig` en de
+temperatuurbanden `Koud`, `Mild`, `Warm`, `Heet`. De verwachting wordt naar
+diezelfde woorden vertaald, zodat er iets te vergelijken valt. De
+temperatuurband weegt het zwaarst: in de kou lopen is een echte vergissing, de
+verkeerde tint grijs onder een wolk niet. Een look die voor een ándere
+temperatuur getagd is, zakt daarom hard — een zomeroutfit op een winterochtend
+is precies wat dit scherm niet mag voorstellen.
+
+De band wordt bepaald op de **gevoelstemperatuur**: 7 graden in de wind is een
+jas, ook als de thermometer anders suggereert.
+
+**2. De gelegenheid.** Een vrij aan te vullen lijst (`Werk`, `Casual`,
+`Uit eten`, `Feest`, `Sport`, `Formeel`…), die een beheerder beheert onder
+**Instellingen → Gelegenheden**. Kies er een bij Vandaag en outfits die daarvoor
+getagd zijn komen boven; outfits die voor iets ánders getagd zijn, zakken.
+
+**3. Jouw stijl-DNA.** Kleuren en stijlwoorden die je bij **Stijl-DNA** invult
+geven een outfit extra punten. Het is nadrukkelijk een *voorkeur*, geen filter:
+in een gedeelde kast moet de app voor jullie allebei blijven werken.
+
+Daarbovenop: wat je volgens je draaglogboek vandaag al aanhad, wordt niet
+opnieuw voorgesteld, en wat al een tijd hangt te hangen krijgt juist een duwtje.
+
+**Ongetagd is nooit uitgesloten.** Een kledingstuk zonder tags doet overal een
+beetje mee. Taggen is hoe je de suggesties scherper maakt, niet iets wat de app
+verplicht stelt. Heb je nog geen looks opgeslagen, dan stelt de app combinaties
+ter plekke samen uit losse kledingstukken — met dezelfde kleurregels als de rest
+van de app, en zonder ooit een paar voor te stellen dat iemand heeft afgekeurd.
+
+Elke aanbeveling zegt er **waarom** bij ("gemaakt voor koud weer, in je eigen
+kleuren"). Een suggestie waar je niet tegenin kunt, is een suggestie die je niet
+kunt corrigeren.
+
+### Waar het weer vandaan komt
+
+De app haalt de verwachting op bij **Open-Meteo** en zoekt plaatsnamen daar ook
+op; voor **postcodes** gebruikt 'ie **Zippopotam**. Geen van beide vraagt een
+account of een API-sleutel, en beide zijn open source.
+
+Twee dingen zijn bewust zo gedaan:
+
+- **De server haalt het op, niet je browser.** Dat moet ook wel — de app stuurt
+  zelf een `Content-Security-Policy` met `connect-src 'self'` mee, dus een
+  pagina die rechtstreeks een weerdienst belt wordt geblokkeerd. Het levert
+  meteen twee dingen op: iedereen in huis die 's ochtends kijkt is samen één
+  verzoek (een verwachting wordt een kwartier hergebruikt), en geen enkele
+  buitenstaander leert uit je browser waar je woont.
+- **Je locatie kies je zelf.** Via de knop *Gebruik mijn huidige locatie* (je
+  browser vraagt netjes toestemming, en de app vraagt er nooit ongevraagd om) of
+  door te zoeken op **plaatsnaam of postcode**. De coördinaten staan bij jouw
+  account, niet bij de kast.
+
+Wil je helemaal geen locatie doorgeven, of staat je server niet naar buiten? Zet
+het weer dan **handmatig** in bij **Instellingen → Weer en locatie**. De
+aanbevelingen werken er net zo goed op — alleen de temperatuur weet de app dan
+niet. Een beheerder kan het ophalen installatiebreed uitzetten met
+`WARDROBE_WEATHER_ENABLED=false`; de schermen blijven dan gewoon werken.
+
+Een weerdienst die er even uit ligt kost je nooit een scherm: dan staat er geen
+weer, en de rest van de app doet het gewoon.
+
+---
+
+## Looks, weekplanner, reistas en de rest
+
+Een **look** is iets anders dan een **combinatie**, en dat verschil is met
+opzet:
+
+- Een **combinatie** is een oordeel over *twee* kledingstukken ("deze twee gaan
+  samen"), geveld met de swipe. Daar gaat het scherm **Outfits** over.
+- Een **look** is een besluit over een hele set kleren ineens, mét de tags die
+  zeggen wanneer je 'm draagt. Alleen iets wat als één ding bestaat kan die tags
+  dragen — daarom kon "trek dit vandaag aan" pas nadat looks bestonden.
+
+Wat daarop verder gebouwd is:
+
+- **Weekplanner** – een look per dag, met de verwachting ernaast (tot een week
+  vooruit). Kies je een look die voor ander weer getagd is, dan zegt de app dat
+  erbij. De planning is **persoonlijk**: in een gedeelde kast plant iedereen
+  zijn eigen week.
+- **Ontdekken** – zelfde motor als Vandaag, maar dan met de filters in jouw
+  hand: gelegenheid, seizoen, weer. Voor bladeren in wat je kast *zou kunnen*,
+  niet voor de beslissing van over tien minuten. Bevalt er een? Bewaar 'm als
+  look.
+- **Reistas** – kies welke looks meegaan; de paklijst is **afgeleid** van die
+  looks in plaats van apart opgeslagen. Daardoor kan 'ie nooit verouderen als je
+  een look wijzigt, en telt een spijkerbroek die in drie looks zit precies één
+  keer (met "3 looks" erachter, zodat je ziet waaróm 'ie mee moet).
+- **Inzichten** – aantallen, je kleurenpalet, wat in geen enkele look zit, en —
+  als je een draaglogboek bijhoudt — wat je het meest draagt. Onderaan de
+  **opruimlijst**: wat je al lang niet droeg. Zonder draaglogboek is dat een
+  inschatting op basis van hoe lang iets al in je kast zit, en dat zegt het
+  scherm er dan ook eerlijk bij.
+- **Stijlgids** – wat bij welke kleur in *jouw* kast past, rechtstreeks
+  afgelezen uit de kleurregels van deze installatie (die een beheerder kan
+  aanpassen) plus wat er daadwerkelijk in de kast hangt. Advies dat je kunt
+  herleiden tot een regel is advies dat je kunt veranderen.
+
+### Draaglogboek: standaard uit
+
+Bijhouden wat je droeg is iets waar je **zelf voor kiest**, geen gedrag dat de
+app ongevraagd gaat vastleggen. Het staat per gebruiker uit tot je het aanzet bij
+**Instellingen → Draaglogboek**, en zolang het uitstaat weigert de server
+simpelweg iets op te slaan.
+
+Wat je bijhoudt is bovendien **alleen van jou**: deel je een kast, dan ziet je
+huisgenoot jouw logboek niet, en telt alleen jouw eigen geschiedenis mee in wat
+de app jou voorstelt.
+
+### Kleurstelling per gebruiker
+
+Onder **Instellingen → Kleurstelling** kies je een thema (Middernacht, Warm
+zand, Olijf, Bos of Inkt). Ook dat hangt aan je account, niet aan de kast: twee
+mensen die dezelfde kast delen kunnen een totaal andere app voor zich hebben.
+Technisch is het één set CSS-variabelen die van waarde wisselt — de keuze wordt
+lokaal onthouden zodat de app bij het opstarten meteen in de goede kleuren staat
+en niet eerst even donker opflitst.
+
+Alles reist mee in een export: de tags op je kledingstukken, je looks en hun
+tags. De paklijst niet — die is afgeleid, dus die rolt er vanzelf weer uit.
 
 ---
 
