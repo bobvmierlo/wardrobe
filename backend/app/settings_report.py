@@ -103,6 +103,29 @@ def _dotenv_names() -> set[str]:
     return names
 
 
+#: Berekend bij het eerste gebruik: de ``.env`` verandert niet meer terwijl de
+#: app draait, en 'm per verzoek van schijf lezen zou zonde zijn.
+_provided: set[str] | None = None
+
+
+def provided_names() -> set[str]:
+    """Elke WARDROBE_*-naam die de beheerder van de server zélf heeft gezet.
+
+    Gebruikt om te bepalen wat er in de app nog te wijzigen valt: wat in de
+    omgeving of de ``.env`` staat, staat daar met een reden, en hoort niet
+    stilletjes overschreven te worden door een knop in een scherm.
+    """
+    global _provided
+    if _provided is None:
+        _provided = _environ_names() | _dotenv_names()
+    return _provided
+
+
+def provided(field: str) -> bool:
+    """Of deze instelling door de operator is meegegeven."""
+    return _env_name(field) in provided_names()
+
+
 def _shown(field: str, value: object) -> str:
     """How a value appears in the log."""
     if field in SECRET_FIELDS:

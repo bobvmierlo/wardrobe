@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from .. import ai as ai_layer
+from .. import app_settings
 from .. import audit
 from ..access import require_edit, require_view
 from ..autofill import TagPlan, apply_tags, plan_looks, plan_tags, validate_ai_looks
@@ -95,7 +96,7 @@ def preview(
         taggable=len(tag_plans),
         outfit_count=len(outfits),
         composable=len(plans),
-        ai_available=ai_layer.is_configured(),
+        ai_available=app_settings.ai_config(db).usable,
     )
 
 
@@ -123,7 +124,7 @@ def fill_tags(
 
     by_ai, ai_note = 0, None
     if use_ai:
-        extra, ai_note = _ai_tag_plans(items, plans, occasions)
+        extra, ai_note = _ai_tag_plans(app_settings.ai_config(db), items, plans, occasions)
         by_ai = len(extra)
         plans = plans + extra
 
@@ -159,6 +160,7 @@ def fill_tags(
 
 
 def _ai_tag_plans(
+    config: app_settings.AiConfig,
     items: list[Item],
     rule_plans: list[TagPlan],
     occasions: list[str],
@@ -169,7 +171,7 @@ def _ai_tag_plans(
     sent, so the model can never overrule them — and, like the rules, an empty
     field is the only thing it may fill.
     """
-    if not ai_layer.is_configured():
+    if not config.usable:
         return [], "De AI-laag staat uit in deze installatie."
 
     settled = {plan.item.id for plan in rule_plans}
@@ -183,7 +185,7 @@ def _ai_tag_plans(
         return [], None
 
     try:
-        suggestions = ai_layer.suggest_tags(remaining, occasions, WEATHER_TAGS)
+        suggestions = ai_layer.suggest_tags(config, remaining, occasions, WEATHER_TAGS)
     except ai_layer.AiUnavailable as exc:
         return [], str(exc)
 
@@ -206,6 +208,7 @@ def _ai_tag_plans(
 
 def _ai_look_plans(
     db: Session,
+    config: app_settings.AiConfig,
     wardrobe_id: int,
     outfits: list,
     count: int,
@@ -227,6 +230,7 @@ def _ai_look_plans(
 
     try:
         proposals = ai_layer.compose_looks(
+            config,
             items,
             approved,
             rejected,
@@ -278,11 +282,12 @@ def compose_looks(
     plans: list = []
 
     if use_ai:
-        outfits = wardrobe_outfits(db, wardrobe_id)
-        if not ai_layer.is_configured():
+        config = app_settings.ai_config(db)
+        if not config.usable:
             ai_note = "De AI-laag staat uit in deze installatie."
         else:
-            plans, by_ai, ai_note = _ai_look_plans(db, wardrobe_id, outfits, count)
+            outfits = wardrobe_outfits(db, wardrobe_id)
+            plans, by_ai, ai_note = _ai_look_plans(db, config, wardrobe_id, outfits, count)
 
     # De app vult aan wat de AI niet leverde — of doet alles, als die uitstaat.
     items, outfits, own = _look_context(

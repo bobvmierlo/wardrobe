@@ -632,3 +632,25 @@ export interface AutofillLooksResult {
   by_ai: number;
   ai_note: string | null;
 }
+
+// ---- De AI-laag, zoals een beheerder 'm in de app instelt ----
+
+export interface AiModelOption {
+  value: string;
+  label: string;
+}
+
+export interface AiSettings {
+  enabled: boolean;
+  model: string;
+  effort: string;
+  /** Whether a key is stored, and its last four characters. The key itself
+   *  never leaves the server — not even to a beheerder. */
+  key_set: boolean;
+  key_hint: string | null;
+  /** Fields pinned in the server's environment, so not editable here. */
+  locked: string[];
+  models: AiModelOption[];
+  efforts: string[];
+  timeout_seconds: number;
+}

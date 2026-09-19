@@ -7,6 +7,7 @@ import { useWardrobe } from "../wardrobe";
 import AppFooter from "../components/AppFooter";
 import BackupCard from "../components/BackupCard";
 import InvitationLinks from "../components/InvitationLinks";
+import AiSettingsCard from "../components/AiSettingsCard";
 import PersonalSettings from "../components/PersonalSettings";
 import { ROLE_LABELS, SIZE_KIND_LABELS, compareSizes, type Category, type ColorLogic, type Invitation, type MemberRole, type Occasion, type SizeKind, type SizeOption, type User, type WardrobeMember } from "../types";
 
@@ -690,6 +691,8 @@ export default function Settings() {
             </form>
           </div>
         )}
+
+        {user?.is_admin && <AiSettingsCard />}
 
         {user?.is_admin && (
           <div className="card" style={{ padding: 16 }}>

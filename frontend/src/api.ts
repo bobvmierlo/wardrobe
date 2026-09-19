@@ -1,5 +1,6 @@
 import { reportOffline } from "./online";
 import type {
+  AiSettings,
   AuditPage,
   AuthConfig,
   AutofillLooksResult,
@@ -595,6 +596,21 @@ export const api = {
       `/api/autofill/looks?wardrobe_id=${wardrobeId}&count=${count}&use_ai=${useAi}`,
       { method: "POST" },
     ),
+
+  // ---- de AI-laag (beheerder) ----
+  aiSettings: () => request<AiSettings>("/api/ai/settings"),
+  saveAiSettings: (data: {
+    enabled?: boolean;
+    model?: string;
+    effort?: string;
+    /** Empty string clears the key; leaving it out keeps what is stored. */
+    api_key?: string;
+  }) =>
+    request<AiSettings>("/api/ai/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
 
   // ---- insights ----
   insights: (wardrobeId: number) => request<Insights>(`/api/insights?wardrobe_id=${wardrobeId}`),

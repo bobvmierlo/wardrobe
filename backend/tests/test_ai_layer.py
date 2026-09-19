@@ -10,7 +10,6 @@ alsnog langs de eigen woordenlijsten.
 import pytest
 
 from app import ai as ai_layer
-from app.config import settings
 from tests.test_wardrobes import (
     ADMIN_PASS,
     ADMIN_USER,
@@ -32,11 +31,17 @@ def kast(client):
 
 
 @pytest.fixture
-def ai_on(monkeypatch):
-    """Doe alsof een beheerder de laag heeft aangezet."""
-    monkeypatch.setattr(settings, "ai_enabled", True)
-    monkeypatch.setattr(settings, "ai_api_key", "test-sleutel")
-    return settings
+def ai_on(client):
+    """Zet de laag aan zoals een beheerder dat in de app zou doen."""
+    admin = login(client, ADMIN_USER, ADMIN_PASS)
+    r = client.put(
+        "/api/ai/settings",
+        headers=h(admin),
+        json={"enabled": True, "api_key": "sk-ant-test-sleutel"},
+    )
+    assert r.status_code == 200, r.text
+    yield r.json()
+    client.put("/api/ai/settings", headers=h(admin), json={"enabled": False, "api_key": ""})
 
 
 def item(client, token, wardrobe_id, name, category, **extra):
@@ -45,9 +50,19 @@ def item(client, token, wardrobe_id, name, category, **extra):
     return r.json()
 
 
+def _config(enabled=True, key="sk-ant-test"):
+    """Een AI-config zoals app_settings 'm zou opleveren."""
+    from app.app_settings import AiConfig
+
+    return AiConfig(
+        enabled=enabled, api_key=key, model="claude-opus-5", effort="low",
+        timeout_seconds=1.0, refusal_fallback=False,
+    )
+
+
 def answer_with(monkeypatch, payload, record=None):
     """Laat de dienst dit antwoorden, en leg vast wat er heen ging."""
-    def fake(system, prompt, schema, max_tokens):
+    def fake(config, system, prompt, schema, max_tokens):
         if record is not None:
             record.append({"system": system, "prompt": prompt, "schema": schema})
         return payload
@@ -59,36 +74,42 @@ def answer_with(monkeypatch, payload, record=None):
 # Uit, tenzij
 # ---------------------------------------------------------------------------
 
-def test_the_layer_is_off_until_a_key_is_configured(monkeypatch):
-    monkeypatch.setattr(settings, "ai_enabled", False)
-    monkeypatch.setattr(settings, "ai_api_key", "")
-    assert ai_layer.is_configured() is False
+def test_the_layer_is_off_until_a_key_is_configured():
+    from app.app_settings import AiConfig
 
+    def config(enabled, key):
+        return AiConfig(
+            enabled=enabled, api_key=key, model="m", effort="low",
+            timeout_seconds=1.0, refusal_fallback=False,
+        )
+
+    assert ai_layer.is_configured(config(False, "")) is False
     # Aan zetten zonder sleutel is niet genoeg — anders zou de knop verschijnen
     # en bij de eerste druk pas stuklopen.
-    monkeypatch.setattr(settings, "ai_enabled", True)
-    assert ai_layer.is_configured() is False
-
-    monkeypatch.setattr(settings, "ai_api_key", "sk-test")
-    assert ai_layer.is_configured() is True
+    assert ai_layer.is_configured(config(True, "")) is False
+    assert ai_layer.is_configured(config(False, "sk-test")) is False
+    assert ai_layer.is_configured(config(True, "sk-test")) is True
 
 
-def test_the_screen_is_told_whether_the_layer_exists(client, kast, monkeypatch):
+def test_the_screen_is_told_whether_the_layer_exists(client, kast):
     token, wid = kast
-    monkeypatch.setattr(settings, "ai_enabled", False)
+    admin = login(client, ADMIN_USER, ADMIN_PASS)
+
     r = client.get("/api/autofill/preview", headers=h(token), params={"wardrobe_id": wid})
     assert r.status_code == 200, r.text
     assert r.json()["ai_available"] is False
 
-    monkeypatch.setattr(settings, "ai_enabled", True)
-    monkeypatch.setattr(settings, "ai_api_key", "sk-test")
+    client.put(
+        "/api/ai/settings", headers=h(admin), json={"enabled": True, "api_key": "sk-test"}
+    )
     r = client.get("/api/autofill/preview", headers=h(token), params={"wardrobe_id": wid})
     assert r.json()["ai_available"] is True
 
+    client.put("/api/ai/settings", headers=h(admin), json={"enabled": False, "api_key": ""})
 
-def test_asking_for_ai_while_it_is_off_still_runs_the_rules(client, kast, monkeypatch):
+
+def test_asking_for_ai_while_it_is_off_still_runs_the_rules(client, kast):
     token, wid = kast
-    monkeypatch.setattr(settings, "ai_enabled", False)
     item(client, token, wid, "Winterjas", "Jas")
 
     r = client.post(
@@ -220,7 +241,7 @@ def test_a_broken_answer_costs_the_ai_not_the_button(client, kast, ai_on, monkey
     item(client, token, wid, "Winterjas", "Jas")
     item(client, token, wid, "Gouden ketting", "Sieraad")
 
-    def boom(system, prompt, schema, max_tokens):
+    def boom(config, system, prompt, schema, max_tokens):
         raise ai_layer.AiUnavailable("De AI-dienst antwoordde niet.")
 
     monkeypatch.setattr(ai_layer, "_ask", boom)
@@ -519,7 +540,7 @@ def test_an_unreachable_service_leaves_the_app_to_compose(client, kast, ai_on, m
     item(client, token, wid, "Wit overhemd", "Overhemd", color="wit")
     item(client, token, wid, "Blauwe jeans", "Jeans", color="denim")
 
-    def boom(system, prompt, schema, max_tokens):
+    def boom(config, system, prompt, schema, max_tokens):
         raise ai_layer.AiUnavailable("De AI-dienst antwoordde niet.")
 
     monkeypatch.setattr(ai_layer, "_ask", boom)
@@ -539,10 +560,10 @@ def test_an_unreachable_service_leaves_the_app_to_compose(client, kast, ai_on, m
 def test_nothing_is_asked_when_there_is_nothing_to_compose(monkeypatch):
     called = []
 
-    def fake(system, prompt, schema, max_tokens):
+    def fake(config, system, prompt, schema, max_tokens):
         called.append(prompt)
         return {}
 
     monkeypatch.setattr(ai_layer, "_ask", fake)
-    assert ai_layer.compose_looks([], set(), set(), set(), ["Werk"], ["Koud"], 5) == []
+    assert ai_layer.compose_looks(_config(), [], set(), set(), set(), ["Werk"], ["Koud"], 5) == []
     assert called == []

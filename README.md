@@ -177,15 +177,17 @@ Voor het **weer** (zie [Vandaag](#vandaag-outfits-op-basis-van-weer-gelegenheid-
 | `WARDROBE_WEATHER_COUNTRY` | `nl` | In welk land een kale postcode (`5421`) verondersteld wordt te liggen. |
 | `WARDROBE_WEATHER_CACHE_MINUTES` | `15` | Hoe lang een opgehaalde verwachting hergebruikt wordt. |
 
-Voor de **optionele AI-laag** (standaard uit, zie
-[Uitlegbaar zonder AI](#uitlegbaar-zonder-ai-met-ai-als-je-wilt)):
+Voor de **optionele AI-laag** (standaard uit). De eerste vier kan een beheerder
+ook gewoon **in de app** zetten onder Instellingen → AI; zet je ze hier, dan
+winnen ze en staan ze in de app op slot — zie
+[Wie zet 'm aan](#wie-zet-m-aan):
 
 | Variabele | Standaard | Uitleg |
 |---|---|---|
 | `WARDROBE_AI_ENABLED` | `false` | Zet de AI-laag aan. Blijft uit zolang er geen sleutel is. |
 | `WARDROBE_AI_API_KEY` | — | Anthropic API-sleutel. Alleen op de server; komt nooit in de browser. |
 | `WARDROBE_AI_MODEL` | `claude-opus-5` | Welk model. Een goedkoper model kan prima — dit is invulwerk. |
-| `WARDROBE_AI_EFFORT` | `low` | Hoeveel denkwerk: `low`…`max`. |
+| `WARDROBE_AI_EFFORT` | `low` | Hoeveel denkwerk: `low`, `medium` of `high`. |
 | `WARDROBE_AI_TIMEOUT_SECONDS` | `60` | Hoe lang de server op een antwoord wacht. |
 | `WARDROBE_AI_REFUSAL_FALLBACK` | `true` | Laat een geweigerde vraag binnen hetzelfde verzoek op een terugvalmodel draaien. |
 
@@ -473,10 +475,10 @@ backend/            FastAPI-app (Python)
     recommendations.py  "je zou dit aan kunnen trekken": weer + gelegenheid wegen
     autofill.py     tags raden en looks samenstellen voor een kast zonder beide
     ai.py           de optionele AI-laag: alleen waar de regels niets zeggen
+    app_settings.py instellingen die een beheerder in de app omzet (incl. AI)
     tags.py         de tagkolommen (gelegenheid, weer, stijl) en hun woordenlijsten
     outfit_store.py opgeslagen looks lezen en schrijven, plus het draaglogboek
     preferences.py  persoonlijke instellingen: thema, locatie, draaglogboek, stijl-DNA
-    app_settings.py instellingen die een beheerder in de app omzet (zelf registreren)
     migrations.py   genummerde schemastappen (één keer) + seeds (elke start)
     scheduled_backup.py  dagelijkse momentopname in <data>/backups, met rotatie
     oidc.py         federated login: discovery, PKCE, tokencontrole, groep → beheerder
@@ -1320,9 +1322,11 @@ dat blijft zo: de app is zelf-gehost, stuurt niets naar buiten en heeft nergens
 een API-sleutel voor nodig. Elke keuze is te herleiden tot een regel die in dit
 project staat, en dus aan te passen.
 
-Wil je er tóch een taalmodel bij, dan kan dat — als **laag erbovenop**, aan te
-zetten met `WARDROBE_AI_ENABLED` en een `WARDROBE_AI_API_KEY`. De taakverdeling
-is dan scherp:
+Wil je er tóch een taalmodel bij, dan kan dat — als **laag erbovenop**. Een
+beheerder zet 'm aan onder **Instellingen → AI (optioneel)**, met de uitleg
+erbij hoe je aan een API-sleutel komt; je hoeft er geen compose-bestand voor aan
+te raken. Wie dat liever wél in de omgeving regelt gebruikt `WARDROBE_AI_*` —
+zie [Wie zet 'm aan](#wie-zet-m-aan). De taakverdeling is dan scherp:
 
 Met de AI aan **stelt het model de looks zelf samen** en vult het tags aan waar
 de regels niets zeggen. Wat het daarbij meekrijgt en wat daarna wordt
@@ -1350,6 +1354,31 @@ afgedwongen, is het hele punt:
   vraag.
 - **Levert de AI te weinig, dan vult de app aan** met z'n eigen combinaties, zodat
   de knop altijd iets doet.
+
+### Wie zet 'm aan
+
+Twee wegen, en de omgeving wint:
+
+* **In de app** — een beheerder vindt onder **Instellingen → AI (optioneel)** een
+  schakelaar, een veld voor de sleutel, de keuze van het model en hoeveel
+  denkwerk het erin steekt. Dat wordt in de database opgeslagen, dus het
+  overleeft een herstart zonder dat er iets aan de container verandert. Onder de
+  knop *"Hoe kom ik aan een API-sleutel?"* staat stap voor stap hoe je er een
+  maakt, inclusief het zetten van een uitgavenlimiet.
+* **In de omgeving** — staat er een `WARDROBE_AI_*` in je omgeving of je `.env`,
+  dan wint die. Dat veld is in de app nog wel te zíen maar niet te wijzigen, en
+  een poging levert een nette foutmelding op in plaats van een knop die stiekem
+  niets doet. Wat in je compose-bestand staat, staat daar met een reden.
+
+De sleutel komt **nooit** terug over de lijn — ook niet naar een beheerder. Het
+scherm hoort alleen dát er een staat, plus de laatste vier tekens zodat je ziet
+wélke. Hij zit niet in een export; alleen een **momentopname** (de ruwe
+database) bevat 'm, net als al het andere.
+
+Je betaalt per gebruik, rechtstreeks aan Anthropic, met je eigen sleutel. Eén
+druk op de knop is één verzoek. Het model is instelbaar: de standaard is het
+slimste (en duurste), maar dit is invulwerk en geen redeneerwerk — een goedkoper
+model volstaat hier prima.
 
 **Wat er de deur uit gaat**, en alleen als je de knop mét AI gebruikt: naam,
 categorie, kleur, maat en seizoen van de betrokken kledingstukken. **Geen

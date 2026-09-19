@@ -19,8 +19,10 @@ en nooit een kledingstuk aan een look toevoegen dat er niet in zat.
 **Wat er de deur uit gaat**, en alleen als iemand de knop met AI gebruikt: de
 naam, categorie, kleur, maat en seizoenen van de betrokken kledingstukken.
 Geen foto's, geen namen van personen, geen kastnamen, geen oordelen van
-huisgenoten. Staat ``WARDROBE_AI_ENABLED`` uit — de standaard — dan wordt er
-niets verstuurd en bestaat deze module praktisch niet.
+huisgenoten. Staat de laag uit — de standaard — dan wordt er niets verstuurd en bestaat
+deze module praktisch niet. Aanzetten kan een beheerder in de app, of de
+operator met ``WARDROBE_AI_*`` in de omgeving; wat in de omgeving staat wint en
+staat in de app op slot (zie :func:`app.app_settings.ai_config`).
 """
 
 from __future__ import annotations
@@ -28,7 +30,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from .config import settings
+from .app_settings import AiConfig
 from .logging_setup import get_logger
 
 log = get_logger("ai")
@@ -46,12 +48,12 @@ class AiUnavailable(Exception):
     """Aanroepen kon niet. Draagt een zin die getoond mag worden."""
 
 
-def is_configured() -> bool:
+def is_configured(config: AiConfig) -> bool:
     """Of deze installatie de AI-laag überhaupt mag gebruiken."""
-    return bool(settings.ai_enabled and settings.ai_api_key.strip())
+    return config.usable
 
 
-def _client():
+def _client(config: AiConfig):
     """De Anthropic-client. Een functie, zodat een test 'm kan vervangen."""
     try:
         import anthropic
@@ -61,22 +63,22 @@ def _client():
             " geïnstalleerd in dit image."
         ) from exc
     return anthropic.Anthropic(
-        api_key=settings.ai_api_key.strip(),
-        timeout=settings.ai_timeout_seconds,
+        api_key=config.api_key.strip(),
+        timeout=config.timeout_seconds,
         max_retries=1,
     )
 
 
-def _ask(system: str, prompt: str, schema: dict, max_tokens: int) -> dict:
+def _ask(config: AiConfig, system: str, prompt: str, schema: dict, max_tokens: int) -> dict:
     """Eén vraag, één JSON-antwoord in de gevraagde vorm.
 
     Het enige punt in deze module dat het netwerk op gaat, zodat een test er
     één functie voor hoeft te vervangen — dezelfde opzet als
     :func:`app.weather._get_json`.
     """
-    client = _client()
+    client = _client(config)
     request = {
-        "model": settings.ai_model,
+        "model": config.model,
         "max_tokens": max_tokens,
         "system": system,
         "messages": [{"role": "user", "content": prompt}],
@@ -85,12 +87,12 @@ def _ask(system: str, prompt: str, schema: dict, max_tokens: int) -> dict:
         # geen redeneerwerk.
         "output_config": {
             "format": {"type": "json_schema", "schema": schema},
-            "effort": settings.ai_effort,
+            "effort": config.effort,
         },
     }
 
     try:
-        if settings.ai_refusal_fallback:
+        if config.refusal_fallback:
             # Weigert het model de vraag, dan draait dezelfde vraag binnen
             # hetzelfde verzoek op een terugvalmodel. Kost niets zolang het
             # niet gebeurt, en scheelt een mislukte knop als het wel gebeurt.
@@ -180,6 +182,7 @@ def describe_item(item) -> dict:
 
 
 def suggest_tags(
+    config: AiConfig,
     items: list,
     occasions: list[str],
     weather_tags: list[str],
@@ -205,7 +208,7 @@ def suggest_tags(
         ensure_ascii=False,
         indent=1,
     )
-    answer = _ask(TAG_SYSTEM, prompt, TAG_SCHEMA, max_tokens=8000)
+    answer = _ask(config, TAG_SYSTEM, prompt, TAG_SCHEMA, max_tokens=8000)
 
     results: list[AiTags] = []
     for row in answer.get("items", []) or []:
@@ -277,7 +280,7 @@ NAME_SCHEMA = {
 MAX_NAME = 60
 
 
-def name_looks(looks: list[list]) -> dict[int, str]:
+def name_looks(config: AiConfig, looks: list[list]) -> dict[int, str]:
     """Een naam per samengestelde look, op volgorde van binnenkomst.
 
     ``looks`` is een lijst van lijsten kledingstukken. Wat terugkomt is een
@@ -301,7 +304,7 @@ def name_looks(looks: list[list]) -> dict[int, str]:
         ensure_ascii=False,
         indent=1,
     )
-    answer = _ask(NAME_SYSTEM, prompt, NAME_SCHEMA, max_tokens=4000)
+    answer = _ask(config, NAME_SYSTEM, prompt, NAME_SCHEMA, max_tokens=4000)
 
     names: dict[int, str] = {}
     used: set[str] = set()
@@ -387,6 +390,7 @@ class AiLook:
 
 
 def compose_looks(
+    config: AiConfig,
     items: list,
     approved_pairs: set[frozenset[int]],
     rejected_pairs: set[frozenset[int]],
@@ -430,7 +434,7 @@ def compose_looks(
         ensure_ascii=False,
         indent=1,
     )
-    answer = _ask(COMPOSE_SYSTEM, prompt, COMPOSE_SCHEMA, max_tokens=8000)
+    answer = _ask(config, COMPOSE_SYSTEM, prompt, COMPOSE_SCHEMA, max_tokens=8000)
 
     proposals: list[AiLook] = []
     for row in answer.get("outfits", []) or []:

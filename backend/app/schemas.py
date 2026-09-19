@@ -755,3 +755,35 @@ class AutofillLooksResult(BaseModel):
     proposed: list[ComposedLook] = []
     #: Why fewer came back than were asked for, when that happened.
     note: str | None = None
+
+
+
+# ---- De AI-laag, zoals een beheerder 'm in de app instelt ----
+class AiModelOption(BaseModel):
+    value: str
+    label: str
+
+
+class AiSettingsOut(BaseModel):
+    """Wat er staat. Met opzet zónder de sleutel zelf."""
+    enabled: bool
+    model: str
+    effort: str
+    #: Of er een sleutel staat, en de laatste vier tekens ervan. De sleutel
+    #: zelf verlaat de server niet — ook niet naar een beheerder.
+    key_set: bool
+    key_hint: str | None = None
+    #: Velden die in de omgeving van de server vastliggen en hier dus niet te
+    #: wijzigen zijn.
+    locked: list[str] = []
+    models: list[AiModelOption] = []
+    efforts: list[str] = []
+    timeout_seconds: float = 60.0
+
+
+class AiSettingsIn(BaseModel):
+    enabled: bool | None = None
+    model: str | None = Field(default=None, max_length=80)
+    effort: str | None = Field(default=None, max_length=20)
+    #: Een lege string wist de sleutel; weglaten laat 'm staan.
+    api_key: str | None = Field(default=None, max_length=200)
