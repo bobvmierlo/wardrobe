@@ -271,16 +271,63 @@ class _Row:
 
 
 # ---------------------------------------------------------------------------
-# Namen voor looks — en alleen namen
+# Looks laten samenstellen — en de oordelen van de bewoners handhaven
 # ---------------------------------------------------------------------------
 
-def test_the_ai_names_looks_but_does_not_choose_the_clothes(client, kast, ai_on, monkeypatch):
+def compose_answer(*outfits):
+    """Een antwoord van het model in de vorm die compose_looks verwacht."""
+    return {
+        "outfits": [
+            {
+                "naam": name,
+                "item_ids": ids,
+                "occasions": occasions,
+                "weather": weather,
+                "reden": "omdat het kan",
+            }
+            for name, ids, occasions, weather in outfits
+        ]
+    }
+
+
+def test_the_ai_composes_looks_and_they_are_saved(client, kast, ai_on, monkeypatch):
+    token, wid = kast
+    shirt = item(client, token, wid, "Wit overhemd", "Overhemd", color="wit")
+    trousers = item(client, token, wid, "Nette broek", "Broek", color="navy")
+    shoes = item(client, token, wid, "Bruine schoenen", "Schoenen", color="bruin")
+
+    answer_with(
+        monkeypatch,
+        compose_answer(
+            ("Nette dinsdag", [shirt["id"], trousers["id"], shoes["id"]], ["Werk"], ["Mild"]),
+        ),
+    )
+
+    r = client.post(
+        "/api/autofill/looks",
+        headers=h(token),
+        params={"wardrobe_id": wid, "count": 1, "use_ai": True},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["by_ai"] == 1
+    look = body["created"][0]
+    assert look["name"] == "Nette dinsdag"
+    assert {i["id"] for i in look["items"]} == {shirt["id"], trousers["id"], shoes["id"]}
+
+    saved = client.get("/api/outfits", headers=h(token), params={"wardrobe_id": wid}).json()
+    assert [o["name"] for o in saved] == ["Nette dinsdag"]
+
+
+def test_a_rejected_pair_is_thrown_out_however_the_model_answers(
+    client, kast, ai_on, monkeypatch
+):
+    """De kern: een "nee" van een huisgenoot wint het van elk model."""
     token, wid = kast
     shirt = item(client, token, wid, "Wit overhemd", "Overhemd", color="wit")
     trousers = item(client, token, wid, "Nette broek", "Broek", color="navy")
     jeans = item(client, token, wid, "Blauwe jeans", "Jeans", color="denim")
 
-    # Dit paar is afgekeurd: geen enkele naamgeving mag het terugbrengen.
     r = client.post(
         "/api/matches",
         headers=h(token),
@@ -288,10 +335,130 @@ def test_the_ai_names_looks_but_does_not_choose_the_clothes(client, kast, ai_on,
     )
     assert r.status_code == 204, r.text
 
+    # Het model stelt precies die verboden combinatie voor, plus een geldige.
     answer_with(
         monkeypatch,
-        {"namen": [{"index": 0, "naam": "Frisse maandag"}, {"index": 1, "naam": "Rustig blauw"}]},
+        compose_answer(
+            ("Verboden look", [shirt["id"], trousers["id"]], [], []),
+            ("Prima look", [shirt["id"], jeans["id"]], [], []),
+        ),
     )
+
+    r = client.post(
+        "/api/autofill/looks",
+        headers=h(token),
+        params={"wardrobe_id": wid, "count": 2, "use_ai": True},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+
+    for look in body["created"]:
+        ids = {i["id"] for i in look["items"]}
+        assert not {shirt["id"], trousers["id"]} <= ids
+    assert not any(look["name"] == "Verboden look" for look in body["created"])
+    assert any(look["name"] == "Prima look" for look in body["created"])
+    assert "afgekeurd" in body["ai_note"], "en het scherm zegt dat het is afgewezen"
+
+
+def test_the_approved_and_rejected_pairs_are_actually_sent(client, kast, ai_on, monkeypatch):
+    """Het model kan er alleen rekening mee houden als het ze krijgt."""
+    token, wid = kast
+    shirt = item(client, token, wid, "Wit overhemd", "Overhemd", color="wit")
+    trousers = item(client, token, wid, "Nette broek", "Broek", color="navy")
+    jeans = item(client, token, wid, "Blauwe jeans", "Jeans", color="denim")
+
+    client.post(
+        "/api/matches",
+        headers=h(token),
+        json={"item_a_id": shirt["id"], "item_b_id": jeans["id"], "verdict": "yes"},
+    )
+    client.post(
+        "/api/matches",
+        headers=h(token),
+        json={"item_a_id": shirt["id"], "item_b_id": trousers["id"], "verdict": "no"},
+    )
+
+    sent = []
+    answer_with(monkeypatch, {"outfits": []}, record=sent)
+    client.post(
+        "/api/autofill/looks",
+        headers=h(token),
+        params={"wardrobe_id": wid, "count": 2, "use_ai": True},
+    )
+
+    import json as _json
+
+    payload = _json.loads(sent[0]["prompt"])
+    assert sorted([shirt["id"], jeans["id"]]) in payload["goedgekeurde_paren"]
+    assert sorted([shirt["id"], trousers["id"]]) in payload["afgekeurde_paren"]
+    assert "afgekeurd paar mag NOOIT" in sent[0]["system"]
+
+
+def test_a_look_that_already_exists_is_not_proposed_twice(client, kast, ai_on, monkeypatch):
+    token, wid = kast
+    shirt = item(client, token, wid, "Wit overhemd", "Overhemd", color="wit")
+    jeans = item(client, token, wid, "Blauwe jeans", "Jeans", color="denim")
+
+    existing = client.post(
+        "/api/outfits",
+        headers=h(token),
+        params={"wardrobe_id": wid},
+        json={"name": "Bestond al", "item_ids": [shirt["id"], jeans["id"]]},
+    )
+    assert existing.status_code == 201, existing.text
+
+    answer_with(
+        monkeypatch, compose_answer(("Nieuw geprobeerd", [shirt["id"], jeans["id"]], [], []))
+    )
+    r = client.post(
+        "/api/autofill/looks",
+        headers=h(token),
+        params={"wardrobe_id": wid, "count": 1, "use_ai": True},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["by_ai"] == 0
+    assert "al bestond" in body["ai_note"]
+
+    saved = client.get("/api/outfits", headers=h(token), params={"wardrobe_id": wid}).json()
+    assert len(saved) == 1, "er is niets dubbels bijgekomen"
+
+
+def test_unknown_ids_and_half_empty_proposals_are_dropped(client, kast, ai_on, monkeypatch):
+    token, wid = kast
+    shirt = item(client, token, wid, "Wit overhemd", "Overhemd", color="wit")
+    jeans = item(client, token, wid, "Blauwe jeans", "Jeans", color="denim")
+
+    answer_with(
+        monkeypatch,
+        compose_answer(
+            ("Verzonnen kleding", [999998, 999999], [], []),
+            ("Eén stuk", [shirt["id"]], [], []),
+            ("Deels verzonnen", [shirt["id"], jeans["id"], 999999], [], []),
+        ),
+    )
+    r = client.post(
+        "/api/autofill/looks",
+        headers=h(token),
+        params={"wardrobe_id": wid, "count": 3, "use_ai": True},
+    )
+    assert r.status_code == 200, r.text
+    created = r.json()["created"]
+
+    kept = [look for look in created if look["name"] == "Deels verzonnen"]
+    assert kept, "de twee echte stukken mogen blijven"
+    assert {i["id"] for i in kept[0]["items"]} == {shirt["id"], jeans["id"]}
+    assert not any(look["name"] in {"Verzonnen kleding", "Eén stuk"} for look in created)
+
+
+def test_the_app_tops_up_what_the_ai_did_not_deliver(client, kast, ai_on, monkeypatch):
+    token, wid = kast
+    shirt = item(client, token, wid, "Wit overhemd", "Overhemd", color="wit")
+    jeans = item(client, token, wid, "Blauwe jeans", "Jeans", color="denim")
+    item(client, token, wid, "Grijze trui", "Trui", color="grijs")
+    item(client, token, wid, "Nette broek", "Broek", color="navy")
+
+    answer_with(monkeypatch, compose_answer(("Van de AI", [shirt["id"], jeans["id"]], [], [])))
 
     r = client.post(
         "/api/autofill/looks",
@@ -300,73 +467,76 @@ def test_the_ai_names_looks_but_does_not_choose_the_clothes(client, kast, ai_on,
     )
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["named_by_ai"] >= 1
-    assert any(look["name"] == "Frisse maandag" for look in body["created"])
+    assert body["by_ai"] == 1
+    assert len(body["created"]) > 1, "de app vult zelf aan"
 
-    for look in body["created"]:
-        ids = {i["id"] for i in look["items"]}
-        assert not {shirt["id"], trousers["id"]} <= ids, "afgekeurd paar blijft afgekeurd"
-    assert any(
-        {shirt["id"], jeans["id"]} <= {i["id"] for i in look["items"]}
-        for look in body["created"]
-    )
+    sets = [frozenset(i["id"] for i in look["items"]) for look in body["created"]]
+    assert len(sets) == len(set(sets)), "en dubbelt de look van de AI niet"
+    names = [look["name"] for look in body["created"]]
+    assert len(names) == len(set(names))
 
 
-def test_a_name_that_clashes_or_is_empty_falls_back_to_the_apps_own(
-    client, kast, ai_on, monkeypatch
-):
+def test_the_model_cannot_tag_a_look_against_its_own_clothes(client, kast, ai_on, monkeypatch):
     token, wid = kast
-    shirt = item(client, token, wid, "Wit overhemd", "Overhemd", color="wit")
-    jeans = item(client, token, wid, "Blauwe jeans", "Jeans", color="denim")
+    coat = item(client, token, wid, "Winterjas", "Jas", color="zwart", weather="Koud")
+    trousers = item(client, token, wid, "Wollen broek", "Broek", color="grijs", weather="Koud")
 
-    # Een bestaande look bezet de naam die het model wil gebruiken.
-    existing = client.post(
-        "/api/outfits",
-        headers=h(token),
-        params={"wardrobe_id": wid},
-        json={"name": "Frisse maandag", "item_ids": [shirt["id"]]},
+    # Het model beweert dat deze winterkleding voor de hitte is.
+    answer_with(
+        monkeypatch,
+        compose_answer(("Zomers", [coat["id"], trousers["id"]], [], ["Heet", "Koud"])),
     )
-    assert existing.status_code == 201, existing.text
-
-    answer_with(monkeypatch, {"namen": [{"index": 0, "naam": "  frisse maandag "}]})
     r = client.post(
         "/api/autofill/looks",
         headers=h(token),
         params={"wardrobe_id": wid, "count": 1, "use_ai": True},
     )
     assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["named_by_ai"] == 0
-    for look in body["created"]:
-        assert look["name"] != "Frisse maandag"
-        assert look["name"]
+    look = r.json()["created"][0]
+    assert look["weather_tags"] == ["Koud"], "Heet spreekt de kleding tegen en valt af"
 
 
-def test_names_are_trimmed_and_deduplicated_before_they_are_used(monkeypatch):
-    """De opschoning zelf, los van een kast."""
-    class _Item:
-        id, name, category, color, season = 1, "Trui", "Trui", "grijs", ""
+def test_the_model_may_tag_a_look_whose_clothes_say_nothing(client, kast, ai_on, monkeypatch):
+    """Precies waar de AI-laag voor bestaat: invullen waar niets staat."""
+    token, wid = kast
+    a = item(client, token, wid, "Gouden ketting", "Sieraad", color="goud")
+    b = item(client, token, wid, "Zwarte jurk", "Jurk", color="zwart")
 
-    looks = [[_Item()], [_Item()], [_Item()], [_Item()]]
-    answer_with(
-        monkeypatch,
-        {
-            "namen": [
-                {"index": 0, "naam": "  Zachte   zondag \n"},
-                {"index": 1, "naam": "zachte zondag"},   # dubbel, valt af
-                {"index": 2, "naam": "   "},             # leeg, valt af
-                {"index": 9, "naam": "Bestaat niet"},    # index buiten bereik
-                {"index": 3, "naam": "x" * 200},         # wordt afgekapt
-            ]
-        },
+    answer_with(monkeypatch, compose_answer(("Avondje uit", [a["id"], b["id"]], ["Feest"], ["Mild"])))
+    r = client.post(
+        "/api/autofill/looks",
+        headers=h(token),
+        params={"wardrobe_id": wid, "count": 1, "use_ai": True},
     )
-    names = ai_layer.name_looks(looks)
-    assert names[0] == "Zachte zondag"
-    assert 1 not in names and 2 not in names and 9 not in names
-    assert len(names[3]) == ai_layer.MAX_NAME
+    assert r.status_code == 200, r.text
+    look = r.json()["created"][0]
+    assert look["occasions"] == ["Feest"]
+    assert look["weather_tags"] == ["Mild"]
 
 
-def test_nothing_is_sent_when_there_is_nothing_to_ask(monkeypatch):
+def test_an_unreachable_service_leaves_the_app_to_compose(client, kast, ai_on, monkeypatch):
+    token, wid = kast
+    item(client, token, wid, "Wit overhemd", "Overhemd", color="wit")
+    item(client, token, wid, "Blauwe jeans", "Jeans", color="denim")
+
+    def boom(system, prompt, schema, max_tokens):
+        raise ai_layer.AiUnavailable("De AI-dienst antwoordde niet.")
+
+    monkeypatch.setattr(ai_layer, "_ask", boom)
+
+    r = client.post(
+        "/api/autofill/looks",
+        headers=h(token),
+        params={"wardrobe_id": wid, "count": 2, "use_ai": True},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["by_ai"] == 0
+    assert body["created"], "de app heeft het zonder gedaan"
+    assert "antwoordde niet" in body["ai_note"]
+
+
+def test_nothing_is_asked_when_there_is_nothing_to_compose(monkeypatch):
     called = []
 
     def fake(system, prompt, schema, max_tokens):
@@ -374,6 +544,5 @@ def test_nothing_is_sent_when_there_is_nothing_to_ask(monkeypatch):
         return {}
 
     monkeypatch.setattr(ai_layer, "_ask", fake)
-    assert ai_layer.suggest_tags([], ["Werk"], ["Koud"]) == []
-    assert ai_layer.name_looks([]) == {}
-    assert called == [], "een lege vraag hoort de deur niet uit te gaan"
+    assert ai_layer.compose_looks([], set(), set(), set(), ["Werk"], ["Koud"], 5) == []
+    assert called == []

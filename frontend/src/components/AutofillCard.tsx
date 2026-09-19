@@ -90,7 +90,7 @@ export default function AutofillCard({ wardrobeId, onChanged }: Props) {
       setResult(
         done.created.length
           ? `${done.created.length} look(s) samengesteld${
-              done.named_by_ai ? `, ${done.named_by_ai} met een naam van de AI` : ""
+              done.by_ai ? `, waarvan ${done.by_ai} door de AI` : ""
             }.${done.note ? ` ${done.note}` : ""}${done.ai_note ? ` ${done.ai_note}` : ""}`
           : (done.note ?? "Geen nieuwe combinaties gevonden."),
       );
@@ -148,11 +148,12 @@ export default function AutofillCard({ wardrobeId, onChanged }: Props) {
             <span>✨ Ook AI gebruiken</span>
           </label>
           <p className="muted" style={{ fontSize: "0.78rem", margin: "6px 0 0" }}>
-            De regels hierboven blijven leidend; de AI vult alleen aan waar ze niets zeggen, en
-            verzint geen tag die deze app niet kent. Bij looks bepaalt 'ie alléén de namen — welke
-            kleding samengaat blijft aan de app, anders zou een afgekeurd paar terug kunnen komen.
-            Hiervoor gaan naam, categorie, kleur, maat en seizoen van je kleding naar de
-            AI-dienst. Geen foto's, geen namen van personen.
+            De AI stelt dan zelf looks samen en vult tags aan waar de regels niets zeggen. Wat
+            jullie hebben goedgekeurd krijgt 'ie mee als aanrader; wat is <strong>afgekeurd</strong>
+            wordt daarna alsnog afgedwongen door de app — stelt de AI zo'n paar toch voor, dan gaat
+            die look eruit en zie je hier hoeveel er zijn afgewezen. Tags die deze app niet kent
+            vallen af, en ingevulde velden blijven met rust. Hiervoor gaan naam, categorie, kleur,
+            maat en seizoen van je kleding naar de AI-dienst. Geen foto's, geen namen van personen.
           </p>
         </div>
       )}

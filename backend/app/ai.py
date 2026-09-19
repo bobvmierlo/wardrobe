@@ -321,3 +321,141 @@ def name_looks(looks: list[list]) -> dict[int, str]:
         used.add(cleaned.lower())
         names[index] = cleaned
     return names
+
+
+# ---------------------------------------------------------------------------
+# Looks laten samenstellen
+# ---------------------------------------------------------------------------
+
+COMPOSE_SYSTEM = (
+    "Je stelt outfits samen uit de kledingkast van één persoon. Je krijgt de"
+    " kledingstukken, welke combinaties de bewoners zelf al hebben goedgekeurd,"
+    " welke ze hebben afgekeurd, en welke outfits al bestaan."
+    "\n\nRegels:"
+    "\n- Gebruik uitsluitend de meegegeven id's. Verzin er nooit een bij."
+    "\n- Een afgekeurd paar mag NOOIT samen in één outfit. Dit is de"
+    " belangrijkste regel: de bewoners hebben dat zelf besloten."
+    "\n- Goedgekeurde paren zijn juist een aanrader; gebruik ze waar het past."
+    "\n- Een outfit is een bovenstuk met een onderstuk, of een jurk, meestal met"
+    " schoenen erbij, en eventueel een jas of accessoire. Twee broeken of twee"
+    " truien samen is geen outfit."
+    "\n- Herhaal geen outfit die al bestaat, en maak ze onderling gevarieerd:"
+    " niet elk kledingstuk in elke outfit."
+    "\n- Kies tags alleen uit de meegegeven lijsten, en alleen als ze voor"
+    " élk kledingstuk in de outfit kloppen. Twijfel je, laat ze leeg."
+    "\n- Geef elke outfit een korte Nederlandse naam van maximaal vier woorden."
+    "\n- Antwoord uitsluitend met JSON in het gevraagde formaat."
+)
+
+COMPOSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "outfits": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "naam": {"type": "string"},
+                    "item_ids": {"type": "array", "items": {"type": "integer"}},
+                    "occasions": {"type": "array", "items": {"type": "string"}},
+                    "weather": {"type": "array", "items": {"type": "string"}},
+                    "reden": {"type": "string"},
+                },
+                "required": ["naam", "item_ids", "occasions", "weather", "reden"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["outfits"],
+    "additionalProperties": False,
+}
+
+
+@dataclass
+class AiLook:
+    """Eén voorstel van het model, al opgeschoond maar nog niet gecontroleerd.
+
+    Wat hier uit komt is nadrukkelijk een *voorstel*: of het mag, bepaalt
+    :func:`app.autofill.validate_ai_looks` aan de hand van de oordelen die in
+    de database staan.
+    """
+    name: str
+    item_ids: list[int]
+    occasions: list[str]
+    weather: list[str]
+    reason: str = ""
+
+
+def compose_looks(
+    items: list,
+    approved_pairs: set[frozenset[int]],
+    rejected_pairs: set[frozenset[int]],
+    existing: set[frozenset[int]],
+    occasions: list[str],
+    weather_tags: list[str],
+    count: int,
+) -> list[AiLook]:
+    """Vraag het model om outfits samen te stellen uit deze kast.
+
+    De goedgekeurde en afgekeurde paren gaan mee, zodat het model er rekening
+    mee kán houden. Dat het er rekening mee *moet* houden wordt daarna pas
+    afgedwongen — een model dat zich vergist, mag nooit een besluit van de
+    bewoners overrulen.
+    """
+    if not items:
+        return []
+    subset = items[:MAX_ITEMS]
+    known = {item.id for item in subset}
+
+    def _pairs(pairs: set[frozenset[int]]) -> list[list[int]]:
+        # Alleen paren waarvan beide stukken ook echt meegaan, anders staan er
+        # id's in de vraag die in de lijst ontbreken.
+        out = []
+        for pair in pairs:
+            ids = sorted(pair)
+            if len(ids) == 2 and ids[0] in known and ids[1] in known:
+                out.append(ids)
+        return sorted(out)[:400]
+
+    prompt = json.dumps(
+        {
+            "aantal_gevraagd": count,
+            "gelegenheden": occasions,
+            "weertypes": weather_tags,
+            "kledingstukken": [describe_item(item) for item in subset],
+            "goedgekeurde_paren": _pairs(approved_pairs),
+            "afgekeurde_paren": _pairs(rejected_pairs),
+            "bestaande_outfits": [sorted(ids) for ids in list(existing)[:100]],
+        },
+        ensure_ascii=False,
+        indent=1,
+    )
+    answer = _ask(COMPOSE_SYSTEM, prompt, COMPOSE_SCHEMA, max_tokens=8000)
+
+    proposals: list[AiLook] = []
+    for row in answer.get("outfits", []) or []:
+        if not isinstance(row, dict):
+            continue
+        ids = row.get("item_ids")
+        if not isinstance(ids, list):
+            continue
+        cleaned_ids: list[int] = []
+        for value in ids:
+            if isinstance(value, int) and value in known and value not in cleaned_ids:
+                cleaned_ids.append(value)
+        name = row.get("naam")
+        name = " ".join(name.split())[:MAX_NAME].strip() if isinstance(name, str) else ""
+        reason = row.get("reden")
+        reason = " ".join(reason.split())[:200].strip() if isinstance(reason, str) else ""
+        if len(cleaned_ids) < 2:
+            continue  # niets om een outfit van te maken
+        proposals.append(
+            AiLook(
+                name=name,
+                item_ids=cleaned_ids,
+                occasions=_keep(row.get("occasions"), {o.lower(): o for o in occasions}),
+                weather=_keep(row.get("weather"), {w.lower(): w for w in weather_tags}),
+                reason=reason,
+            )
+        )
+    return proposals

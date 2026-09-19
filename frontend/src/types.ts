@@ -618,6 +618,7 @@ export interface AutofillTagsResult {
 export interface AutofillLooksResult {
   created: Outfit[];
   note: string | null;
-  named_by_ai: number;
+  /** How many of these the AI composed; the rest the app built itself. */
+  by_ai: number;
   ai_note: string | null;
 }

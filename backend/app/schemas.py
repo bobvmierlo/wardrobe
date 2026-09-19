@@ -731,8 +731,11 @@ class ComposedLook(BaseModel):
 
 class AutofillLooksResult(BaseModel):
     created: list[OutfitOut] = []
-    #: How many looks got their name from the AI layer.
-    named_by_ai: int = 0
+    #: How many of these the AI layer composed. The rest the app built itself,
+    #: which is also what happens when the AI returns too few or none.
+    by_ai: int = 0
+    #: Says what the AI layer did or could not do — including how many of its
+    #: proposals were thrown out, and why.
     ai_note: str | None = None
     #: Filled instead of ``created`` when nothing was saved (a dry run).
     proposed: list[ComposedLook] = []

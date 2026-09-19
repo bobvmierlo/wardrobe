@@ -314,3 +314,127 @@ def palette_of(items: list[Item]) -> list[str]:
         if base and base not in colors:
             colors.append(base)
     return colors
+
+
+# ---------------------------------------------------------------------------
+# Voorstellen van de AI toetsen aan wat de bewoners hebben besloten
+# ---------------------------------------------------------------------------
+
+@dataclass
+class LookReview:
+    """Wat er met de voorstellen van het model gebeurde, en waarom.
+
+    Bestaat zodat het scherm kan zeggen wat er is weggegooid in plaats van
+    stilletjes minder looks op te leveren dan het model voorstelde.
+    """
+    accepted: list[LookPlan] = field(default_factory=list)
+    rejected_pair: int = 0
+    already_existed: int = 0
+    too_small: int = 0
+    duplicate: int = 0
+
+    @property
+    def dropped(self) -> int:
+        return self.rejected_pair + self.already_existed + self.too_small + self.duplicate
+
+    def summary(self) -> str | None:
+        """Eén zin voor het scherm, of None als alles door de keuring kwam."""
+        if not self.dropped:
+            return None
+        parts = []
+        if self.rejected_pair:
+            parts.append(
+                f"{self.rejected_pair} met een combinatie die iemand had afgekeurd"
+            )
+        if self.already_existed:
+            parts.append(f"{self.already_existed} die al bestond")
+        if self.duplicate:
+            parts.append(f"{self.duplicate} dubbel")
+        if self.too_small:
+            parts.append(f"{self.too_small} zonder bruikbare kleding")
+        return f"{self.dropped} voorstel(len) van de AI afgewezen: {', '.join(parts)}."
+
+
+def validate_ai_looks(
+    proposals: list,
+    items_by_id: dict[int, Item],
+    rejected_pairs: set[frozenset[int]],
+    existing: set[frozenset[int]],
+    taken_names: set[str],
+) -> LookReview:
+    """Laat alleen door wat de kast zelf toestaat.
+
+    Dit is het punt waar een voorstel een look wordt, en het staat met opzet
+    hier in plaats van in :mod:`app.ai`: of twee kledingstukken samen mogen is
+    een besluit van de bewoners, en dat besluit hoort niet afhankelijk te zijn
+    van wat een model ervan vindt. Een outfit met een afgekeurd paar erin wordt
+    daarom in z'n geheel geweigerd — er één stuk uit halen zou van hun "nee"
+    een "ja, maar" maken.
+
+    ``existing`` en ``taken_names`` groeien mee, zodat twee voorstellen in
+    dezelfde ronde elkaar niet kunnen dubbelen.
+    """
+    review = LookReview()
+
+    for proposal in proposals:
+        items = [items_by_id[i] for i in proposal.item_ids if i in items_by_id]
+        if len(items) < 2:
+            review.too_small += 1
+            continue
+
+        ids = [item.id for item in items]
+        blocked = any(
+            frozenset((a, b)) in rejected_pairs
+            for index, a in enumerate(ids)
+            for b in ids[index + 1:]
+        )
+        if blocked:
+            review.rejected_pair += 1
+            continue
+
+        key = frozenset(ids)
+        if key in existing:
+            review.already_existed += 1
+            continue
+
+        name = (proposal.name or "").strip()
+        if not name or name.lower() in taken_names:
+            # Geen bruikbare naam gekregen: de app verzint er zelf een, zodat
+            # het voorstel niet om zoiets kleins sneuvelt.
+            name = _name_for(items, taken_names)
+        else:
+            taken_names.add(name.lower())
+        existing.add(key)
+
+        review.accepted.append(
+            LookPlan(
+                name=name,
+                items=items,
+                # De tags van het model zijn een voorstel; wat de kleding zelf
+                # zegt is een feit. Dus: alleen houden wat beide vinden.
+                seasons=_shared(items, "season"),
+                occasions=_agreed(items, "occasion", proposal.occasions),
+                weather=_agreed(items, "weather", proposal.weather),
+                styles=_union(items, "style"),
+                reason=proposal.reason or "samengesteld met AI",
+            )
+        )
+    return review
+
+
+def _agreed(items: list[Item], attribute: str, proposed: list[str]) -> list[str]:
+    """De tags die het model voorstelt *en* die de kleding niet tegenspreekt.
+
+    Zegt geen enkel kledingstuk iets over dit veld, dan mag het voorstel staan:
+    dat is precies het geval waarvoor de AI-laag bestaat. Zodra er wél iets
+    getagd is, wint de doorsnede van de kleding — een look hoort niets te
+    claimen wat z'n kleren tegenspreken.
+    """
+    shared = _shared(items, attribute)
+    if not proposed:
+        return shared
+    if not shared:
+        tagged = [item for item in items if split_tags(getattr(item, attribute))]
+        return proposed if not tagged else []
+    keep = {tag.lower() for tag in shared}
+    return [tag for tag in proposed if tag.lower() in keep]

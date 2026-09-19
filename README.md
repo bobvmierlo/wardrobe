@@ -1303,18 +1303,32 @@ Wil je er tóch een taalmodel bij, dan kan dat — als **laag erbovenop**, aan t
 zetten met `WARDROBE_AI_ENABLED` en een `WARDROBE_AI_API_KEY`. De taakverdeling
 is dan scherp:
 
-- **De regels bepalen wat mag.** Welke kledingstukken samen mogen (niemand
-  keurde het paar af), welke kleuren kunnen, welke gelegenheden bestaan. Daar
-  komt het model niet aan. Bij het samenstellen van looks bepaalt de AI daarom
-  **alleen de namen** — welke kleding samengaat blijft aan de app, want anders
-  zou een afgekeurd paar via een omweg terug kunnen komen.
-- **Het model vult in waar geen regel bestaat.** De gelegenheid van een
-  kledingstuk waar de categorie niets over zegt, en een naam die leuker leest
-  dan "Wit overhemd met nette broek".
-- **Alles wat terugkomt gaat alsnog langs de eigen woordenlijsten.** Een tag
-  die deze installatie niet kent, wordt weggegooid. Het model kan dus geen
-  gelegenheid introduceren die een beheerder heeft verwijderd.
-- **Het overschrijft nog steeds niets.** Ook de AI vult alleen lege velden.
+Met de AI aan **stelt het model de looks zelf samen** en vult het tags aan waar
+de regels niets zeggen. Wat het daarbij meekrijgt en wat daarna wordt
+afgedwongen, is het hele punt:
+
+- **Het model krijgt jullie oordelen mee.** Welke paren de bewoners zelf
+  hebben goedgekeurd (een aanrader) en welke ze hebben afgekeurd (verboden),
+  plus de looks die al bestaan. Op een kast die al een tijd draait is dat
+  precies de kennis die er ligt.
+- **Maar dat het zich eraan hield, wordt niet aangenomen.** Elk voorstel gaat
+  langs een controle in de app: zit er een **afgekeurd paar** in, dan gaat die
+  hele look eruit — niet één stuk eruit wippen, want dan maak je van hun "nee"
+  een "ja, maar". Hetzelfde geldt voor verzonnen id's, looks die al bestaan en
+  dubbelen binnen dezelfde ronde. Het scherm zegt hoeveel voorstellen zijn
+  afgewezen en waarom.
+- **Alles wat terugkomt gaat langs de eigen woordenlijsten.** Een tag die deze
+  installatie niet kent, wordt weggegooid. Het model kan dus geen gelegenheid
+  introduceren die een beheerder heeft verwijderd.
+- **Een look claimt nog steeds niets wat z'n kleren tegenspreken.** Zegt het
+  model dat een winterjas voor de hitte is terwijl de kleding "Koud" zegt, dan
+  valt die tag af. Zeggen de kledingstukken zelf niets, dan mag het voorstel
+  blijven — dát is waar de AI-laag voor bestaat.
+- **Het overschrijft nog steeds niets.** Ook de AI vult alleen lege velden, en
+  een kledingstuk waar de regels al raad mee wisten gaat niet eens mee in de
+  vraag.
+- **Levert de AI te weinig, dan vult de app aan** met z'n eigen combinaties, zodat
+  de knop altijd iets doet.
 
 **Wat er de deur uit gaat**, en alleen als je de knop mét AI gebruikt: naam,
 categorie, kleur, maat en seizoen van de betrokken kledingstukken. **Geen
@@ -1323,8 +1337,8 @@ huisgenoten. Staat het uit — de standaard — dan wordt er niets verstuurd en
 verschijnt de schakelaar niet eens in de app.
 
 Gaat de dienst onderuit, dan valt de knop terug op de regels en zegt het scherm
-erbij dat de AI niet meedeed. Het scherm vermeldt ook hoeveel labels van de AI
-kwamen, zodat je nooit hoeft te raden waar iets vandaan komt.
+erbij dat de AI niet meedeed. Het scherm vermeldt ook hoeveel looks en labels
+van de AI kwamen, zodat je nooit hoeft te raden waar iets vandaan komt.
 
 ### Draaglogboek: standaard uit
 

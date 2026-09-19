@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from .. import ai as ai_layer
 from .. import audit
 from ..access import require_edit, require_view
-from ..autofill import TagPlan, apply_tags, plan_looks, plan_tags
+from ..autofill import TagPlan, apply_tags, plan_looks, plan_tags, validate_ai_looks
 from ..database import get_db
 from ..deps import get_current_user
 from ..models import Item, OccasionOption, Outfit, User
@@ -46,12 +46,22 @@ def _occasion_names(db: Session) -> list[str]:
     ]
 
 
-def _look_context(db: Session, wardrobe_id: int, count: int):
-    """Everything :func:`app.autofill.plan_looks` needs, read once."""
+def _look_context(db: Session, wardrobe_id: int, count: int, seed: list | None = None):
+    """Everything :func:`app.autofill.plan_looks` needs, read once.
+
+    ``seed`` holds looks that are already going to be created this run (the
+    AI's, when it ran): their garment sets and names count as taken, so the
+    app's own top-up cannot duplicate them.
+    """
     items = wardrobe_items(db, wardrobe_id)
     outfits = wardrobe_outfits(db, wardrobe_id)
     existing = {frozenset(it.id for it in o.items) for o in outfits}
     taken = {o.name.lower() for o in outfits}
+    for plan in seed or []:
+        existing.add(frozenset(it.id for it in plan.items))
+        taken.add(plan.name.lower())
+    if count <= 0:
+        return items, outfits, []
     rejected, approved = verdict_pairs(db, {it.id for it in items})
     good_pairs, bad_pairs = load_pairs(db)
     plans = plan_looks(
@@ -194,6 +204,47 @@ def _ai_tag_plans(
     return plans, None
 
 
+def _ai_look_plans(
+    db: Session,
+    wardrobe_id: int,
+    outfits: list,
+    count: int,
+) -> tuple[list, int, str | None]:
+    """Let the model compose looks, then hold every proposal to the kast's rules.
+
+    The model is told which pairs were approved and which were rejected, so it
+    *can* take them into account. Whether it *did* is not taken on trust:
+    :func:`app.autofill.validate_ai_looks` throws out anything that pairs two
+    garments somebody said no to, and says how many it threw out.
+    """
+    items = wardrobe_items(db, wardrobe_id)
+    if len(items) < 2:
+        return [], 0, None
+
+    rejected, approved = verdict_pairs(db, {it.id for it in items})
+    existing = {frozenset(it.id for it in o.items) for o in outfits}
+    taken = {o.name.lower() for o in outfits}
+
+    try:
+        proposals = ai_layer.compose_looks(
+            items,
+            approved,
+            rejected,
+            existing,
+            _occasion_names(db),
+            WEATHER_TAGS,
+            count,
+        )
+    except ai_layer.AiUnavailable as exc:
+        return [], 0, str(exc)
+
+    review = validate_ai_looks(
+        proposals, {it.id: it for it in items}, rejected, existing, taken
+    )
+    accepted = review.accepted[:count]
+    return accepted, len(accepted), review.summary()
+
+
 @router.post("/looks", response_model=AutofillLooksResult)
 def compose_looks(
     wardrobe_id: int,
@@ -209,30 +260,35 @@ def compose_looks(
     rules, season overlap, and never a pair anybody rejected. A look is tagged
     with what the garments in it agree on, so it claims nothing they do not.
 
-    ``use_ai`` changes **only the names**. Which garments end up together stays
-    the app's own decision, because that is the part with rules behind it: a
-    pair somebody rejected must never reappear because a model liked the look
-    of it.
+    With ``use_ai`` the model composes the looks itself. It is told which pairs
+    the household approved and which they rejected — but that it took them into
+    account is never assumed: every proposal goes through
+    :func:`app.autofill.validate_ai_looks`, which throws out any outfit pairing
+    two garments somebody said no to, and reports how many it threw out. A
+    rejected pair can therefore not come back because a model liked the look of
+    it, whatever the model answers.
+
+    Whatever the AI does not deliver — because it was off, unreachable, or its
+    proposals did not survive the check — the app composes itself, so the button
+    always does something.
     """
     require_edit(db, wardrobe_id, user)
-    items, outfits, plans = _look_context(db, wardrobe_id, count)
 
-    named_by_ai, ai_note = 0, None
-    if use_ai and plans:
+    by_ai, ai_note = 0, None
+    plans: list = []
+
+    if use_ai:
+        outfits = wardrobe_outfits(db, wardrobe_id)
         if not ai_layer.is_configured():
             ai_note = "De AI-laag staat uit in deze installatie."
         else:
-            try:
-                taken = {o.name.lower() for o in outfits}
-                names = ai_layer.name_looks([plan.items for plan in plans])
-                for index, name in names.items():
-                    if name.lower() in taken:
-                        continue  # botst met een bestaande look; app-naam blijft
-                    taken.add(name.lower())
-                    plans[index].name = name
-                    named_by_ai += 1
-            except ai_layer.AiUnavailable as exc:
-                ai_note = str(exc)
+            plans, by_ai, ai_note = _ai_look_plans(db, wardrobe_id, outfits, count)
+
+    # De app vult aan wat de AI niet leverde — of doet alles, als die uitstaat.
+    items, outfits, own = _look_context(
+        db, wardrobe_id, max(count - len(plans), 0), seed=plans
+    )
+    plans = plans + own
 
     note = None
     if len(items) < 2:
@@ -263,7 +319,7 @@ def compose_looks(
                 for plan in plans
             ],
             note=note,
-            named_by_ai=named_by_ai,
+            by_ai=by_ai,
             ai_note=ai_note,
         )
 
@@ -306,6 +362,6 @@ def compose_looks(
     return AutofillLooksResult(
         created=[serialize(o) for o in created],
         note=note,
-        named_by_ai=named_by_ai,
+        by_ai=by_ai,
         ai_note=ai_note,
     )
