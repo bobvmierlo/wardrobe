@@ -11,6 +11,15 @@ import Wardrobe from "./pages/Wardrobe";
 // keeps the admin screens (Instellingen, Logboek) off the critical path for
 // the people who never open them.
 const Invite = lazy(() => import("./pages/Invite"));
+const Today = lazy(() => import("./pages/Today"));
+const Looks = lazy(() => import("./pages/Looks"));
+const Week = lazy(() => import("./pages/Week"));
+const Discover = lazy(() => import("./pages/Discover"));
+const Insights = lazy(() => import("./pages/Insights"));
+const Trips = lazy(() => import("./pages/Trips"));
+const StyleDna = lazy(() => import("./pages/StyleDna"));
+const StyleGuide = lazy(() => import("./pages/StyleGuide"));
+const More = lazy(() => import("./pages/More"));
 const AdminLog = lazy(() => import("./pages/AdminLog"));
 const AddItem = lazy(() => import("./pages/AddItem"));
 const ItemDetail = lazy(() => import("./pages/ItemDetail"));
@@ -110,6 +119,96 @@ export default function App() {
           element={
             <Protected>
               <AdminLog />
+            </Protected>
+          }
+        />
+        <Route
+          path="/vandaag"
+          element={
+            <Protected>
+              <Shell>
+                <Today />
+              </Shell>
+            </Protected>
+          }
+        />
+        <Route
+          path="/looks"
+          element={
+            <Protected>
+              <Shell>
+                <Looks />
+              </Shell>
+            </Protected>
+          }
+        />
+        <Route
+          path="/week"
+          element={
+            <Protected>
+              <Shell>
+                <Week />
+              </Shell>
+            </Protected>
+          }
+        />
+        <Route
+          path="/discover"
+          element={
+            <Protected>
+              <Shell>
+                <Discover />
+              </Shell>
+            </Protected>
+          }
+        />
+        <Route
+          path="/insights"
+          element={
+            <Protected>
+              <Shell>
+                <Insights />
+              </Shell>
+            </Protected>
+          }
+        />
+        <Route
+          path="/trips"
+          element={
+            <Protected>
+              <Shell>
+                <Trips />
+              </Shell>
+            </Protected>
+          }
+        />
+        <Route
+          path="/stijl-dna"
+          element={
+            <Protected>
+              <Shell>
+                <StyleDna />
+              </Shell>
+            </Protected>
+          }
+        />
+        <Route
+          path="/stijlgids"
+          element={
+            <Protected>
+              <Shell>
+                <StyleGuide />
+              </Shell>
+            </Protected>
+          }
+        />
+        <Route
+          path="/meer"
+          element={
+            <Protected>
+              <Shell>
+                <More />
+              </Shell>
             </Protected>
           }
         />

@@ -1,10 +1,14 @@
 import { NavLink } from "react-router-dom";
 
+// Five is what fits under a thumb. Everything else — the planner, Ontdekken,
+// Inzichten, Reistas, Stijl-DNA, de Stijlgids, Combineer en Instellingen —
+// hangt onder "Meer", zodat de bar leesbaar blijft op een telefoon.
 const links = [
+  { to: "/vandaag", label: "Vandaag", ico: "🌤️", end: false },
   { to: "/", label: "Kast", ico: "👕", end: true },
-  { to: "/combine", label: "Combineer", ico: "💞", end: false },
-  { to: "/outfits", label: "Outfits", ico: "✨", end: false },
-  { to: "/settings", label: "Instellingen", ico: "⚙️", end: false },
+  { to: "/looks", label: "Looks", ico: "✨", end: false },
+  { to: "/week", label: "Week", ico: "🗓️", end: false },
+  { to: "/meer", label: "Meer", ico: "☰", end: false },
 ];
 
 interface Props {

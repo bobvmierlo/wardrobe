@@ -4,6 +4,8 @@ import type {
   AuthConfig,
   BackupPreview,
   Category,
+  DayPlan,
+  Insights,
   ColorLogic,
   ColorRule,
   Invitation,
@@ -12,9 +14,15 @@ import type {
   JudgedPair,
   LogEntry,
   MemberRole,
+  Occasion,
+  Outfit,
+  OutfitDraft,
   OutfitPartner,
   OutfitSuggestion,
   Pair,
+  Place,
+  Preferences,
+  RecommendationPage,
   RejectedPartner,
   RestoreResult,
   RestoreTarget,
@@ -23,10 +31,16 @@ import type {
   ScrapeResult,
   SizeOption,
   Stats,
+  StyleGuide,
+  StyleProfile,
+  Trip,
+  TripDetail,
   User,
   Verdict,
   Wardrobe,
   WardrobeMember,
+  Weather,
+  Week,
 } from "./types";
 
 const TOKEN_KEY = "kledingkast_token";
@@ -435,6 +449,137 @@ export const api = {
     body.set("mode", mode);
     return request<RestoreResult>("/api/backup/restore", { method: "POST", body });
   },
+
+  // ---- saved outfits ----
+  listOutfits: (wardrobeId: number, filters: { occasion?: string; weather?: string; season?: string } = {}) => {
+    const sp = new URLSearchParams({ wardrobe_id: String(wardrobeId) });
+    Object.entries(filters).forEach(([k, v]) => {
+      if (v) sp.set(k, v);
+    });
+    return request<Outfit[]>(`/api/outfits?${sp}`);
+  },
+  getOutfit: (id: number) => request<Outfit>(`/api/outfits/${id}`),
+  createOutfit: (wardrobeId: number, draft: OutfitDraft) =>
+    request<Outfit>(`/api/outfits?wardrobe_id=${wardrobeId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(draft),
+    }),
+  updateOutfit: (id: number, draft: OutfitDraft) =>
+    request<Outfit>(`/api/outfits/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(draft),
+    }),
+  deleteOutfit: (id: number) => request<void>(`/api/outfits/${id}`, { method: "DELETE" }),
+
+  // ---- the wear log (only works once you switch it on) ----
+  logWear: (outfitId: number, worn_on?: string) =>
+    request<{ outfit_id: number; worn_on: string }>(`/api/outfits/${outfitId}/wear`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ worn_on: worn_on ?? null }),
+    }),
+  unlogWear: (outfitId: number, day: string) =>
+    request<void>(`/api/outfits/${outfitId}/wear/${day}`, { method: "DELETE" }),
+  wearHistory: (outfitId: number) => request<string[]>(`/api/outfits/${outfitId}/wear`),
+
+  // ---- "je zou dit aan kunnen trekken" ----
+  recommendations: (wardrobeId: number, occasion?: string) => {
+    const sp = new URLSearchParams({ wardrobe_id: String(wardrobeId) });
+    if (occasion) sp.set("occasion", occasion);
+    return request<RecommendationPage>(`/api/outfits/recommendations?${sp}`);
+  },
+  discover: (
+    wardrobeId: number,
+    filters: { occasion?: string; season?: string; weather?: string[] } = {},
+  ) => {
+    const sp = new URLSearchParams({ wardrobe_id: String(wardrobeId) });
+    if (filters.occasion) sp.set("occasion", filters.occasion);
+    if (filters.season) sp.set("season", filters.season);
+    if (filters.weather?.length) sp.set("weather", filters.weather.join(","));
+    return request<OutfitSuggestion[]>(`/api/outfits/discover?${sp}`);
+  },
+
+  // ---- weather ----
+  weatherTags: () => request<string[]>("/api/weather/tags"),
+  searchPlaces: (q: string) => request<Place[]>(`/api/weather/search?q=${encodeURIComponent(q)}`),
+  /** Name the coordinates the browser's location permission just handed us. */
+  lookupPlace: (latitude: number, longitude: number) =>
+    request<Place>(`/api/weather/lookup?latitude=${latitude}&longitude=${longitude}`),
+  currentWeather: () => request<Weather>("/api/weather/current"),
+
+  // ---- per-user preferences, stijl-DNA and the style guide ----
+  preferences: () => request<Preferences>("/api/me/preferences"),
+  savePreferences: (data: Partial<Preferences>) =>
+    request<Preferences>("/api/me/preferences", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+  styleProfile: () => request<StyleProfile>("/api/me/style"),
+  saveStyleProfile: (data: { colors?: string[]; styles?: string[]; occasions?: string[]; notes?: string | null }) =>
+    request<StyleProfile>("/api/me/style", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+  styleGuide: (wardrobeId: number) =>
+    request<StyleGuide>(`/api/me/style-guide?wardrobe_id=${wardrobeId}`),
+
+  // ---- occasions (admin-managed list) ----
+  listOccasions: () => request<Occasion[]>("/api/occasions"),
+  createOccasion: (name: string) =>
+    request<Occasion>("/api/occasions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }),
+  deleteOccasion: (id: number) => request<void>(`/api/occasions/${id}`, { method: "DELETE" }),
+
+  // ---- week planner ----
+  week: (wardrobeId: number, start?: string) => {
+    const sp = new URLSearchParams({ wardrobe_id: String(wardrobeId) });
+    if (start) sp.set("start", start);
+    return request<Week>(`/api/planner/week?${sp}`);
+  },
+  planDay: (wardrobeId: number, day: string, outfitId: number | null) =>
+    request<DayPlan>(`/api/planner?wardrobe_id=${wardrobeId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ day, outfit_id: outfitId }),
+    }),
+
+  // ---- trips (reistas) ----
+  listTrips: (wardrobeId: number) => request<Trip[]>(`/api/trips?wardrobe_id=${wardrobeId}`),
+  getTrip: (id: number) => request<TripDetail>(`/api/trips/${id}`),
+  createTrip: (
+    wardrobeId: number,
+    data: { name: string; destination?: string | null; starts_on?: string | null; ends_on?: string | null; notes?: string | null },
+  ) =>
+    request<TripDetail>(`/api/trips?wardrobe_id=${wardrobeId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+  deleteTrip: (id: number) => request<void>(`/api/trips/${id}`, { method: "DELETE" }),
+  addTripOutfit: (tripId: number, outfitId: number) =>
+    request<TripDetail>(`/api/trips/${tripId}/outfits`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ outfit_id: outfitId }),
+    }),
+  removeTripOutfit: (tripId: number, outfitId: number) =>
+    request<TripDetail>(`/api/trips/${tripId}/outfits/${outfitId}`, { method: "DELETE" }),
+  setPacked: (tripId: number, itemId: number, packed: boolean) =>
+    request<TripDetail>(`/api/trips/${tripId}/packed`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_id: itemId, packed }),
+    }),
+
+  // ---- insights ----
+  insights: (wardrobeId: number) => request<Insights>(`/api/insights?wardrobe_id=${wardrobeId}`),
 
   // ---- app version (from backend/app/_version.py) ----
   version: () => request<{ version: string }>("/api/version"),

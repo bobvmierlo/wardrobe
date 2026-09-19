@@ -7,7 +7,8 @@ import { useWardrobe } from "../wardrobe";
 import AppFooter from "../components/AppFooter";
 import BackupCard from "../components/BackupCard";
 import InvitationLinks from "../components/InvitationLinks";
-import { ROLE_LABELS, SIZE_KIND_LABELS, compareSizes, type Category, type ColorLogic, type Invitation, type MemberRole, type SizeKind, type SizeOption, type User, type WardrobeMember } from "../types";
+import PersonalSettings from "../components/PersonalSettings";
+import { ROLE_LABELS, SIZE_KIND_LABELS, compareSizes, type Category, type ColorLogic, type Invitation, type MemberRole, type Occasion, type SizeKind, type SizeOption, type User, type WardrobeMember } from "../types";
 
 export default function Settings() {
   const { user, logout } = useAuth();
@@ -67,6 +68,8 @@ export default function Settings() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [sizes, setSizes] = useState<SizeOption[]>([]);
   const [newCat, setNewCat] = useState("");
+  const [occasions, setOccasions] = useState<Occasion[]>([]);
+  const [newOccasion, setNewOccasion] = useState("");
   const [newSize, setNewSize] = useState("");
   const [newSizeKind, setNewSizeKind] = useState<SizeKind>("clothing");
 
@@ -81,6 +84,7 @@ export default function Settings() {
     try {
       setCategories(await api.listCategories());
       setSizes(await api.listSizes());
+      setOccasions(await api.listOccasions());
     } catch {
       /* ignore */
     }
@@ -284,6 +288,28 @@ export default function Settings() {
       loadCatalog();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Toevoegen mislukt");
+    }
+  }
+  async function addOccasion(e: React.FormEvent) {
+    e.preventDefault();
+    setErr(null);
+    setMsg(null);
+    if (!newOccasion.trim()) return;
+    try {
+      await api.createOccasion(newOccasion.trim());
+      setNewOccasion("");
+      loadCatalog();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Toevoegen mislukt");
+    }
+  }
+  async function removeOccasion(id: number) {
+    setErr(null);
+    try {
+      await api.deleteOccasion(id);
+      loadCatalog();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Verwijderen mislukt");
     }
   }
   async function removeCategory(id: number) {
@@ -524,6 +550,8 @@ export default function Settings() {
           </button>
         </div>
 
+        <PersonalSettings />
+
         <div className="card" id="delen" style={{ padding: 16, scrollMarginTop: 80 }}>
           <h3 style={{ marginTop: 0 }}>Mijn kast delen</h3>
           <p className="muted" style={{ fontSize: "0.82rem", marginTop: 0 }}>
@@ -658,6 +686,31 @@ export default function Settings() {
             </div>
             <form onSubmit={addCategory} className="row" style={{ gap: 8, marginTop: 12 }}>
               <input placeholder="Nieuwe categorie" value={newCat} onChange={(e) => setNewCat(e.target.value)} />
+              <button className="btn-primary" style={{ flex: "none" }}>Toevoegen</button>
+            </form>
+          </div>
+        )}
+
+        {user?.is_admin && (
+          <div className="card" style={{ padding: 16 }}>
+            <h3 style={{ marginTop: 0 }}>Gelegenheden</h3>
+            <p className="muted" style={{ fontSize: "0.82rem", marginTop: 0 }}>
+              De lijst die het kledingformulier en "Vandaag" aanbieden. Een gelegenheid
+              verwijderen haalt hem alleen uit de keuzelijst — kledingstukken houden het
+              label dat ze al hadden.
+            </p>
+            <div className="tag-list">
+              {occasions.map((o) => (
+                <span key={o.id} className="tag">
+                  {o.name}
+                  <button type="button" className="tag-x" onClick={() => removeOccasion(o.id)} aria-label={`Verwijder ${o.name}`}>
+                    ✕
+                  </button>
+                </span>
+              ))}
+            </div>
+            <form onSubmit={addOccasion} className="row" style={{ gap: 8, marginTop: 12 }}>
+              <input placeholder="Nieuwe gelegenheid" value={newOccasion} onChange={(e) => setNewOccasion(e.target.value)} />
               <button className="btn-primary" style={{ flex: "none" }}>Toevoegen</button>
             </form>
           </div>
