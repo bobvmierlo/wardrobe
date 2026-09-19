@@ -1390,7 +1390,10 @@ a.btn-ghost {
 .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; font-size: 0.85rem; }
 .bar-label { flex: none; width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bar-track { flex: 1; height: 10px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
-.bar-fill { height: 100%; background: var(--primary); }
+/* Rendered as a <span> inside the track: without display:block it stays an
+ * inline box, and an inline box ignores both height and a percentage width —
+ * so the bar had a groove and no fill. */
+.bar-fill { display: block; height: 100%; background: var(--primary); }
 .bar-count { flex: none; width: 28px; text-align: right; color: var(--muted); }
 
 /* The theme picker in Instellingen. */
