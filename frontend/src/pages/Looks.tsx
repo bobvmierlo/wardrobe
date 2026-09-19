@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, photoUrl } from "../api";
 import AppFooter from "../components/AppFooter";
+import AutofillCard from "../components/AutofillCard";
 import OutfitStrip from "../components/OutfitStrip";
 import TagPicker from "../components/TagPicker";
 import WardrobeSwitcher from "../components/WardrobeSwitcher";
@@ -180,6 +181,10 @@ export default function Looks() {
           <button className="btn-primary btn-block" onClick={() => setDraft(emptyDraft())}>
             + Nieuwe look samenstellen
           </button>
+        )}
+
+        {canEdit && draft === null && currentId && (
+          <AutofillCard wardrobeId={currentId} onChanged={load} />
         )}
 
         {draft !== null && (

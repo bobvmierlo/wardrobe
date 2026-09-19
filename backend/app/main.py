@@ -17,6 +17,7 @@ from .routers.photos import is_https
 from .routers import (
     admin_log,
     auth,
+    autofill,
     backups,
     catalog,
     color_rules,
@@ -202,6 +203,7 @@ app.include_router(catalog.categories_router)
 app.include_router(catalog.sizes_router)
 app.include_router(catalog.occasions_router)
 app.include_router(outfits.router)
+app.include_router(autofill.router)
 app.include_router(planner.router)
 app.include_router(trips.router)
 app.include_router(insights.router)

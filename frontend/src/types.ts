@@ -582,3 +582,34 @@ export const THEMES: { id: string; label: string; hint: string; swatch: string[]
     swatch: ["#101014", "#1b1b21", "#c9a227"],
   },
 ];
+
+// ---- Aanvullen: tags raden en looks samenstellen voor een bestaande kast ----
+
+export interface AutofillPreview {
+  item_count: number;
+  without_weather: number;
+  without_occasion: number;
+  /** How many of those the app can actually fill in. */
+  taggable: number;
+  outfit_count: number;
+  /** How many new looks it could build right now. */
+  composable: number;
+}
+
+export interface TaggedItem {
+  id: number;
+  name: string;
+  category: string;
+  weather: string[];
+  occasions: string[];
+}
+
+export interface AutofillTagsResult {
+  tagged: number;
+  examples: TaggedItem[];
+}
+
+export interface AutofillLooksResult {
+  created: Outfit[];
+  note: string | null;
+}

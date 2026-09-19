@@ -18,6 +18,10 @@ welke stukken bij elkaar passen — via een **Tinder-achtige swipe**.
   sjiek uit eten vraagt iets anders dan een zaterdag op de bank.
 - 🧵 **Looks** – stel hele outfits samen en bewaar ze, met de gelegenheid, het weer
   en het seizoen waar ze bij horen. Dat is precies waar "Vandaag" uit kiest.
+- 🪄 **Kast laten aanvullen** – draai je de app al een tijd met ongetagde kleding en
+  zonder looks? Eén knop vult de ontbrekende weer- en gelegenheidstags aan (alleen
+  lege velden) en één knop stelt looks samen uit wat er hangt. Geen externe AI:
+  dezelfde kleurregels als de rest van de app.
 - 🗓️ **Weekplanner** – plan per dag vooruit, met de verwachting ernaast; de app
   zegt het als een look niet bij dat weer past.
 - 🧭 **Ontdekken** – laat de app iets samenstellen uit je kast, op gelegenheid,
@@ -449,9 +453,10 @@ backend/            FastAPI-app (Python)
     access.py       kast-toegang & rollen (eigenaar/beheerder/bewerker/kijker)
     routers/        auth, oidc, users, wardrobes, items, matches, catalog,
                     color_rules, imports, invitations, admin_log, outfits,
-                    planner, trips, insights, weather, me
+                    planner, trips, insights, weather, me, autofill
     weather.py      echte weersverwachting + plaats/postcode opzoeken (zonder sleutel)
     recommendations.py  "je zou dit aan kunnen trekken": weer + gelegenheid wegen
+    autofill.py     tags raden en looks samenstellen voor een kast zonder beide
     tags.py         de tagkolommen (gelegenheid, weer, stijl) en hun woordenlijsten
     outfit_store.py opgeslagen looks lezen en schrijven, plus het draaglogboek
     preferences.py  persoonlijke instellingen: thema, locatie, draaglogboek, stijl-DNA
@@ -476,7 +481,8 @@ frontend/           React + Vite (TypeScript)
   src/theme.tsx     kleurstelling en persoonlijke instellingen van de ingelogde gebruiker
   src/components/   SwipeCard, ItemForm, BottomNav, WardrobeSwitcher, SuggestionList,
                     JudgedPairList, PartnerGrid, InvitationLinks, QrCode,
-                    OutfitStrip, WeatherCard, TagPicker, PersonalSettings
+                    OutfitStrip, WeatherCard, TagPicker, PersonalSettings,
+                    AutofillCard
   src/qr.ts         QR-codes voor uitnodigingslinks (geen externe bibliotheek)
 Dockerfile          multi-stage build (frontend → python runtime)
 docker-compose.yml  container + datavolume
@@ -1236,6 +1242,49 @@ Wat daarop verder gebouwd is:
   afgelezen uit de kleurregels van deze installatie (die een beheerder kan
   aanpassen) plus wat er daadwerkelijk in de kast hangt. Advies dat je kunt
   herleiden tot een regel is advies dat je kunt veranderen.
+
+### Een bestaande kast alsnog vullen
+
+Draai je de app al een tijd, dan zit je met een kast vol kleding die niemand ooit
+getagd heeft en zonder één opgeslagen look. Zonder tags heeft "Vandaag" niets om
+op te varen, en tweehonderd kledingstukken met de hand nalopen is geen voorstel.
+
+Onder **Looks** staat daarom **"Je kast laten aanvullen"**, met twee knoppen:
+
+- **Ontbrekende tags aanvullen** – leidt weer- en gelegenheidstags af uit de
+  categorie en de naam van een kledingstuk. Een winterjas is voor de kou; een
+  korte broek voor warm en zonnig weer. Staat er niets bruikbaars in de
+  categorie, dan telt het seizoen mee.
+- **Looks samenstellen** – bouwt looks uit wat er hangt, met dezelfde scoring als
+  de rest van de app: de kleurregels van deze installatie, seizoensoverlap, en
+  nooit een paar dat iemand heeft afgekeurd.
+
+Vier dingen die het **niet** doet, want dat is hier het belangrijkste:
+
+- **Het overschrijft nooit.** Alleen een leeg veld wordt ingevuld. Heb je zelf
+  iets getagd, dan blijft dat staan — ook als de app iets anders zou raden.
+- **Het verzint geen gelegenheid die niet bestaat.** Haalde een beheerder
+  "Formeel" uit de lijst, dan komt die niet via een achterdeur op elke blazer
+  terug.
+- **Het gokt niet waar het niet zeker is.** De weertabel is lang, de
+  gelegenheidstabel kort: of een spijkerbroek "Werk" is, hangt af van jouw werk
+  en niet van de broek. Een verkeerde tag is erger dan geen tag, want een leeg
+  veld sluit nooit iets uit en een verkeerde wél.
+- **Een look claimt niets wat z'n kleren niet claimen.** De tags van een look
+  zijn de *doorsnede* van wat de stukken erin zeggen: een look is pas voor de
+  regen als niks erin daar bezwaar tegen heeft.
+
+Voordat er iets wordt weggeschreven zie je hoeveel stuks het raakt en een paar
+voorbeelden. Alles is daarna gewoon aan te passen: een tag op de pagina van het
+kledingstuk, een look bij Looks.
+
+### Geen AI, wel uitlegbaar
+
+Deze functie had ook een taalmodel kunnen zijn. Dat is bewust niet gedaan: de app
+is zelf-gehost, stuurt niets naar buiten en heeft nergens een API-sleutel nodig —
+en dat is een eigenschap die je kwijt bent zodra één functie 'm opgeeft. Wat je
+ervoor terugkrijgt is dat elke keuze te herleiden is tot een regel die in dit
+project staat, en dus aan te passen is.
 
 ### Draaglogboek: standaard uit
 

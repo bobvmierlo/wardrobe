@@ -2,6 +2,9 @@ import { reportOffline } from "./online";
 import type {
   AuditPage,
   AuthConfig,
+  AutofillLooksResult,
+  AutofillPreview,
+  AutofillTagsResult,
   BackupPreview,
   Category,
   DayPlan,
@@ -577,6 +580,21 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ item_id: itemId, packed }),
     }),
+
+  // ---- aanvullen (tags raden, looks samenstellen) ----
+  autofillPreview: (wardrobeId: number, count = 10) =>
+    request<AutofillPreview>(`/api/autofill/preview?wardrobe_id=${wardrobeId}&count=${count}`),
+  /** Fill in the tags that are obvious. Never overwrites what is already set. */
+  autofillTags: (wardrobeId: number, dryRun = false) =>
+    request<AutofillTagsResult>(
+      `/api/autofill/tags?wardrobe_id=${wardrobeId}&dry_run=${dryRun}`,
+      { method: "POST" },
+    ),
+  autofillLooks: (wardrobeId: number, count = 10) =>
+    request<AutofillLooksResult>(
+      `/api/autofill/looks?wardrobe_id=${wardrobeId}&count=${count}`,
+      { method: "POST" },
+    ),
 
   // ---- insights ----
   insights: (wardrobeId: number) => request<Insights>(`/api/insights?wardrobe_id=${wardrobeId}`),

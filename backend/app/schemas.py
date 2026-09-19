@@ -677,3 +677,52 @@ class InsightsOut(BaseModel):
 
 
 RecommendationPage.model_rebuild()
+
+
+# ---- Aanvullen: tags raden en looks samenstellen voor een bestaande kast ----
+class AutofillPreview(BaseModel):
+    """What the two buttons would do, before either is pressed."""
+    item_count: int
+    #: Garments with nothing filled in for that field yet.
+    without_weather: int
+    without_occasion: int
+    #: How many of those this would actually be able to fill in — the rest are
+    #: garments where the category says nothing useful.
+    taggable: int
+    outfit_count: int
+    #: How many new looks could be built right now, up to what was asked for.
+    composable: int
+
+
+class TaggedItem(BaseModel):
+    """One garment and what was (or would be) written onto it."""
+    id: int
+    name: str
+    category: str
+    weather: list[str] = []
+    occasions: list[str] = []
+
+
+class AutofillTagsResult(BaseModel):
+    tagged: int
+    #: The first handful, so the screen can show what it did rather than only
+    #: a number. Everything is editable on the garment's own page afterwards.
+    examples: list[TaggedItem] = []
+
+
+class ComposedLook(BaseModel):
+    name: str
+    items: list[ItemOut]
+    seasons: list[str] = []
+    occasions: list[str] = []
+    weather_tags: list[str] = []
+    style_tags: list[str] = []
+    reason: str = ""
+
+
+class AutofillLooksResult(BaseModel):
+    created: list[OutfitOut] = []
+    #: Filled instead of ``created`` when nothing was saved (a dry run).
+    proposed: list[ComposedLook] = []
+    #: Why fewer came back than were asked for, when that happened.
+    note: str | None = None
