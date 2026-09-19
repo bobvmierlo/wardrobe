@@ -162,22 +162,47 @@ def migrate_size_uniqueness() -> None:
         conn.exec_driver_sql("ALTER TABLE sizes_new RENAME TO sizes")
 
 
-def _add_item_tag_columns(conn) -> None:
-    """Add ``items.occasion``/``weather``/``style`` when they are missing.
+#: Columns added to a table that already existed, as (table, column, type).
+#: ``create_all`` makes missing *tables* and never missing *columns*, so these
+#: are the ones a database can be without.
+LATE_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    ("items", "occasion", "VARCHAR(200)"),
+    ("items", "weather", "VARCHAR(200)"),
+    ("items", "style", "VARCHAR(200)"),
+)
 
-    Called from two steps on purpose. A database at version 0 has to get these
-    in :func:`migrate_schema`, because the steps after it query ``items``
-    through the ORM and a mapped column the database lacks makes *every* one of
-    those queries fail. A database that already passed that step never runs it
-    again, so :func:`migrate_outfits_and_tags` adds them there instead. Both
-    check first, so whichever runs second does nothing.
+
+def ensure_mapped_columns() -> None:
+    """Add any column in :data:`LATE_COLUMNS` the database does not have yet.
+
+    Deliberately **not** a numbered step, and run before any of them. A mapped
+    column the database lacks makes *every* ORM query on that table fail, so a
+    migration that uses the ORM — the repair sweep, the wardrobe backfill —
+    cannot be the thing that waits for the column to arrive. Gating this behind
+    a version number is what broke it once already: the step that adds these
+    was numbered below the sweep, a database stamped past that number skipped
+    it, and the app stopped booting. A database stamped anywhere in between
+    would have had the same problem.
+
+    Cheap (one PRAGMA per table) and idempotent, so it simply runs every boot
+    and the numbered step that records the change stays where it is.
     """
-    cols = [c[1] for c in conn.exec_driver_sql("PRAGMA table_info(items)").fetchall()]
-    if not cols:
-        return  # fresh install: create_all already made the full schema
-    for column in ("occasion", "weather", "style"):
-        if column not in cols:
-            conn.exec_driver_sql(f"ALTER TABLE items ADD COLUMN {column} VARCHAR(200)")
+    tables: dict[str, list[str]] = {}
+    with engine.begin() as conn:
+        for table, column, sql_type in LATE_COLUMNS:
+            if table not in tables:
+                tables[table] = [
+                    c[1]
+                    for c in conn.exec_driver_sql(f"PRAGMA table_info({table})").fetchall()
+                ]
+            if not tables[table]:
+                continue  # fresh install: create_all already made the full schema
+            if column not in tables[table]:
+                conn.exec_driver_sql(
+                    f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}"
+                )
+                tables[table].append(column)
+                log.info("Kolom %s.%s toegevoegd", table, column)
 
 
 def migrate_schema() -> None:
@@ -216,9 +241,6 @@ def migrate_schema() -> None:
         conn.exec_driver_sql(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_item_wardrobe_uid ON items (wardrobe_id, uid)"
         )
-        # Must happen here rather than only in the step that introduced them:
-        # every step below this one reads ``items`` through the ORM.
-        _add_item_tag_columns(conn)
 
 
 def migrate_outfits_and_tags() -> None:
@@ -229,8 +251,8 @@ def migrate_outfits_and_tags() -> None:
     hand, because it never touches a table that already exists.
     """
     Base.metadata.create_all(bind=engine)
+    ensure_mapped_columns()
     with engine.begin() as conn:
-        _add_item_tag_columns(conn)
         # Same reasoning as items: a constraint cannot be added to an existing
         # table, and a unique index does the same job.
         conn.exec_driver_sql(
@@ -668,9 +690,15 @@ STEPS: tuple[tuple[int, str, object], ...] = (
     (7, "kasten", migrate_wardrobes),
     (8, "merken", migrate_brands),
     (9, "index op fotobestandsnamen", migrate_photo_indexes),
-    (10, "outfits, weer en tags", migrate_outfits_and_tags),
-    # Data repair last, on everything the steps above have settled.
-    (11, "opruimcontrole", migrate_orphans),
+    # Data repair, on everything the steps above have settled.
+    (10, "opruimcontrole", migrate_orphans),
+    # Appended, never inserted. This step used to be numbered 10, which took
+    # that number away from the repair sweep above — and a database already
+    # stamped at 10 then skipped this one and ran the sweep instead, against an
+    # ``items`` table still missing three mapped columns. Every ORM query on
+    # that table failed and the app would not boot. Hence the rule at the top
+    # of this list, and tests/test_migrations.py pins it.
+    (11, "outfits, weer en tags", migrate_outfits_and_tags),
 )
 
 SCHEMA_VERSION = max(version for version, _name, _fn in STEPS)
@@ -743,7 +771,13 @@ def run_seeds() -> None:
 
 
 def prepare_database() -> None:
-    """Everything the database needs before the first request arrives."""
+    """Everything the database needs before the first request arrives.
+
+    Tables, then the columns that ``create_all`` cannot add, and only then the
+    numbered steps — several of which query through the ORM and would fall over
+    on a column that is not there yet.
+    """
     Base.metadata.create_all(bind=engine)
+    ensure_mapped_columns()
     run_migrations()
     run_seeds()

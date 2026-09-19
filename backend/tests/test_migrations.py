@@ -7,11 +7,16 @@ earlier releases, which is where a missing column or a wrong migration order
 actually bites.
 """
 
+import ast
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
+
+import pytest
 
 BACKEND = Path(__file__).resolve().parent.parent
 
@@ -286,3 +291,109 @@ def test_upgrade_allows_invitations_without_a_kast(tmp_path):
     finally:
         con.close()
     assert rows(tmp_path, "SELECT COUNT(*) FROM invitations WHERE wardrobe_id IS NULL") == [(1,)]
+
+
+# ---------------------------------------------------------------------------
+# A database that has already been through earlier releases
+# ---------------------------------------------------------------------------
+#
+# Every test above starts at version 0, where all the steps run in order. What
+# none of them covered is the case that actually broke: a database carrying a
+# version marker, so the steps at or below it are skipped entirely.
+#
+# Renumbering a step silently takes it away from such a database. When the step
+# it lost is the one adding a mapped column, every ORM query on that table then
+# fails and the app does not boot — which is a 502 on somebody's login screen,
+# not a failing test. So this walks every version marker this build knows.
+
+
+def stamp(data: Path, version: int) -> None:
+    """Mark the database as having been brought to ``version`` already."""
+    con = sqlite3.connect(data / "wardrobe.db")
+    try:
+        con.execute(
+            "CREATE TABLE IF NOT EXISTS schema_version ("
+            " id INTEGER PRIMARY KEY CHECK (id = 1),"
+            " version INTEGER NOT NULL, updated_at TEXT)"
+        )
+        con.execute(
+            "INSERT INTO schema_version (id, version, updated_at) VALUES (1, ?, '')"
+            " ON CONFLICT(id) DO UPDATE SET version = excluded.version",
+            (version,),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
+def app_constant(name: str) -> str:
+    """Read a constant out of the app, so this test cannot drift from it."""
+    out = subprocess.run(
+        [sys.executable, "-c", f"from app.migrations import {name}; print({name})"],
+        cwd=BACKEND,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "WARDROBE_DATA_DIR": tempfile.mkdtemp()},
+    )
+    assert out.returncode == 0, out.stderr
+    return out.stdout.strip().splitlines()[-1]
+
+
+def test_a_database_from_an_earlier_release_still_boots(tmp_path):
+    """Boot against a database stamped at every version this build knows.
+
+    The shape is the real one — produced by letting this build migrate a legacy
+    database — with the columns this release adds taken back out again, which
+    is exactly what the first boot after an upgrade meets. Stamping that at
+    each version in turn covers both the ordinary upgrade (the marker the last
+    release left) and the awkward one where a boot stopped halfway and left the
+    marker somewhere in between.
+    """
+    if sqlite3.sqlite_version_info < (3, 35):
+        pytest.skip("ALTER TABLE ... DROP COLUMN vraagt SQLite 3.35 of nieuwer")
+
+    # One real migration run, so the shape is the app's own rather than one
+    # written out by hand here (which would rot the moment a model changes).
+    reference = tmp_path / "reference"
+    reference.mkdir()
+    assert boot(reference, OLD_USERS + WARDROBES + old_items(with_wardrobe_id=True)).returncode == 0
+
+    newest = int(app_constant("SCHEMA_VERSION"))
+    late_columns = ast.literal_eval(app_constant("LATE_COLUMNS"))
+
+    for version in range(1, newest + 1):
+        data = tmp_path / f"v{version}"
+        data.mkdir()
+        shutil.copy(reference / "wardrobe.db", data / "wardrobe.db")
+
+        # Put the database back the way the release before this one left it.
+        con = sqlite3.connect(data / "wardrobe.db")
+        try:
+            for table, column, _type in late_columns:
+                con.execute(f"ALTER TABLE {table} DROP COLUMN {column}")
+            con.commit()
+        finally:
+            con.close()
+        stamp(data, version)
+
+        result = subprocess.run(
+            [sys.executable, "-c", "import app.main"],
+            cwd=BACKEND,
+            env={
+                **os.environ,
+                "WARDROBE_DATA_DIR": str(data),
+                "WARDROBE_SECRET_KEY": "test-secret-key-long-enough-for-hs256",
+            },
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"een database op schemaversie {version} start niet op:\n{result.stderr}"
+        )
+        # The garments are still readable, which is what a missing mapped
+        # column takes away, and the columns are back.
+        assert rows(data, "SELECT COUNT(*) FROM items") == [(3,)]
+        present = {r[1] for r in sqlite3.connect(data / "wardrobe.db").execute(
+            "PRAGMA table_info(items)"
+        )}
+        assert {column for _t, column, _ty in late_columns} <= present
