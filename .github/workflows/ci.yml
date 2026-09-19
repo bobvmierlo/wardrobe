@@ -117,7 +117,7 @@ jobs:
         # serves it from, and starts the app — see frontend/e2e/serve.sh.
         run: npx playwright test
         working-directory: frontend
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-report
