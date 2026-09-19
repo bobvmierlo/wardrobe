@@ -322,15 +322,33 @@ export default function Looks() {
               )}
             </div>
             <OutfitStrip items={outfit.items} />
-            {(outfit.occasions.length > 0 || outfit.weather_tags.length > 0) && (
+            <div className="muted" style={{ fontSize: "0.78rem", letterSpacing: "0.03em" }}>
+              {outfit.items.length} ONDERDEL{outfit.items.length === 1 ? "" : "EN"}
+            </div>
+            {/* Per soort, en per soort een eigen kleur: seizoen, dan waar je 'm
+                voor aantrekt (gelegenheid en weer), dan de stijlwoorden. */}
+            {(outfit.seasons.length > 0 ||
+              outfit.occasions.length > 0 ||
+              outfit.weather_tags.length > 0 ||
+              outfit.style_tags.length > 0) && (
               <div className="chips wrap">
+                {outfit.seasons.map((t) => (
+                  <span className="tag plain tag-season" key={`s-${t}`}>
+                    {t}
+                  </span>
+                ))}
                 {outfit.occasions.map((t) => (
-                  <span className="tag" key={`o-${t}`}>
+                  <span className="tag plain tag-context" key={`o-${t}`}>
                     {t}
                   </span>
                 ))}
                 {outfit.weather_tags.map((t) => (
-                  <span className="tag" key={`w-${t}`}>
+                  <span className="tag plain tag-context" key={`w-${t}`}>
+                    {t}
+                  </span>
+                ))}
+                {outfit.style_tags.map((t) => (
+                  <span className="tag plain tag-style" key={`y-${t}`}>
                     {t}
                   </span>
                 ))}

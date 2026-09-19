@@ -802,6 +802,30 @@ a.btn-ghost {
   background: var(--surface-2); border: 1px solid var(--border);
   border-radius: 999px; padding: 6px 8px 6px 12px; font-size: 0.85rem;
 }
+/* Tags op een look, per soort. Waar een tag *over* gaat — het seizoen, de
+ * gelegenheid, het weer — zegt net zoveel als wat er staat, en één grijze rij
+ * chips laat dat verschil verdwijnen. Alle drie de kleuren komen uit de
+ * themavariabelen, zodat ze in elk palet kloppen. */
+.tag.plain { padding: 6px 12px; }
+.tag-season {
+  background: color-mix(in srgb, var(--yes) 16%, var(--surface));
+  border-color: color-mix(in srgb, var(--yes) 40%, var(--border));
+  color: color-mix(in srgb, var(--yes) 60%, var(--text));
+}
+/* Gelegenheid en weer delen een kleur: samen beschrijven ze het moment waarop
+ * je een look aantrekt. */
+.tag-context {
+  background: color-mix(in srgb, var(--primary) 14%, var(--surface));
+  border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
+  color: color-mix(in srgb, var(--primary) 62%, var(--text));
+}
+/* gap: 0 omdat de # via ::before een eigen flex-item wordt, en .tag er anders
+ * 6px tussen zet — "# gelaagd" in plaats van "#gelaagd". */
+.tag-style { color: var(--muted); gap: 0; }
+/* De # hoort bij de stijl, niet in de tekst: zo blijft de tag zelf wat er is
+ * ingevuld, ook als iemand 'm kopieert. */
+.tag-style::before { content: "#"; opacity: 0.6; }
+
 .tag-x {
   background: transparent; padding: 0; width: 20px; height: 20px; border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center;
