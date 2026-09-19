@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from ..access import require_view
+from .. import weather as weather_service
 from ..database import get_db
 from ..deps import get_current_user
 from ..models import Item, OccasionOption, User
@@ -65,6 +66,10 @@ def write_preferences(
         prefs.theme = body.theme.strip() or "midnight"
     if body.wear_log_enabled is not None:
         prefs.wear_log_enabled = body.wear_log_enabled
+    if body.temperature_preference is not None:
+        prefs.temperature_preference = weather_service.clamp_offset(
+            body.temperature_preference
+        )
     if body.weather_mode is not None:
         prefs.weather_mode = body.weather_mode
     if body.manual_weather is not None:

@@ -458,6 +458,13 @@ export interface RecommendationPage {
   empty_reason: string | null;
 }
 
+export interface TemperatureOption {
+  /** Shift in degrees on the temperature bands. Positive = feels warm sooner. */
+  value: number;
+  label: string;
+  hint: string;
+}
+
 export interface Preferences {
   theme: string;
   wear_log_enabled: boolean;
@@ -467,6 +474,9 @@ export interface Preferences {
   weather_mode: "auto" | "manual";
   manual_weather: string[];
   weather_available: boolean;
+  /** How this person experiences temperature, in degrees of shift. */
+  temperature_preference: number;
+  temperature_options: TemperatureOption[];
 }
 
 export interface DayPlan {

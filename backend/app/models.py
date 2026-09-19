@@ -452,6 +452,12 @@ class UserPreference(Base):
     weather_mode: Mapped[str] = mapped_column(String(10), default="auto")
     #: Comma-separated weather tags, used when ``weather_mode`` is "manual".
     manual_weather: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    #: Hoe deze persoon temperatuur beleeft, als verschuiving in graden op de
+    #: banden van :mod:`app.weather`. Positief = eerder warm dan de thermometer
+    #: zegt. 0 is de standaard en betekent "zoals het weerbericht het zegt".
+    temperature_preference: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0"
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow, onupdate=utcnow
     )

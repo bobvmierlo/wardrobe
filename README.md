@@ -16,6 +16,8 @@ welke stukken bij elkaar passen — via een **Tinder-achtige swipe**.
 - 🌤️ **Vandaag** – de app haalt de echte weersverwachting op voor jouw plek en zegt
   wat je aan zou kunnen trekken. Ook rekening houdend met de **gelegenheid**:
   sjiek uit eten vraagt iets anders dan een zaterdag op de bank.
+- 🌡️ **Kouwkleum of warmbloedig** – zeg hoe jíj temperatuur beleeft, en de app weet
+  of een korte broek bij vijftien graden er voor jou nog in zit. Per gebruiker.
 - 🧵 **Looks** – stel hele outfits samen en bewaar ze, met de gelegenheid, het weer
   en het seizoen waar ze bij horen. Dat is precies waar "Vandaag" uit kiest.
 - 🪄 **Kast laten aanvullen** – draai je de app al een tijd met ongetagde kleding en
@@ -1169,6 +1171,25 @@ is precies wat dit scherm niet mag voorstellen.
 
 De band wordt bepaald op de **gevoelstemperatuur**: 7 graden in de wind is een
 jas, ook als de thermometer anders suggereert.
+
+**1b. Hoe jíj temperatuur beleeft.** Een weerbericht zegt vijftien graden; de
+een loopt daarbij in korte broek en de ander trekt een jas aan. Onder
+**Instellingen → Heb jij het snel koud of snel warm?** kies je waar je zit op
+een schaal van *echte kouwkleum* tot *echt warmbloedig*, in vijf stappen.
+
+Dat verschuift de **banden**, niet de thermometer: de app blijft vijftien graden
+vijftien graden noemen, maar voor iemand die het snel warm heeft valt dat in de
+band "Warm" in plaats van "Mild" — en dus komen korte mouwen en een korte broek
+in beeld. Andersom werkt het net zo: een kouwkleum krijgt bij tien graden "Koud"
+te zien en daarmee eerder een buitenlaag voorgesteld.
+
+Verandert jouw voorkeur iets aan wat er kan, dan zegt "Vandaag" dat er met
+zoveel woorden bij ("Bij 15° houdt bijna iedereen z'n benen bedekt, maar jij
+hebt het snel warm"). Verandert het niets — bij vijfentwintig graden gaat
+iedereen in korte mouwen — dan blijft die zin weg, want dat is een open deur.
+
+De instelling is **persoonlijk**: in een gedeelde kast ziet je huisgenoot de
+verwachting met zijn eigen banden erop, uit dezelfde opgehaalde gegevens.
 
 **2. De gelegenheid.** Een vrij aan te vullen lijst (`Werk`, `Casual`,
 `Uit eten`, `Feest`, `Sport`, `Formeel`…), die een beheerder beheert onder

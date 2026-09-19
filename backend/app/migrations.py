@@ -169,6 +169,9 @@ LATE_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("items", "occasion", "VARCHAR(200)"),
     ("items", "weather", "VARCHAR(200)"),
     ("items", "style", "VARCHAR(200)"),
+    # user_preferences bestaat sinds de vorige release, dus create_all maakt de
+    # tabel niet opnieuw en deze kolom moet er los bij.
+    ("user_preferences", "temperature_preference", "INTEGER DEFAULT 0"),
 )
 
 

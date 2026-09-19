@@ -128,27 +128,89 @@ class Forecast:
         return f"{self.description}, {round(self.temperature)}°C"
 
 
-def temperature_tag(apparent_c: float) -> str:
-    if apparent_c < COLD_BELOW:
+#: Hoe iemand temperatuur beleeft, als verschuiving in graden op de banden
+#: hierboven. Vijf stappen in plaats van drie, omdat de uitersten echt bestaan:
+#: er zijn mensen die bij vijftien graden nog in korte broek lopen, en mensen
+#: die daar een jas bij aantrekken. Eén schaal voor beide.
+#:
+#: Positief = jij vindt het eerder warm dan de thermometer zegt.
+TEMPERATURE_PREFERENCES: tuple[tuple[int, str, str], ...] = (
+    (-6, "Echte kouwkleum", "Ik heb het bijna altijd eerder koud dan anderen."),
+    (-3, "Snel koud", "Ik trek eerder een extra laag aan."),
+    (0, "Gemiddeld", "Gewoon zoals de weersverwachting het zegt."),
+    (3, "Snel warm", "Ik heb het eerder warm dan anderen."),
+    (6, "Echt warmbloedig", "Bij een graad of vijftien kan ik nog in korte broek."),
+)
+
+MIN_OFFSET = min(offset for offset, _label, _hint in TEMPERATURE_PREFERENCES)
+MAX_OFFSET = max(offset for offset, _label, _hint in TEMPERATURE_PREFERENCES)
+
+
+def clamp_offset(offset: int | None) -> int:
+    """Houd een voorkeur binnen de schaal, wat er ook is opgeslagen."""
+    if offset is None:
+        return 0
+    return max(MIN_OFFSET, min(MAX_OFFSET, int(offset)))
+
+
+def temperature_tag(apparent_c: float, offset: int = 0) -> str:
+    """De temperatuurband waarin dit weer valt, voor deze persoon.
+
+    ``offset`` verschuift de banden in plaats van de thermometer: de app blijft
+    vijftien graden vijftien graden noemen, maar iemand die het snel warm heeft
+    krijgt daar "Warm" bij te zien en dus ook korte mouwen voorgesteld. Dat is
+    precies het verschil dat niemand uit een weerbericht kan aflezen, en dat
+    per persoon dertig graden aan kledingkeuze scheelt.
+    """
+    felt = apparent_c + clamp_offset(offset)
+    if felt < COLD_BELOW:
         return "Koud"
-    if apparent_c < MILD_BELOW:
+    if felt < MILD_BELOW:
         return "Mild"
-    if apparent_c < WARM_BELOW:
+    if felt < WARM_BELOW:
         return "Warm"
     return "Heet"
 
 
-def tags_for(code: int, apparent_c: float, wind_kmh: float) -> list[str]:
+def bares_arms_and_legs(apparent_c: float, offset: int = 0) -> bool:
+    """Of een korte broek en korte mouwen hierbij nog kunnen, voor deze persoon.
+
+    De grens tussen "Mild" en "Warm": daaronder trekt vrijwel niemand nog iets
+    korts aan, daarboven vrijwel iedereen wel.
+    """
+    return apparent_c + clamp_offset(offset) >= MILD_BELOW
+
+
+def tags_for(code: int, apparent_c: float, wind_kmh: float, offset: int = 0) -> list[str]:
     """The wardrobe tags a given forecast comes down to.
 
     Always a sky condition and exactly one temperature band, plus "Winderig"
     when the wind is worth dressing for. Order matters only for how it reads.
     """
     _, sky = WMO_CODES.get(int(code), ("Onbekend", "Bewolkt"))
-    tags = [sky, temperature_tag(apparent_c)]
+    tags = [sky, temperature_tag(apparent_c, offset)]
     if wind_kmh >= WINDY_KMH:
         tags.append("Winderig")
     return tags
+
+
+def retag(forecast: "Forecast", offset: int = 0) -> "Forecast":
+    """Dezelfde verwachting, met de banden van déze persoon erop.
+
+    De verwachting zelf wordt per locatie gedeeld en gecachet — hij is voor
+    iedereen gelijk. Alleen wat je eruit afleidt is persoonlijk, dus dat gebeurt
+    hier, op het laatste moment, in plaats van in de cache.
+    """
+    if not clamp_offset(offset):
+        return forecast
+    return Forecast(
+        **{
+            **forecast.__dict__,
+            "tags": tags_for(
+                forecast.code, forecast.apparent_temperature, forecast.wind_speed, offset
+            ),
+        }
+    )
 
 
 def describe(code: int) -> str:
@@ -390,6 +452,16 @@ _daily_cache: dict[tuple[float, float, int], tuple[float, list[DayForecast]]] = 
 #: days; anything past a week is a guess dressed up as a number, and the week
 #: planner only ever asks for seven.
 MAX_FORECAST_DAYS = 7
+
+
+def retag_day(day: "DayForecast", offset: int = 0) -> "DayForecast":
+    """Eén dag uit de vooruitblik, met de banden van deze persoon."""
+    if not clamp_offset(offset):
+        return day
+    feels = day.high if day.high is not None else 12.0
+    return DayForecast(
+        **{**day.__dict__, "tags": tags_for(day.code, float(feels), day.wind_speed, offset)}
+    )
 
 
 def daily(latitude: float, longitude: float, days: int = MAX_FORECAST_DAYS) -> list[DayForecast]:

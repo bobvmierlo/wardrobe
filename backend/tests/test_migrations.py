@@ -391,9 +391,14 @@ def test_a_database_from_an_earlier_release_still_boots(tmp_path):
             f"een database op schemaversie {version} start niet op:\n{result.stderr}"
         )
         # The garments are still readable, which is what a missing mapped
-        # column takes away, and the columns are back.
+        # column takes away, and every column is back on its own table.
         assert rows(data, "SELECT COUNT(*) FROM items") == [(3,)]
-        present = {r[1] for r in sqlite3.connect(data / "wardrobe.db").execute(
-            "PRAGMA table_info(items)"
-        )}
-        assert {column for _t, column, _ty in late_columns} <= present
+        con = sqlite3.connect(data / "wardrobe.db")
+        try:
+            for table, column, _type in late_columns:
+                present = {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
+                assert column in present, (
+                    f"{table}.{column} ontbreekt nog op schemaversie {version}"
+                )
+        finally:
+            con.close()

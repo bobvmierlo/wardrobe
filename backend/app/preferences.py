@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from . import weather as weather_service
 from .config import settings
 from .models import StyleProfile, User, UserPreference
-from .schemas import PreferencesOut, WeatherOut
+from .schemas import PreferencesOut, TemperatureOption, WeatherOut
 from .tags import split_tags
 
 #: What a brand-new account gets. The wear log is deliberately off: recording
@@ -53,6 +53,11 @@ def serialize(prefs: UserPreference) -> PreferencesOut:
         weather_mode=prefs.weather_mode or "auto",
         manual_weather=split_tags(prefs.manual_weather),
         weather_available=settings.weather_enabled,
+        temperature_preference=weather_service.clamp_offset(prefs.temperature_preference),
+        temperature_options=[
+            TemperatureOption(value=value, label=label, hint=hint)
+            for value, label, hint in weather_service.TEMPERATURE_PREFERENCES
+        ],
     )
 
 
@@ -66,16 +71,21 @@ def forecast_for(prefs: UserPreference) -> weather_service.Forecast | None:
         tags = split_tags(prefs.manual_weather)
         if not tags:
             return None
+        # Handmatig ingesteld: iemand heeft zelf al gezegd hoe het voelt, dus
+        # daar hoeft geen persoonlijke verschuiving meer overheen.
         return weather_service.manual_forecast(tags)
 
     if prefs.latitude is None or prefs.longitude is None:
         return None
     try:
-        return weather_service.current(
+        forecast = weather_service.current(
             prefs.latitude, prefs.longitude, prefs.location_label or ""
         )
     except weather_service.WeatherUnavailable:
         return None
+    # De verwachting is voor iedereen gelijk en wordt gedeeld uit de cache;
+    # welke temperatuurband daarbij hoort is dat niet.
+    return weather_service.retag(forecast, prefs.temperature_preference)
 
 
 def as_weather_out(
@@ -117,9 +127,12 @@ def daily_forecast_for(prefs: UserPreference, days: int = 7):
     if prefs.latitude is None or prefs.longitude is None:
         return []
     try:
-        return weather_service.daily(prefs.latitude, prefs.longitude, days)
+        outlook = weather_service.daily(prefs.latitude, prefs.longitude, days)
     except weather_service.WeatherUnavailable:
         return []
+    return [
+        weather_service.retag_day(day, prefs.temperature_preference) for day in outlook
+    ]
 
 
 def day_as_weather_out(day) -> WeatherOut:

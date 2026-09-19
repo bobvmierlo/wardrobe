@@ -29,7 +29,7 @@ from ..outfit_store import (
     wardrobe_outfits,
     wear_index,
 )
-from ..recommendations import rank_saved, weather_advice
+from ..recommendations import bare_skin_note, rank_saved, weather_advice
 from ..routers.color_rules import load_pairs
 from ..routers.matches import verdict_pairs, wardrobe_items
 from ..schemas import (
@@ -142,9 +142,19 @@ def recommendations(
                 " Tag wat kledingstukken, of kies een andere gelegenheid."
             )
 
+    # Twee zinnen kunnen: wat het weer doet, en — als jouw voorkeur daar iets
+    # aan verandert — of er voor jou nog een korte broek in zit.
+    advice = weather_advice(weather_tags) if weather_tags else ""
+    personal = bare_skin_note(
+        forecast.apparent_temperature if forecast else None,
+        prefs.temperature_preference,
+    )
+    if personal:
+        advice = f"{advice} {personal}".strip()
+
     return RecommendationPage(
         weather=as_weather_out(forecast, prefs.weather_mode or "auto"),
-        advice=weather_advice(weather_tags) if weather_tags else "",
+        advice=advice,
         occasion=occasion,
         recommendations=results,
         empty_reason=empty_reason,

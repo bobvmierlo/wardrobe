@@ -519,6 +519,14 @@ class WeatherOut(BaseModel):
 
 
 # ---- Per-user preferences ----
+class TemperatureOption(BaseModel):
+    """Eén stap op de schaal "heb ik het snel koud of snel warm"."""
+    #: Verschuiving in graden op de temperatuurbanden. Positief = eerder warm.
+    value: int
+    label: str
+    hint: str
+
+
 class PreferencesOut(BaseModel):
     theme: str
     wear_log_enabled: bool
@@ -530,6 +538,10 @@ class PreferencesOut(BaseModel):
     #: False when the operator switched the weather off for this installation,
     #: so the screens can say so instead of showing a button that cannot work.
     weather_available: bool = True
+    #: Hoe deze persoon temperatuur beleeft, in graden verschuiving.
+    temperature_preference: int = 0
+    #: De hele schaal, zodat het instellingenscherm geen tweede verzoek hoeft.
+    temperature_options: list[TemperatureOption] = []
 
 
 class PreferencesIn(BaseModel):
@@ -540,6 +552,8 @@ class PreferencesIn(BaseModel):
     longitude: float | None = Field(default=None, ge=-180, le=180)
     weather_mode: str | None = Field(default=None, pattern="^(auto|manual)$")
     manual_weather: list[str] | None = None
+    #: Begrensd op de schaal zelf; de route klemt wat er binnenkomt nog eens.
+    temperature_preference: int | None = Field(default=None, ge=-10, le=10)
 
 
 # ---- Week planner ----
