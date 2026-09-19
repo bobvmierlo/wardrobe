@@ -313,3 +313,112 @@ def test_the_name_prefers_the_more_specific_rule(client, kast):
     }
     assert by_id[plain["id"]]["weather_tags"] == ["Koud", "Winderig"]
     assert by_id[rain["id"]]["weather_tags"] == ["Koud", "Regen", "Winderig"]
+
+
+# ---------------------------------------------------------------------------
+# Waarom de knop soms niets te doen heeft — en wanneer dat onterecht was
+# ---------------------------------------------------------------------------
+
+def test_a_combination_everyone_approved_is_the_best_look_not_a_disqualified_one(
+    client, kast
+):
+    """Wie een jaar heeft geswipet, heeft z'n looks al bedacht.
+
+    Het swipescherm laat een goedgekeurde combinatie vallen — die is afgedaan.
+    Hier is 'ie juist het beste materiaal dat er is, en die uitsluiting maakte
+    de knop onterecht grijs op precies de kasten waar 'ie voor bedoeld is.
+    """
+    token, wid = kast
+    top = item(client, token, wid, "Polo", "Polo", color="beige")
+    bottom = item(client, token, wid, "Jeans", "Jeans", color="denim")
+
+    before = client.get(
+        "/api/autofill/preview", headers=h(token), params={"wardrobe_id": wid}
+    ).json()
+    assert before["composable"] == 1
+
+    r = client.post(
+        "/api/matches",
+        headers=h(token),
+        json={"item_a_id": top["id"], "item_b_id": bottom["id"], "verdict": "yes"},
+    )
+    assert r.status_code == 204, r.text
+
+    after = client.get(
+        "/api/autofill/preview", headers=h(token), params={"wardrobe_id": wid}
+    ).json()
+    assert after["composable"] == 1, "goedkeuren mag de combinatie niet wegnemen"
+
+    created = client.post(
+        "/api/autofill/looks", headers=h(token), params={"wardrobe_id": wid, "count": 1}
+    ).json()["created"]
+    assert len(created) == 1
+    assert {i["id"] for i in created[0]["items"]} == {top["id"], bottom["id"]}
+
+
+def test_one_garment_is_never_a_look(client, kast):
+    """Een kast met alleen truien levert geen "outfits" van één trui op."""
+    token, wid = kast
+    item(client, token, wid, "Trui", "Trui", color="grijs")
+    item(client, token, wid, "Tweede trui", "Trui", color="navy")
+
+    body = client.get(
+        "/api/autofill/preview", headers=h(token), params={"wardrobe_id": wid}
+    ).json()
+    assert body["composable"] == 0
+    assert "bovenstuk met een onderstuk" in body["composable_reason"]
+
+    created = client.post(
+        "/api/autofill/looks", headers=h(token), params={"wardrobe_id": wid, "count": 5}
+    ).json()["created"]
+    assert created == []
+
+
+def test_the_screen_is_told_why_there_is_nothing_to_compose(client, kast):
+    """Een uitgegrijsde knop zonder reden laat je een storing zoeken."""
+    token, wid = kast
+
+    empty = client.get(
+        "/api/autofill/preview", headers=h(token), params={"wardrobe_id": wid}
+    ).json()
+    assert empty["composable"] == 0
+    assert "te weinig" in empty["composable_reason"]
+
+    top = item(client, token, wid, "Polo", "Polo", color="beige")
+    bottom = item(client, token, wid, "Jeans", "Jeans", color="denim")
+
+    # Zodra er iets te maken valt, is er niets uit te leggen.
+    ready = client.get(
+        "/api/autofill/preview", headers=h(token), params={"wardrobe_id": wid}
+    ).json()
+    assert ready["composable"] == 1 and ready["composable_reason"] is None
+
+    # De enige combinatie opslaan: dán is het "staat al opgeslagen".
+    client.post(
+        "/api/outfits",
+        headers=h(token),
+        params={"wardrobe_id": wid},
+        json={"name": "De enige", "item_ids": [top["id"], bottom["id"]]},
+    )
+    saved = client.get(
+        "/api/autofill/preview", headers=h(token), params={"wardrobe_id": wid}
+    ).json()
+    assert saved["composable"] == 0
+    assert "staat al als look opgeslagen" in saved["composable_reason"]
+
+
+def test_when_everything_is_rejected_the_screen_says_so(client, kast):
+    token, wid = kast
+    top = item(client, token, wid, "Polo", "Polo", color="beige")
+    bottom = item(client, token, wid, "Jeans", "Jeans", color="denim")
+    client.post(
+        "/api/matches",
+        headers=h(token),
+        json={"item_a_id": top["id"], "item_b_id": bottom["id"], "verdict": "no"},
+    )
+
+    body = client.get(
+        "/api/autofill/preview", headers=h(token), params={"wardrobe_id": wid}
+    ).json()
+    assert body["composable"] == 0
+    assert "afgekeurd" in body["composable_reason"]

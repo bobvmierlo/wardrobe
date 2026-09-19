@@ -183,6 +183,7 @@ def suggest_outfits(
     must_include: int | None = None,
     occasion: str | None = None,
     weather_tags: list[str] | None = None,
+    skip_combinations: bool = True,
 ) -> list[dict]:
     """Build and rank outfit suggestions from the wardrobe.
 
@@ -197,6 +198,11 @@ def suggest_outfits(
     Outfits the household already settled are left out entirely: a pair anyone
     rejected is never combined, and an outfit whose every pair is approved is
     dropped because it is a combination already, not a suggestion.
+
+    ``skip_combinations=False`` keeps that last group. The swipe screen wants
+    them gone — it is looking for things still to decide — but "maak looks van
+    mijn kast" wants exactly the opposite: a combination the household already
+    approved is the *best* candidate for a saved look, not a disqualified one.
     """
     good_pairs = _GOOD_PAIRS if good_pairs is None else good_pairs
     bad_pairs = _BAD_PAIRS if bad_pairs is None else bad_pairs
@@ -297,7 +303,7 @@ def suggest_outfits(
             if tagged:
                 score += min(len(tagged), 3)
 
-        if is_combination(base, approved_pairs):
+        if skip_combinations and is_combination(base, approved_pairs):
             continue  # already an approved combination, not a suggestion
 
         reason = ", ".join(dict.fromkeys(r for r in reasons if r)) or "combinatie"

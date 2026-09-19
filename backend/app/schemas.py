@@ -706,6 +706,9 @@ class AutofillPreview(BaseModel):
     outfit_count: int
     #: How many new looks could be built right now, up to what was asked for.
     composable: int
+    #: Waaróm er niets te maken valt, als er niets te maken valt. "Er kan niets"
+    #: zonder reden laat iemand zoeken naar een storing die er niet is.
+    composable_reason: str | None = None
     #: Whether this installation has the optional AI layer configured. False
     #: means the screen must not offer it — see app/ai.py.
     ai_available: bool = False

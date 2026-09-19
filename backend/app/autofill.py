@@ -272,6 +272,11 @@ def plan_looks(
         limit=max(count * 8, 40),
         good_pairs=good_pairs,
         bad_pairs=bad_pairs,
+        # Juist wél de combinaties meenemen die de bewoners al hebben
+        # goedgekeurd. Voor het swipescherm zijn die afgedaan, maar hier zijn
+        # ze het beste materiaal dat er is: iemand met een jaar aan swipes
+        # heeft z'n looks eigenlijk al samengesteld, alleen nog niet bewaard.
+        skip_combinations=False,
     )
 
     plans: list[LookPlan] = []
@@ -283,6 +288,12 @@ def plan_looks(
             if len(plans) >= count:
                 break
             chosen: list[Item] = candidate["items"]
+            # Eén kledingstuk is geen outfit. suggest_outfits levert er wel
+            # eentje op als er niets bij past (een kast met alleen truien),
+            # maar dat als look bewaren is niemand geholpen — en de AI-kant
+            # hanteert dezelfde ondergrens.
+            if len(chosen) < 2:
+                continue
             key = frozenset(item.id for item in chosen)
             if key in existing:
                 continue

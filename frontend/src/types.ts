@@ -604,6 +604,8 @@ export interface AutofillPreview {
   outfit_count: number;
   /** How many new looks it could build right now. */
   composable: number;
+  /** Why none can be built, when none can be. */
+  composable_reason: string | null;
   /** Whether this installation has the optional AI layer configured. */
   ai_available: boolean;
 }
