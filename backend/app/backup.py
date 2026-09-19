@@ -40,6 +40,7 @@ from sqlalchemy.orm import Session
 
 from ._version import __version__
 from .config import settings
+from .tags import join_tags, split_tags
 from .models import (
     Brand,
     Category,
@@ -47,6 +48,9 @@ from .models import (
     Item,
     Match,
     MatchSkip,
+    OccasionOption,
+    Outfit,
+    OutfitItem,
     SizeOption,
     User,
     Wardrobe,
@@ -142,12 +146,22 @@ def collect(
         else []
     )
 
+    outfits = (
+        db.query(Outfit)
+        .filter(Outfit.wardrobe_id.in_(wardrobe_ids))
+        .order_by(Outfit.wardrobe_id, Outfit.name)
+        .all()
+        if wardrobe_ids
+        else []
+    )
+
     # Everyone who appears anywhere in the file, so no reference dangles.
     person_ids = {w.owner_id for w in wardrobes}
     person_ids.update(m.user_id for m in members)
     person_ids.update(it.created_by_id for it in items)
     person_ids.update(m.user_id for m in matches)
     person_ids.update(s.user_id for s in skips)
+    person_ids.update(o.created_by_id for o in outfits)
     people = db.query(User).filter(User.id.in_(person_ids)).all() if person_ids else []
 
     photos: dict[str, Path] = {}
@@ -173,6 +187,9 @@ def collect(
                 "color": item.color,
                 "size": item.size,
                 "seasons": _seasons(item),
+                "occasions": split_tags(item.occasion),
+                "weather": split_tags(item.weather),
+                "styles": split_tags(item.style),
                 "notes": item.notes,
                 "is_favorite": item.is_favorite,
                 "created_at": _iso(item.created_at),
@@ -199,6 +216,32 @@ def collect(
 
     combinations = _pair_rows(matches, lambda m: m.verdict)
     skipped = _pair_rows(skips, lambda _s: "skip")
+
+    # Looks, referencing their garments by uid like everything else here, so a
+    # restore can rebuild them against whatever row ids this installation has.
+    outfits_by_wardrobe: dict[int, list[dict]] = {wid: [] for wid in wardrobe_ids}
+    for outfit in outfits:
+        uids = [
+            by_id[entry.item_id].uid
+            for entry in sorted(outfit.entries, key=lambda e: e.position)
+            if entry.item_id in by_id
+        ]
+        if not uids:
+            continue  # every garment of this look sits outside the export
+        outfits_by_wardrobe[outfit.wardrobe_id].append(
+            {
+                "uid": outfit.uid,
+                "name": outfit.name,
+                "notes": outfit.notes,
+                "items": uids,
+                "seasons": split_tags(outfit.season),
+                "occasions": split_tags(outfit.occasion),
+                "weather": split_tags(outfit.weather),
+                "styles": split_tags(outfit.style),
+                "created_at": _iso(outfit.created_at),
+                "created_by": _person_key(outfit.created_by_id),
+            }
+        )
 
     members_by_wardrobe: dict[int, list[dict]] = {wid: [] for wid in wardrobe_ids}
     for member in members:
@@ -233,6 +276,7 @@ def collect(
                 "owner": _person_key(w.owner_id),
                 "members": members_by_wardrobe.get(w.id, []),
                 "items": items_by_wardrobe.get(w.id, []),
+                "outfits": outfits_by_wardrobe.get(w.id, []),
                 "combinations": combinations.get(w.id, []),
                 "skipped": skipped.get(w.id, []),
             }
@@ -250,6 +294,10 @@ def collect(
                 {"label": s.label, "kind": s.kind, "position": s.position}
                 for s in db.query(SizeOption).order_by(SizeOption.position).all()
             ],
+            "occasions": [
+                {"name": o.name, "position": o.position}
+                for o in db.query(OccasionOption).order_by(OccasionOption.position).all()
+            ],
             "color_rules": [
                 {"color_a": r.color_a, "color_b": r.color_b, "verdict": r.verdict}
                 for r in db.query(ColorRule).all()
@@ -266,6 +314,7 @@ def counts_of(payload: dict) -> dict[str, int]:
         "wardrobes": len(wardrobes),
         "people": len(payload.get("people", [])),
         "items": sum(len(w.get("items", [])) for w in wardrobes),
+        "outfits": sum(len(w.get("outfits", [])) for w in wardrobes),
         "combinations": sum(len(w.get("combinations", [])) for w in wardrobes),
         "skipped": sum(len(w.get("skipped", [])) for w in wardrobes),
     }
@@ -404,6 +453,52 @@ def build_workbook(payload: dict, photos: dict[str, Path]) -> bytes:
         widths = {"A": 15, "B": 20, "C": 28, "D": 14, "E": 16, "F": 14, "G": 10,
                   "H": 20, "I": 9, "J": 34, "K": 14, "L": 16, "M": 26, "N": 34}
     _autosize(sheet, widths)
+
+    # ---- Looks ----------------------------------------------------------
+    # The saved outfits, one row each, with their garments spelled out. The
+    # uids are in there too, so a reader can tie a row back to the JSON.
+    item_names = {
+        item["uid"]: item["name"]
+        for wardrobe in payload.get("wardrobes", [])
+        for item in wardrobe.get("items", [])
+    }
+    if any(w.get("outfits") for w in payload.get("wardrobes", [])):
+        looks = wb.create_sheet("Looks")
+        look_headers = ["Naam", "Kledingstukken", "Gelegenheid", "Weer", "Seizoen",
+                        "Stijl", "Notities", "Gemaakt door"]
+        if multi:
+            look_headers.insert(0, "Kast")
+        look_headers.append("Kenmerk (niet wijzigen)")
+        for col, title in enumerate(look_headers, start=1):
+            cell = looks.cell(row=1, column=col, value=title)
+            cell.font = header_font
+            cell.fill = header_fill
+        looks.freeze_panes = "A2"
+
+        lrow = 2
+        for wardrobe in payload.get("wardrobes", []):
+            for outfit in wardrobe.get("outfits", []):
+                values = [
+                    outfit["name"],
+                    ", ".join(item_names.get(uid, uid) for uid in outfit.get("items", [])),
+                    ", ".join(outfit.get("occasions") or []),
+                    ", ".join(outfit.get("weather") or []),
+                    ", ".join(outfit.get("seasons") or []),
+                    ", ".join(outfit.get("styles") or []),
+                    outfit.get("notes"),
+                    person_names.get(outfit.get("created_by", ""), ""),
+                    outfit["uid"],
+                ]
+                if multi:
+                    values.insert(0, wardrobe["name"])
+                for col, value in enumerate(values, start=1):
+                    cell = looks.cell(row=lrow, column=col, value=value)
+                    cell.alignment = Alignment(vertical="top", wrap_text=(col == 2))
+                lrow += 1
+        _autosize(
+            looks,
+            dict(zip("ABCDEFGHIJ", ([20] if multi else []) + [26, 46, 20, 20, 18, 20, 30, 16, 34])),
+        )
 
     # ---- Combinaties ----------------------------------------------------
     pairs = wb.create_sheet("Combinaties")
@@ -727,7 +822,10 @@ def apply_payload(
         raise RestoreError("Onbekende herstelmodus.")
 
     people = _person_lookup(db, payload, fallback=actor)
-    stats = {"added": 0, "updated": 0, "combinations": 0, "skipped_pairs": 0, "photos": 0}
+    stats = {
+        "added": 0, "updated": 0, "outfits": 0,
+        "combinations": 0, "skipped_pairs": 0, "photos": 0,
+    }
 
     if mode == "replace":
         clear_wardrobe_items(db, target)
@@ -757,6 +855,11 @@ def apply_payload(
             item.color = row.get("color")
             item.size = row.get("size")
             item.season = ", ".join(row.get("seasons") or []) or None
+            # Absent in archives written before looks existed; join_tags turns
+            # an empty list into None, which is what "untagged" looks like.
+            item.occasion = join_tags(row.get("occasions"))
+            item.weather = join_tags(row.get("weather"))
+            item.style = join_tags(row.get("styles"))
             item.notes = row.get("notes")
             item.is_favorite = bool(row.get("is_favorite"))
             creator = people.get(row.get("created_by", ""))
@@ -774,6 +877,39 @@ def apply_payload(
                         item.photo_filename = item.thumb_filename = None
             db.flush()
             by_uid[uid] = item
+
+    # Looks, now that every garment they point at has a row id here.
+    existing_outfits = {
+        outfit.uid: outfit
+        for outfit in db.query(Outfit).filter(Outfit.wardrobe_id == target.id).all()
+    }
+    for wardrobe in payload.get("wardrobes", []):
+        for row in wardrobe.get("outfits", []):
+            uid, name = row.get("uid"), row.get("name")
+            if not uid or not name:
+                continue
+            members = [by_uid[u] for u in row.get("items", []) if u in by_uid]
+            if not members:
+                continue  # its garments did not come along; an empty look is noise
+            outfit = existing_outfits.get(uid)
+            if outfit is None:
+                outfit = Outfit(uid=uid, wardrobe_id=target.id, created_by_id=actor.id)
+                db.add(outfit)
+                stats["outfits"] += 1
+            outfit.name = name
+            outfit.notes = row.get("notes")
+            outfit.season = join_tags(row.get("seasons"))
+            outfit.occasion = join_tags(row.get("occasions"))
+            outfit.weather = join_tags(row.get("weather"))
+            outfit.style = join_tags(row.get("styles"))
+            author = people.get(row.get("created_by", ""))
+            outfit.created_by_id = (author or actor).id
+            outfit.entries.clear()
+            db.flush()
+            for position, item in enumerate(members):
+                outfit.entries.append(OutfitItem(item_id=item.id, position=position))
+            db.flush()
+            existing_outfits[uid] = outfit
 
     # Verdicts come last: both garments of a pair must exist by now.
     for wardrobe in payload.get("wardrobes", []):

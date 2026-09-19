@@ -21,13 +21,19 @@ from .routers import (
     catalog,
     color_rules,
     imports,
+    insights,
     invitations,
     items,
     matches,
+    me,
     oidc,
+    outfits,
     photos,
+    planner,
+    trips,
     users,
     wardrobes,
+    weather,
 )
 from .settings_report import report as report_settings
 
@@ -194,6 +200,13 @@ app.include_router(items.brands_router)
 app.include_router(matches.router)
 app.include_router(catalog.categories_router)
 app.include_router(catalog.sizes_router)
+app.include_router(catalog.occasions_router)
+app.include_router(outfits.router)
+app.include_router(planner.router)
+app.include_router(trips.router)
+app.include_router(insights.router)
+app.include_router(weather.router)
+app.include_router(me.router)
 app.include_router(color_rules.router)
 app.include_router(imports.router)
 app.include_router(invitations.router)

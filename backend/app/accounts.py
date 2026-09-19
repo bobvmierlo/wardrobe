@@ -28,6 +28,8 @@ from .logging_setup import get_logger
 from .models import (
     AuditLog,
     Invitation,
+    Outfit,
+    Trip,
     Item,
     Match,
     MatchSkip,
@@ -54,12 +56,22 @@ def _drop_item_verdicts(db: Session, item_ids: list[int]) -> None:
 
 
 def clear_wardrobe_items(db: Session, wardrobe: Wardrobe) -> int:
-    """Empty a kast: its garments, their photos and every verdict on them.
+    """Empty a kast: its garments, photos, verdicts, looks and trips.
 
     The kast itself, its members and its invitations stay. Used by a restore in
     "vervangen" mode, where the wardrobe survives but its contents are replaced.
     Returns how many garments were removed. Caller commits.
+
+    The looks go with the garments deliberately. Deleting an item cascades to
+    its rows in ``outfit_items`` but leaves the outfit behind, and a look with
+    no clothes in it is not something to hand anybody back.
     """
+    db.query(Outfit).filter(Outfit.wardrobe_id == wardrobe.id).delete(
+        synchronize_session=False
+    )
+    db.query(Trip).filter(Trip.wardrobe_id == wardrobe.id).delete(
+        synchronize_session=False
+    )
     items = db.query(Item).filter(Item.wardrobe_id == wardrobe.id).all()
     _drop_item_verdicts(db, [it.id for it in items])
     for item in items:
@@ -127,10 +139,13 @@ def delete_account(db: Session, user: User, reassign_items_to: User) -> dict[str
     )
 
     # Garments they added to a kast that is not theirs: keep the garment, move
-    # the authorship, so the other household loses nothing.
-    db.query(Item).filter(Item.created_by_id == user_id).update(
-        {Item.created_by_id: reassign_items_to.id}, synchronize_session=False
-    )
+    # the authorship, so the other household loses nothing. Looks and trips in
+    # a kast that stays are the same story — and unlike the rows that cascade,
+    # these would block the delete outright on a foreign key.
+    for model in (Item, Outfit, Trip):
+        db.query(model).filter(model.created_by_id == user_id).update(
+            {model.created_by_id: reassign_items_to.id}, synchronize_session=False
+        )
 
     # The audit trail keeps the name and loses the link.
     db.query(AuditLog).filter(AuditLog.user_id == user_id).update(

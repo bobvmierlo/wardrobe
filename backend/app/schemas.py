@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from .config import settings
+from .tags import split_tags
 
 #: Read once, at import, so every password field in the API agrees. Raising it
 #: never locks anyone out: it applies when a password is *set*, not when one is
@@ -109,6 +110,10 @@ class ItemBase(BaseModel):
     color: str | None = None
     size: str | None = None
     season: str | None = None
+    # Comma-separated, like ``season``; surfaced as lists below. See app/tags.py.
+    occasion: str | None = None
+    weather: str | None = None
+    style: str | None = None
     notes: str | None = None
     is_favorite: bool = False
 
@@ -126,9 +131,22 @@ class ItemOut(ItemBase):
     @property
     def seasons(self) -> list[str]:
         """Season stored comma-separated, surfaced as a clean list."""
-        if not self.season:
-            return []
-        return [s.strip() for s in self.season.split(",") if s.strip()]
+        return split_tags(self.season)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def occasions(self) -> list[str]:
+        return split_tags(self.occasion)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def weather_tags(self) -> list[str]:
+        return split_tags(self.weather)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def style_tags(self) -> list[str]:
+        return split_tags(self.style)
 
 
 # ---- Wardrobes (kasten) & sharing ----
@@ -398,3 +416,264 @@ class ScheduledBackupsOut(BaseModel):
     #: False when unset *or* unparseable — the log says which.
     enabled: bool
     backups: list[ScheduledBackupOut]
+
+
+# ---- Occasions (admin-managed list, like categories) ----
+class OccasionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    name: str
+
+
+# ---- Outfits (saved sets of garments) ----
+class OutfitIn(BaseModel):
+    """What the app sends when saving an outfit.
+
+    Tags arrive as lists and are stored comma-separated; the API never asks a
+    client to know about that (see app/tags.py).
+    """
+    name: str = Field(min_length=1, max_length=120)
+    item_ids: list[int] = Field(min_length=1, max_length=12)
+    notes: str | None = Field(default=None, max_length=2000)
+    seasons: list[str] = []
+    occasions: list[str] = []
+    weather_tags: list[str] = []
+    style_tags: list[str] = []
+
+
+class OutfitOut(BaseModel):
+    id: int
+    name: str
+    notes: str | None
+    items: list[ItemOut]
+    seasons: list[str]
+    occasions: list[str]
+    weather_tags: list[str]
+    style_tags: list[str]
+    created_by_id: int
+    created_at: datetime
+    #: How often the *current user* logged wearing this, and when they last
+    #: did. Empty for anyone who keeps no wear log — theirs is the only history
+    #: that is ever counted here.
+    wear_count: int = 0
+    last_worn: str | None = None
+
+
+class WearIn(BaseModel):
+    """Log (or unlog) a day this outfit was worn. Defaults to today."""
+    worn_on: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+
+
+class WearOut(BaseModel):
+    outfit_id: int
+    worn_on: str
+
+
+# ---- Recommendations ("je zou dit aan kunnen trekken") ----
+class RecommendationOut(BaseModel):
+    items: list[ItemOut]
+    score: int
+    reason: str
+    # "saved" = an outfit you put together before, "new" = assembled just now.
+    source: str
+    outfit_id: int | None = None
+    outfit_name: str | None = None
+    last_worn: str | None = None
+
+
+class RecommendationPage(BaseModel):
+    """Everything the "Vandaag" screen paints in one request."""
+    weather: "WeatherOut | None" = None
+    advice: str = ""
+    occasion: str | None = None
+    recommendations: list[RecommendationOut] = []
+    #: Why there is nothing to show, when there is nothing to show.
+    empty_reason: str | None = None
+
+
+# ---- Weather ----
+class PlaceOut(BaseModel):
+    name: str
+    label: str
+    latitude: float
+    longitude: float
+    region: str | None = None
+    country: str | None = None
+    postcode: str | None = None
+
+
+class WeatherOut(BaseModel):
+    location: str
+    description: str
+    temperature: float
+    apparent_temperature: float
+    wind_speed: float
+    precipitation: float
+    precipitation_chance: int | None = None
+    high: float | None = None
+    low: float | None = None
+    is_day: bool = True
+    tags: list[str] = []
+    #: "auto" (fetched) or "manual" (the tags this user picked themselves).
+    mode: str = "auto"
+
+
+# ---- Per-user preferences ----
+class PreferencesOut(BaseModel):
+    theme: str
+    wear_log_enabled: bool
+    location_label: str | None
+    latitude: float | None
+    longitude: float | None
+    weather_mode: str
+    manual_weather: list[str]
+    #: False when the operator switched the weather off for this installation,
+    #: so the screens can say so instead of showing a button that cannot work.
+    weather_available: bool = True
+
+
+class PreferencesIn(BaseModel):
+    theme: str | None = Field(default=None, max_length=40)
+    wear_log_enabled: bool | None = None
+    location_label: str | None = Field(default=None, max_length=120)
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+    weather_mode: str | None = Field(default=None, pattern="^(auto|manual)$")
+    manual_weather: list[str] | None = None
+
+
+# ---- Week planner ----
+class DayPlanOut(BaseModel):
+    day: str
+    outfit: OutfitOut | None = None
+    #: The forecast for that day, when it is close enough to have one.
+    weather: WeatherOut | None = None
+
+
+class WeekOut(BaseModel):
+    start: str
+    days: list[DayPlanOut]
+
+
+class PlanIn(BaseModel):
+    day: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    #: None clears the day.
+    outfit_id: int | None = None
+
+
+# ---- Trips (reistas) ----
+class TripIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    destination: str | None = Field(default=None, max_length=120)
+    starts_on: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    ends_on: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class PackingEntry(BaseModel):
+    item: ItemOut
+    packed: bool
+    #: How many of the trip's outfits need this garment — the thing that makes
+    #: a packing list shorter than the sum of its outfits.
+    used_in: int
+
+
+class TripOut(BaseModel):
+    id: int
+    name: str
+    destination: str | None
+    starts_on: str | None
+    ends_on: str | None
+    notes: str | None
+    outfit_count: int
+    item_count: int
+    packed_count: int
+
+
+class TripDetail(TripOut):
+    outfits: list[OutfitOut]
+    packing: list[PackingEntry]
+
+
+class TripOutfitIn(BaseModel):
+    outfit_id: int
+
+
+class PackedIn(BaseModel):
+    item_id: int
+    packed: bool
+
+
+# ---- Style DNA & style guide ----
+class StyleProfileOut(BaseModel):
+    colors: list[str]
+    styles: list[str]
+    occasions: list[str]
+    notes: str | None = None
+    #: The vocabularies the form offers, so the screen needs no second request.
+    available_colors: list[str] = []
+    available_styles: list[str] = []
+    available_occasions: list[str] = []
+
+
+class StyleProfileIn(BaseModel):
+    colors: list[str] | None = None
+    styles: list[str] | None = None
+    occasions: list[str] | None = None
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class GuideColor(BaseModel):
+    """One colour in the wardrobe, and what the rules say it goes with."""
+    color: str
+    count: int
+    goes_with: list[str]
+    clashes_with: list[str]
+    in_profile: bool = False
+
+
+class GuideGap(BaseModel):
+    """Something the wardrobe is thin on, phrased as advice."""
+    title: str
+    detail: str
+
+
+class StyleGuideOut(BaseModel):
+    colors: list[GuideColor]
+    neutrals: list[str]
+    gaps: list[GuideGap]
+    #: Weather this wardrobe has little or nothing tagged for.
+    uncovered_weather: list[str]
+    tips: list[str]
+
+
+# ---- Insights (inzichten) ----
+class CountEntry(BaseModel):
+    label: str
+    count: int
+
+
+class ColorSlice(BaseModel):
+    color: str
+    count: int
+
+
+class InsightsOut(BaseModel):
+    item_count: int
+    outfit_count: int
+    favorite_count: int
+    #: Garments that are in no saved outfit at all.
+    unused_items: list[ItemOut]
+    by_category: list[CountEntry]
+    by_season: list[CountEntry]
+    by_occasion: list[CountEntry]
+    palette: list[ColorSlice]
+    #: Only filled for a user who keeps a wear log.
+    wear_log_enabled: bool = False
+    total_wears: int = 0
+    most_worn: list[OutfitOut] = []
+    #: Garments not worn in a long time (or never), for "Opruimen".
+    neglected: list[ItemOut] = []
+
+
+RecommendationPage.model_rebuild()

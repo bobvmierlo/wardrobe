@@ -112,6 +112,27 @@ class Settings(BaseSettings):
     # the server sits on the same network as everything else you self-host.
     fetch_allow_private: bool = False
 
+    # ---- Weer ----
+    #
+    # The app fetches the real forecast for the location a user picks, from
+    # services that need no account and no API key. Off switches the weather
+    # screens off entirely, for an installation with no outbound internet —
+    # picking the weather by hand keeps working.
+    weather_enabled: bool = True
+    # Open-Meteo: the forecast, and looking a place up by name. Configurable so
+    # an operator can point them at their own instance (both are open source).
+    weather_api_url: str = "https://api.open-meteo.com/v1/forecast"
+    geocoding_api_url: str = "https://geocoding-api.open-meteo.com/v1/search"
+    # Zippopotam: looking a place up by postcode, which the geocoder above does
+    # not do reliably for Dutch ones.
+    postcode_api_url: str = "https://api.zippopotam.us"
+    # Which country a bare postcode ("5421") is assumed to be in.
+    weather_country: str = "nl"
+    # How long a fetched forecast is reused. The weather does not change in a
+    # minute, and everyone in a household asking on the same morning should be
+    # one request to a service that asks nothing in return.
+    weather_cache_minutes: int = 15
+
     # ---- Federated login (OpenID Connect) ----
     #
     # Off unless an issuer, a client id and a secret are all present: a half
