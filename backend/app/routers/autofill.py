@@ -8,9 +8,10 @@ and for why the tagging is as cautious as it is.
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from .. import ai as ai_layer
 from .. import audit
 from ..access import require_edit, require_view
-from ..autofill import apply_tags, plan_looks, plan_tags
+from ..autofill import TagPlan, apply_tags, plan_looks, plan_tags
 from ..database import get_db
 from ..deps import get_current_user
 from ..models import Item, OccasionOption, Outfit, User
@@ -18,6 +19,7 @@ from ..outfit_store import apply_tags as apply_outfit_tags
 from ..outfit_store import serialize, set_items, wardrobe_outfits
 from ..routers.color_rules import load_pairs
 from ..routers.matches import verdict_pairs, wardrobe_items
+from ..tags import WEATHER_TAGS, split_tags
 from ..schemas import (
     AutofillLooksResult,
     AutofillPreview,
@@ -83,6 +85,7 @@ def preview(
         taggable=len(tag_plans),
         outfit_count=len(outfits),
         composable=len(plans),
+        ai_available=ai_layer.is_configured(),
     )
 
 
@@ -90,6 +93,7 @@ def preview(
 def fill_tags(
     wardrobe_id: int,
     dry_run: bool = False,
+    use_ai: bool = False,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -97,10 +101,21 @@ def fill_tags(
 
     Only ever fills a field that is empty. A garment somebody already tagged is
     left exactly as it is.
+
+    With ``use_ai`` the rules still run first and still win; the model is only
+    asked about the garments they had nothing to say about, and everything it
+    answers is filtered against this installation's own lists. See app/ai.py.
     """
     require_edit(db, wardrobe_id, user)
     items = db.query(Item).filter(Item.wardrobe_id == wardrobe_id).all()
-    plans = plan_tags(items, _occasion_names(db))
+    occasions = _occasion_names(db)
+    plans = plan_tags(items, occasions)
+
+    by_ai, ai_note = 0, None
+    if use_ai:
+        extra, ai_note = _ai_tag_plans(items, plans, occasions)
+        by_ai = len(extra)
+        plans = plans + extra
 
     examples = [
         TaggedItem(
@@ -113,7 +128,9 @@ def fill_tags(
         for plan in plans[:8]
     ]
     if dry_run:
-        return AutofillTagsResult(tagged=len(plans), examples=examples)
+        return AutofillTagsResult(
+            tagged=len(plans), examples=examples, by_ai=by_ai, ai_note=ai_note
+        )
 
     tagged = apply_tags(plans)
     db.commit()
@@ -126,7 +143,55 @@ def fill_tags(
             wardrobe_id=wardrobe_id,
             entity_type="item",
         )
-    return AutofillTagsResult(tagged=tagged, examples=examples)
+    return AutofillTagsResult(
+        tagged=tagged, examples=examples, by_ai=by_ai, ai_note=ai_note
+    )
+
+
+def _ai_tag_plans(
+    items: list[Item],
+    rule_plans: list[TagPlan],
+    occasions: list[str],
+) -> tuple[list[TagPlan], str | None]:
+    """Ask the model about the garments the rules left untouched.
+
+    Deliberately narrow: a garment the rules already answered for is not even
+    sent, so the model can never overrule them — and, like the rules, an empty
+    field is the only thing it may fill.
+    """
+    if not ai_layer.is_configured():
+        return [], "De AI-laag staat uit in deze installatie."
+
+    settled = {plan.item.id for plan in rule_plans}
+    remaining = [
+        item
+        for item in items
+        if item.id not in settled
+        and (not split_tags(item.occasion) or not split_tags(item.weather))
+    ]
+    if not remaining:
+        return [], None
+
+    try:
+        suggestions = ai_layer.suggest_tags(remaining, occasions, WEATHER_TAGS)
+    except ai_layer.AiUnavailable as exc:
+        return [], str(exc)
+
+    by_id = {item.id: item for item in remaining}
+    plans: list[TagPlan] = []
+    for suggestion in suggestions:
+        item = by_id.get(suggestion.item_id)
+        if item is None:
+            continue
+        plan = TagPlan(item=item)
+        # Still only empty fields, exactly as the rules do it.
+        if suggestion.occasions and not split_tags(item.occasion):
+            plan.occasions = suggestion.occasions
+        if suggestion.weather and not split_tags(item.weather):
+            plan.weather = suggestion.weather
+        if plan.changes:
+            plans.append(plan)
+    return plans, None
 
 
 @router.post("/looks", response_model=AutofillLooksResult)
@@ -134,6 +199,7 @@ def compose_looks(
     wardrobe_id: int,
     count: int = Query(default=10, ge=1, le=MAX_LOOKS),
     dry_run: bool = False,
+    use_ai: bool = False,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -142,9 +208,31 @@ def compose_looks(
     Uses the same scoring as everything else — the installation's own colour
     rules, season overlap, and never a pair anybody rejected. A look is tagged
     with what the garments in it agree on, so it claims nothing they do not.
+
+    ``use_ai`` changes **only the names**. Which garments end up together stays
+    the app's own decision, because that is the part with rules behind it: a
+    pair somebody rejected must never reappear because a model liked the look
+    of it.
     """
     require_edit(db, wardrobe_id, user)
     items, outfits, plans = _look_context(db, wardrobe_id, count)
+
+    named_by_ai, ai_note = 0, None
+    if use_ai and plans:
+        if not ai_layer.is_configured():
+            ai_note = "De AI-laag staat uit in deze installatie."
+        else:
+            try:
+                taken = {o.name.lower() for o in outfits}
+                names = ai_layer.name_looks([plan.items for plan in plans])
+                for index, name in names.items():
+                    if name.lower() in taken:
+                        continue  # botst met een bestaande look; app-naam blijft
+                    taken.add(name.lower())
+                    plans[index].name = name
+                    named_by_ai += 1
+            except ai_layer.AiUnavailable as exc:
+                ai_note = str(exc)
 
     note = None
     if len(items) < 2:
@@ -175,6 +263,8 @@ def compose_looks(
                 for plan in plans
             ],
             note=note,
+            named_by_ai=named_by_ai,
+            ai_note=ai_note,
         )
 
     created = []
@@ -213,4 +303,9 @@ def compose_looks(
         )
     for outfit in created:
         db.refresh(outfit)
-    return AutofillLooksResult(created=[serialize(o) for o in created], note=note)
+    return AutofillLooksResult(
+        created=[serialize(o) for o in created],
+        note=note,
+        named_by_ai=named_by_ai,
+        ai_note=ai_note,
+    )

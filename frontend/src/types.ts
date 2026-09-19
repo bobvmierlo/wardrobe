@@ -594,6 +594,8 @@ export interface AutofillPreview {
   outfit_count: number;
   /** How many new looks it could build right now. */
   composable: number;
+  /** Whether this installation has the optional AI layer configured. */
+  ai_available: boolean;
 }
 
 export interface TaggedItem {
@@ -607,9 +609,15 @@ export interface TaggedItem {
 export interface AutofillTagsResult {
   tagged: number;
   examples: TaggedItem[];
+  /** How many of those came from the AI rather than the rules. */
+  by_ai: number;
+  /** Set when the AI was asked for but could not be reached. */
+  ai_note: string | null;
 }
 
 export interface AutofillLooksResult {
   created: Outfit[];
   note: string | null;
+  named_by_ai: number;
+  ai_note: string | null;
 }

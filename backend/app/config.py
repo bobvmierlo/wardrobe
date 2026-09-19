@@ -133,6 +133,32 @@ class Settings(BaseSettings):
     # one request to a service that asks nothing in return.
     weather_cache_minutes: int = 15
 
+    # ---- AI (optioneel, standaard uit) ----
+    #
+    # Zonder dit doet de app alles zelf: de knoppen onder "Je kast laten
+    # aanvullen" leiden tags af uit categorie en naam, en stellen looks samen
+    # met de kleurregels van deze installatie. Dat blijft ook aan staan als je
+    # dit aanzet — de AI vult alleen in wáár de regels niets te zeggen hebben,
+    # en alles wat terugkomt gaat nog langs dezelfde woordenlijsten.
+    #
+    # Aanzetten betekent dat de server bij het indrukken van zo'n knop naam,
+    # categorie, kleur, maat en seizoen van de betrokken kledingstukken naar
+    # Anthropic stuurt. Geen foto's, geen namen van personen. Uit = er gaat
+    # niets de deur uit.
+    ai_enabled: bool = False
+    #: Een Anthropic API-sleutel. Zonder sleutel blijft de laag uit, ook als
+    #: ai_enabled aan staat.
+    ai_api_key: str = ""
+    ai_model: str = "claude-opus-5"
+    #: Hoeveel denkwerk het model erin steekt. Dit is invulwerk, geen
+    #: redeneerwerk, dus "low" is ruim voldoende en het scheelt aanzienlijk.
+    ai_effort: str = "low"
+    ai_timeout_seconds: float = 60.0
+    #: Weigert het model een vraag, dan draait dezelfde vraag binnen hetzelfde
+    #: verzoek op een terugvalmodel. Uit te zetten voor een opstelling (of een
+    #: proxy) die de bijbehorende beta-vlag niet accepteert.
+    ai_refusal_fallback: bool = True
+
     # ---- Federated login (OpenID Connect) ----
     #
     # Off unless an issuer, a client id and a secret are all present: a half

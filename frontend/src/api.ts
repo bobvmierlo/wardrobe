@@ -585,14 +585,14 @@ export const api = {
   autofillPreview: (wardrobeId: number, count = 10) =>
     request<AutofillPreview>(`/api/autofill/preview?wardrobe_id=${wardrobeId}&count=${count}`),
   /** Fill in the tags that are obvious. Never overwrites what is already set. */
-  autofillTags: (wardrobeId: number, dryRun = false) =>
+  autofillTags: (wardrobeId: number, dryRun = false, useAi = false) =>
     request<AutofillTagsResult>(
-      `/api/autofill/tags?wardrobe_id=${wardrobeId}&dry_run=${dryRun}`,
+      `/api/autofill/tags?wardrobe_id=${wardrobeId}&dry_run=${dryRun}&use_ai=${useAi}`,
       { method: "POST" },
     ),
-  autofillLooks: (wardrobeId: number, count = 10) =>
+  autofillLooks: (wardrobeId: number, count = 10, useAi = false) =>
     request<AutofillLooksResult>(
-      `/api/autofill/looks?wardrobe_id=${wardrobeId}&count=${count}`,
+      `/api/autofill/looks?wardrobe_id=${wardrobeId}&count=${count}&use_ai=${useAi}`,
       { method: "POST" },
     ),
 

@@ -24,6 +24,7 @@ export default function AutofillCard({ wardrobeId, onChanged }: Props) {
   const [preview, setPreview] = useState<AutofillPreview | null>(null);
   const [count, setCount] = useState(10);
   const [busy, setBusy] = useState<"tags" | "looks" | null>(null);
+  const [useAi, setUseAi] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [examples, setExamples] = useState<TaggedItem[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +50,7 @@ export default function AutofillCard({ wardrobeId, onChanged }: Props) {
     try {
       // Ask first, showing what it found — this touches every garment in the
       // kast, and "wat gaat dit doen?" deserves an answer before the fact.
-      const dry = await api.autofillTags(wardrobeId, true);
+      const dry = await api.autofillTags(wardrobeId, true, useAi);
       if (dry.tagged === 0) {
         setResult("Niets aan te vullen — alles heeft al tags, of de categorie zegt te weinig.");
         setExamples([]);
@@ -65,8 +66,12 @@ export default function AutofillCard({ wardrobeId, onChanged }: Props) {
       });
       if (!ok) return;
 
-      const done = await api.autofillTags(wardrobeId);
-      setResult(`${done.tagged} kledingstuk(ken) aangevuld.`);
+      const done = await api.autofillTags(wardrobeId, false, useAi);
+      setResult(
+        `${done.tagged} kledingstuk(ken) aangevuld${
+          done.by_ai ? `, waarvan ${done.by_ai} met AI` : ""
+        }.${done.ai_note ? ` ${done.ai_note}` : ""}`,
+      );
       setExamples(done.examples);
       load();
       onChanged();
@@ -81,10 +86,12 @@ export default function AutofillCard({ wardrobeId, onChanged }: Props) {
     setError(null);
     setBusy("looks");
     try {
-      const done = await api.autofillLooks(wardrobeId, count);
+      const done = await api.autofillLooks(wardrobeId, count, useAi);
       setResult(
         done.created.length
-          ? `${done.created.length} look(s) samengesteld.${done.note ? ` ${done.note}` : ""}`
+          ? `${done.created.length} look(s) samengesteld${
+              done.named_by_ai ? `, ${done.named_by_ai} met een naam van de AI` : ""
+            }.${done.note ? ` ${done.note}` : ""}${done.ai_note ? ` ${done.ai_note}` : ""}`
           : (done.note ?? "Geen nieuwe combinaties gevonden."),
       );
       setExamples([]);
@@ -120,6 +127,34 @@ export default function AutofillCard({ wardrobeId, onChanged }: Props) {
             </li>
           ))}
         </ul>
+      )}
+
+      {preview.ai_available && (
+        <div
+          style={{
+            border: "1px solid var(--border)",
+            borderRadius: 12,
+            padding: "10px 12px",
+            marginTop: 12,
+          }}
+        >
+          <label className="row" style={{ gap: 10, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              style={{ width: "auto" }}
+              checked={useAi}
+              onChange={(e) => setUseAi(e.target.checked)}
+            />
+            <span>✨ Ook AI gebruiken</span>
+          </label>
+          <p className="muted" style={{ fontSize: "0.78rem", margin: "6px 0 0" }}>
+            De regels hierboven blijven leidend; de AI vult alleen aan waar ze niets zeggen, en
+            verzint geen tag die deze app niet kent. Bij looks bepaalt 'ie alléén de namen — welke
+            kleding samengaat blijft aan de app, anders zou een afgekeurd paar terug kunnen komen.
+            Hiervoor gaan naam, categorie, kleur, maat en seizoen van je kleding naar de
+            AI-dienst. Geen foto's, geen namen van personen.
+          </p>
+        </div>
       )}
 
       <div className="stack" style={{ marginTop: 12 }}>

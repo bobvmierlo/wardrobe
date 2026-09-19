@@ -20,8 +20,9 @@ welke stukken bij elkaar passen — via een **Tinder-achtige swipe**.
   en het seizoen waar ze bij horen. Dat is precies waar "Vandaag" uit kiest.
 - 🪄 **Kast laten aanvullen** – draai je de app al een tijd met ongetagde kleding en
   zonder looks? Eén knop vult de ontbrekende weer- en gelegenheidstags aan (alleen
-  lege velden) en één knop stelt looks samen uit wat er hangt. Geen externe AI:
-  dezelfde kleurregels als de rest van de app.
+  lege velden) en één knop stelt looks samen uit wat er hangt. Werkt **zonder
+  externe dienst**, met dezelfde kleurregels als de rest van de app — en met een
+  optionele **AI-laag** erbovenop als je die aanzet.
 - 🗓️ **Weekplanner** – plan per dag vooruit, met de verwachting ernaast; de app
   zegt het als een look niet bij dat weer past.
 - 🧭 **Ontdekken** – laat de app iets samenstellen uit je kast, op gelegenheid,
@@ -173,6 +174,18 @@ Voor het **weer** (zie [Vandaag](#vandaag-outfits-op-basis-van-weer-gelegenheid-
 | `WARDROBE_POSTCODE_API_URL` | Zippopotam | Waar op postcode gezocht wordt. |
 | `WARDROBE_WEATHER_COUNTRY` | `nl` | In welk land een kale postcode (`5421`) verondersteld wordt te liggen. |
 | `WARDROBE_WEATHER_CACHE_MINUTES` | `15` | Hoe lang een opgehaalde verwachting hergebruikt wordt. |
+
+Voor de **optionele AI-laag** (standaard uit, zie
+[Uitlegbaar zonder AI](#uitlegbaar-zonder-ai-met-ai-als-je-wilt)):
+
+| Variabele | Standaard | Uitleg |
+|---|---|---|
+| `WARDROBE_AI_ENABLED` | `false` | Zet de AI-laag aan. Blijft uit zolang er geen sleutel is. |
+| `WARDROBE_AI_API_KEY` | — | Anthropic API-sleutel. Alleen op de server; komt nooit in de browser. |
+| `WARDROBE_AI_MODEL` | `claude-opus-5` | Welk model. Een goedkoper model kan prima — dit is invulwerk. |
+| `WARDROBE_AI_EFFORT` | `low` | Hoeveel denkwerk: `low`…`max`. |
+| `WARDROBE_AI_TIMEOUT_SECONDS` | `60` | Hoe lang de server op een antwoord wacht. |
+| `WARDROBE_AI_REFUSAL_FALLBACK` | `true` | Laat een geweigerde vraag binnen hetzelfde verzoek op een terugvalmodel draaien. |
 
 Voor **inloggen via SSO** (optioneel, standaard uit):
 
@@ -457,6 +470,7 @@ backend/            FastAPI-app (Python)
     weather.py      echte weersverwachting + plaats/postcode opzoeken (zonder sleutel)
     recommendations.py  "je zou dit aan kunnen trekken": weer + gelegenheid wegen
     autofill.py     tags raden en looks samenstellen voor een kast zonder beide
+    ai.py           de optionele AI-laag: alleen waar de regels niets zeggen
     tags.py         de tagkolommen (gelegenheid, weer, stijl) en hun woordenlijsten
     outfit_store.py opgeslagen looks lezen en schrijven, plus het draaglogboek
     preferences.py  persoonlijke instellingen: thema, locatie, draaglogboek, stijl-DNA
@@ -1278,13 +1292,39 @@ Voordat er iets wordt weggeschreven zie je hoeveel stuks het raakt en een paar
 voorbeelden. Alles is daarna gewoon aan te passen: een tag op de pagina van het
 kledingstuk, een look bij Looks.
 
-### Geen AI, wel uitlegbaar
+### Uitlegbaar zonder AI, met AI als je wilt
 
-Deze functie had ook een taalmodel kunnen zijn. Dat is bewust niet gedaan: de app
-is zelf-gehost, stuurt niets naar buiten en heeft nergens een API-sleutel nodig —
-en dat is een eigenschap die je kwijt bent zodra één functie 'm opgeeft. Wat je
-ervoor terugkrijgt is dat elke keuze te herleiden is tot een regel die in dit
-project staat, en dus aan te passen is.
+Alles hierboven werkt **zonder enige externe dienst**. Dat is de standaard, en
+dat blijft zo: de app is zelf-gehost, stuurt niets naar buiten en heeft nergens
+een API-sleutel voor nodig. Elke keuze is te herleiden tot een regel die in dit
+project staat, en dus aan te passen.
+
+Wil je er tóch een taalmodel bij, dan kan dat — als **laag erbovenop**, aan te
+zetten met `WARDROBE_AI_ENABLED` en een `WARDROBE_AI_API_KEY`. De taakverdeling
+is dan scherp:
+
+- **De regels bepalen wat mag.** Welke kledingstukken samen mogen (niemand
+  keurde het paar af), welke kleuren kunnen, welke gelegenheden bestaan. Daar
+  komt het model niet aan. Bij het samenstellen van looks bepaalt de AI daarom
+  **alleen de namen** — welke kleding samengaat blijft aan de app, want anders
+  zou een afgekeurd paar via een omweg terug kunnen komen.
+- **Het model vult in waar geen regel bestaat.** De gelegenheid van een
+  kledingstuk waar de categorie niets over zegt, en een naam die leuker leest
+  dan "Wit overhemd met nette broek".
+- **Alles wat terugkomt gaat alsnog langs de eigen woordenlijsten.** Een tag
+  die deze installatie niet kent, wordt weggegooid. Het model kan dus geen
+  gelegenheid introduceren die een beheerder heeft verwijderd.
+- **Het overschrijft nog steeds niets.** Ook de AI vult alleen lege velden.
+
+**Wat er de deur uit gaat**, en alleen als je de knop mét AI gebruikt: naam,
+categorie, kleur, maat en seizoen van de betrokken kledingstukken. **Geen
+foto's**, geen namen van personen, geen kastnamen, geen oordelen van
+huisgenoten. Staat het uit — de standaard — dan wordt er niets verstuurd en
+verschijnt de schakelaar niet eens in de app.
+
+Gaat de dienst onderuit, dan valt de knop terug op de regels en zegt het scherm
+erbij dat de AI niet meedeed. Het scherm vermeldt ook hoeveel labels van de AI
+kwamen, zodat je nooit hoeft te raden waar iets vandaan komt.
 
 ### Draaglogboek: standaard uit
 

@@ -692,6 +692,9 @@ class AutofillPreview(BaseModel):
     outfit_count: int
     #: How many new looks could be built right now, up to what was asked for.
     composable: int
+    #: Whether this installation has the optional AI layer configured. False
+    #: means the screen must not offer it — see app/ai.py.
+    ai_available: bool = False
 
 
 class TaggedItem(BaseModel):
@@ -705,6 +708,12 @@ class TaggedItem(BaseModel):
 
 class AutofillTagsResult(BaseModel):
     tagged: int
+    #: How many of those came from the AI layer rather than the rules. Always
+    #: reported, so nobody has to guess where a label came from.
+    by_ai: int = 0
+    #: Set when the AI was asked for but could not be reached; the rules ran
+    #: anyway, and this says so instead of failing the whole action.
+    ai_note: str | None = None
     #: The first handful, so the screen can show what it did rather than only
     #: a number. Everything is editable on the garment's own page afterwards.
     examples: list[TaggedItem] = []
@@ -722,6 +731,9 @@ class ComposedLook(BaseModel):
 
 class AutofillLooksResult(BaseModel):
     created: list[OutfitOut] = []
+    #: How many looks got their name from the AI layer.
+    named_by_ai: int = 0
+    ai_note: str | None = None
     #: Filled instead of ``created`` when nothing was saved (a dry run).
     proposed: list[ComposedLook] = []
     #: Why fewer came back than were asked for, when that happened.
