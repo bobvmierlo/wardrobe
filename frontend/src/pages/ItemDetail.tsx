@@ -186,6 +186,26 @@ export default function ItemDetail() {
                     <span>{item.seasons.join(", ")}</span>
                   </div>
                 )}
+                {/* Deze drie stuurden de suggesties al, maar waren nergens
+                    terug te zien op het kledingstuk zelf. */}
+                {item.occasions.length > 0 && (
+                  <div className="kv">
+                    <span className="k">Gelegenheid</span>
+                    <span>{item.occasions.join(", ")}</span>
+                  </div>
+                )}
+                {item.weather_tags.length > 0 && (
+                  <div className="kv">
+                    <span className="k">Weer</span>
+                    <span>{item.weather_tags.join(", ")}</span>
+                  </div>
+                )}
+                {item.style_tags.length > 0 && (
+                  <div className="kv">
+                    <span className="k">Stijl</span>
+                    <span>{item.style_tags.join(", ")}</span>
+                  </div>
+                )}
                 {item.notes && (
                   <div className="kv">
                     <span className="k">Notities</span>

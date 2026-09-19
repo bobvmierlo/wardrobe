@@ -228,6 +228,36 @@ export default function PersonalSettings() {
         )}
       </div>
 
+      <div className="card" id="temperatuur" style={{ padding: 16, scrollMarginTop: 80 }}>
+        <h3 style={{ marginTop: 0 }}>Heb jij het snel koud of snel warm?</h3>
+        <p className="muted" style={{ fontSize: "0.82rem", marginTop: 0 }}>
+          Een weerbericht zegt vijftien graden; wat je daarbij aantrekt verschilt enorm per
+          persoon. Hiermee weet de app of een korte broek en korte mouwen er voor jóu nog in
+          zitten. De verwachting zelf verandert niet — vijftien graden blijft vijftien graden —
+          alleen wat de app je daarbij voorstelt. Geldt alleen voor jou, ook in een gedeelde kast.
+        </p>
+        <div className="stack">
+          {(preferences?.temperature_options ?? []).map((option) => {
+            const active = (preferences?.temperature_preference ?? 0) === option.value;
+            return (
+              <button
+                type="button"
+                key={option.value}
+                className={`theme-card ${active ? "active" : ""}`}
+                aria-pressed={active}
+                disabled={busy}
+                onClick={() => save({ temperature_preference: option.value })}
+              >
+                <span style={{ fontWeight: 600 }}>{option.label}</span>
+                <div className="muted" style={{ fontSize: "0.8rem" }}>
+                  {option.hint}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="card" id="draaglogboek" style={{ padding: 16, scrollMarginTop: 80 }}>
         <h3 style={{ marginTop: 0 }}>Draaglogboek</h3>
         <p className="muted" style={{ fontSize: "0.82rem", marginTop: 0 }}>

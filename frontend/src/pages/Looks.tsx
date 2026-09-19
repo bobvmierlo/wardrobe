@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, photoUrl } from "../api";
 import AppFooter from "../components/AppFooter";
+import AutofillCard from "../components/AutofillCard";
 import OutfitStrip from "../components/OutfitStrip";
 import TagPicker from "../components/TagPicker";
 import WardrobeSwitcher from "../components/WardrobeSwitcher";
@@ -182,6 +183,10 @@ export default function Looks() {
           </button>
         )}
 
+        {canEdit && draft === null && currentId && (
+          <AutofillCard wardrobeId={currentId} onChanged={load} />
+        )}
+
         {draft !== null && (
           <div className="card" style={{ padding: 16 }}>
             <h2 style={{ marginTop: 0 }}>{draft.id === null ? "Nieuwe look" : "Look bewerken"}</h2>
@@ -317,15 +322,33 @@ export default function Looks() {
               )}
             </div>
             <OutfitStrip items={outfit.items} />
-            {(outfit.occasions.length > 0 || outfit.weather_tags.length > 0) && (
+            <div className="muted" style={{ fontSize: "0.78rem", letterSpacing: "0.03em" }}>
+              {outfit.items.length} ONDERDEL{outfit.items.length === 1 ? "" : "EN"}
+            </div>
+            {/* Per soort, en per soort een eigen kleur: seizoen, dan waar je 'm
+                voor aantrekt (gelegenheid en weer), dan de stijlwoorden. */}
+            {(outfit.seasons.length > 0 ||
+              outfit.occasions.length > 0 ||
+              outfit.weather_tags.length > 0 ||
+              outfit.style_tags.length > 0) && (
               <div className="chips wrap">
+                {outfit.seasons.map((t) => (
+                  <span className="tag plain tag-season" key={`s-${t}`}>
+                    {t}
+                  </span>
+                ))}
                 {outfit.occasions.map((t) => (
-                  <span className="tag" key={`o-${t}`}>
+                  <span className="tag plain tag-context" key={`o-${t}`}>
                     {t}
                   </span>
                 ))}
                 {outfit.weather_tags.map((t) => (
-                  <span className="tag" key={`w-${t}`}>
+                  <span className="tag plain tag-context" key={`w-${t}`}>
+                    {t}
+                  </span>
+                ))}
+                {outfit.style_tags.map((t) => (
+                  <span className="tag plain tag-style" key={`y-${t}`}>
                     {t}
                   </span>
                 ))}

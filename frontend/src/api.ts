@@ -1,7 +1,11 @@
 import { reportOffline } from "./online";
 import type {
+  AiSettings,
   AuditPage,
   AuthConfig,
+  AutofillLooksResult,
+  AutofillPreview,
+  AutofillTagsResult,
   BackupPreview,
   Category,
   DayPlan,
@@ -576,6 +580,36 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ item_id: itemId, packed }),
+    }),
+
+  // ---- aanvullen (tags raden, looks samenstellen) ----
+  autofillPreview: (wardrobeId: number, count = 10) =>
+    request<AutofillPreview>(`/api/autofill/preview?wardrobe_id=${wardrobeId}&count=${count}`),
+  /** Fill in the tags that are obvious. Never overwrites what is already set. */
+  autofillTags: (wardrobeId: number, dryRun = false, useAi = false) =>
+    request<AutofillTagsResult>(
+      `/api/autofill/tags?wardrobe_id=${wardrobeId}&dry_run=${dryRun}&use_ai=${useAi}`,
+      { method: "POST" },
+    ),
+  autofillLooks: (wardrobeId: number, count = 10, useAi = false) =>
+    request<AutofillLooksResult>(
+      `/api/autofill/looks?wardrobe_id=${wardrobeId}&count=${count}&use_ai=${useAi}`,
+      { method: "POST" },
+    ),
+
+  // ---- de AI-laag (beheerder) ----
+  aiSettings: () => request<AiSettings>("/api/ai/settings"),
+  saveAiSettings: (data: {
+    enabled?: boolean;
+    model?: string;
+    effort?: string;
+    /** Empty string clears the key; leaving it out keeps what is stored. */
+    api_key?: string;
+  }) =>
+    request<AiSettings>("/api/ai/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
     }),
 
   // ---- insights ----

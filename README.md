@@ -16,8 +16,15 @@ welke stukken bij elkaar passen — via een **Tinder-achtige swipe**.
 - 🌤️ **Vandaag** – de app haalt de echte weersverwachting op voor jouw plek en zegt
   wat je aan zou kunnen trekken. Ook rekening houdend met de **gelegenheid**:
   sjiek uit eten vraagt iets anders dan een zaterdag op de bank.
+- 🌡️ **Kouwkleum of warmbloedig** – zeg hoe jíj temperatuur beleeft, en de app weet
+  of een korte broek bij vijftien graden er voor jou nog in zit. Per gebruiker.
 - 🧵 **Looks** – stel hele outfits samen en bewaar ze, met de gelegenheid, het weer
   en het seizoen waar ze bij horen. Dat is precies waar "Vandaag" uit kiest.
+- 🪄 **Kast laten aanvullen** – draai je de app al een tijd met ongetagde kleding en
+  zonder looks? Eén knop vult de ontbrekende weer- en gelegenheidstags aan (alleen
+  lege velden) en één knop stelt looks samen uit wat er hangt. Werkt **zonder
+  externe dienst**, met dezelfde kleurregels als de rest van de app — en met een
+  optionele **AI-laag** erbovenop als je die aanzet.
 - 🗓️ **Weekplanner** – plan per dag vooruit, met de verwachting ernaast; de app
   zegt het als een look niet bij dat weer past.
 - 🧭 **Ontdekken** – laat de app iets samenstellen uit je kast, op gelegenheid,
@@ -169,6 +176,20 @@ Voor het **weer** (zie [Vandaag](#vandaag-outfits-op-basis-van-weer-gelegenheid-
 | `WARDROBE_POSTCODE_API_URL` | Zippopotam | Waar op postcode gezocht wordt. |
 | `WARDROBE_WEATHER_COUNTRY` | `nl` | In welk land een kale postcode (`5421`) verondersteld wordt te liggen. |
 | `WARDROBE_WEATHER_CACHE_MINUTES` | `15` | Hoe lang een opgehaalde verwachting hergebruikt wordt. |
+
+Voor de **optionele AI-laag** (standaard uit). De eerste vier kan een beheerder
+ook gewoon **in de app** zetten onder Instellingen → AI; zet je ze hier, dan
+winnen ze en staan ze in de app op slot — zie
+[Wie zet 'm aan](#wie-zet-m-aan):
+
+| Variabele | Standaard | Uitleg |
+|---|---|---|
+| `WARDROBE_AI_ENABLED` | `false` | Zet de AI-laag aan. Blijft uit zolang er geen sleutel is. |
+| `WARDROBE_AI_API_KEY` | — | Anthropic API-sleutel. Alleen op de server; komt nooit in de browser. |
+| `WARDROBE_AI_MODEL` | `claude-opus-5` | Welk model. Een goedkoper model kan prima — dit is invulwerk. |
+| `WARDROBE_AI_EFFORT` | `low` | Hoeveel denkwerk: `low`, `medium` of `high`. |
+| `WARDROBE_AI_TIMEOUT_SECONDS` | `60` | Hoe lang de server op een antwoord wacht. |
+| `WARDROBE_AI_REFUSAL_FALLBACK` | `true` | Laat een geweigerde vraag binnen hetzelfde verzoek op een terugvalmodel draaien. |
 
 Voor **inloggen via SSO** (optioneel, standaard uit):
 
@@ -449,13 +470,15 @@ backend/            FastAPI-app (Python)
     access.py       kast-toegang & rollen (eigenaar/beheerder/bewerker/kijker)
     routers/        auth, oidc, users, wardrobes, items, matches, catalog,
                     color_rules, imports, invitations, admin_log, outfits,
-                    planner, trips, insights, weather, me
+                    planner, trips, insights, weather, me, autofill
     weather.py      echte weersverwachting + plaats/postcode opzoeken (zonder sleutel)
     recommendations.py  "je zou dit aan kunnen trekken": weer + gelegenheid wegen
+    autofill.py     tags raden en looks samenstellen voor een kast zonder beide
+    ai.py           de optionele AI-laag: alleen waar de regels niets zeggen
+    app_settings.py instellingen die een beheerder in de app omzet (incl. AI)
     tags.py         de tagkolommen (gelegenheid, weer, stijl) en hun woordenlijsten
     outfit_store.py opgeslagen looks lezen en schrijven, plus het draaglogboek
     preferences.py  persoonlijke instellingen: thema, locatie, draaglogboek, stijl-DNA
-    app_settings.py instellingen die een beheerder in de app omzet (zelf registreren)
     migrations.py   genummerde schemastappen (één keer) + seeds (elke start)
     scheduled_backup.py  dagelijkse momentopname in <data>/backups, met rotatie
     oidc.py         federated login: discovery, PKCE, tokencontrole, groep → beheerder
@@ -476,7 +499,8 @@ frontend/           React + Vite (TypeScript)
   src/theme.tsx     kleurstelling en persoonlijke instellingen van de ingelogde gebruiker
   src/components/   SwipeCard, ItemForm, BottomNav, WardrobeSwitcher, SuggestionList,
                     JudgedPairList, PartnerGrid, InvitationLinks, QrCode,
-                    OutfitStrip, WeatherCard, TagPicker, PersonalSettings
+                    OutfitStrip, WeatherCard, TagPicker, PersonalSettings,
+                    AutofillCard
   src/qr.ts         QR-codes voor uitnodigingslinks (geen externe bibliotheek)
 Dockerfile          multi-stage build (frontend → python runtime)
 docker-compose.yml  container + datavolume
@@ -1150,6 +1174,25 @@ is precies wat dit scherm niet mag voorstellen.
 De band wordt bepaald op de **gevoelstemperatuur**: 7 graden in de wind is een
 jas, ook als de thermometer anders suggereert.
 
+**1b. Hoe jíj temperatuur beleeft.** Een weerbericht zegt vijftien graden; de
+een loopt daarbij in korte broek en de ander trekt een jas aan. Onder
+**Instellingen → Heb jij het snel koud of snel warm?** kies je waar je zit op
+een schaal van *echte kouwkleum* tot *echt warmbloedig*, in vijf stappen.
+
+Dat verschuift de **banden**, niet de thermometer: de app blijft vijftien graden
+vijftien graden noemen, maar voor iemand die het snel warm heeft valt dat in de
+band "Warm" in plaats van "Mild" — en dus komen korte mouwen en een korte broek
+in beeld. Andersom werkt het net zo: een kouwkleum krijgt bij tien graden "Koud"
+te zien en daarmee eerder een buitenlaag voorgesteld.
+
+Verandert jouw voorkeur iets aan wat er kan, dan zegt "Vandaag" dat er met
+zoveel woorden bij ("Bij 15° houdt bijna iedereen z'n benen bedekt, maar jij
+hebt het snel warm"). Verandert het niets — bij vijfentwintig graden gaat
+iedereen in korte mouwen — dan blijft die zin weg, want dat is een open deur.
+
+De instelling is **persoonlijk**: in een gedeelde kast ziet je huisgenoot de
+verwachting met zijn eigen banden erop, uit dezelfde opgehaalde gegevens.
+
 **2. De gelegenheid.** Een vrij aan te vullen lijst (`Werk`, `Casual`,
 `Uit eten`, `Feest`, `Sport`, `Formeel`…), die een beheerder beheert onder
 **Instellingen → Gelegenheden**. Kies er een bij Vandaag en outfits die daarvoor
@@ -1236,6 +1279,116 @@ Wat daarop verder gebouwd is:
   afgelezen uit de kleurregels van deze installatie (die een beheerder kan
   aanpassen) plus wat er daadwerkelijk in de kast hangt. Advies dat je kunt
   herleiden tot een regel is advies dat je kunt veranderen.
+
+### Een bestaande kast alsnog vullen
+
+Draai je de app al een tijd, dan zit je met een kast vol kleding die niemand ooit
+getagd heeft en zonder één opgeslagen look. Zonder tags heeft "Vandaag" niets om
+op te varen, en tweehonderd kledingstukken met de hand nalopen is geen voorstel.
+
+Onder **Looks** staat daarom **"Je kast laten aanvullen"**, met twee knoppen:
+
+- **Ontbrekende tags aanvullen** – leidt weer- en gelegenheidstags af uit de
+  categorie en de naam van een kledingstuk. Een winterjas is voor de kou; een
+  korte broek voor warm en zonnig weer. Staat er niets bruikbaars in de
+  categorie, dan telt het seizoen mee.
+- **Looks samenstellen** – bouwt looks uit wat er hangt, met dezelfde scoring als
+  de rest van de app: de kleurregels van deze installatie, seizoensoverlap, en
+  nooit een paar dat iemand heeft afgekeurd.
+
+Vier dingen die het **niet** doet, want dat is hier het belangrijkste:
+
+- **Het overschrijft nooit.** Alleen een leeg veld wordt ingevuld. Heb je zelf
+  iets getagd, dan blijft dat staan — ook als de app iets anders zou raden.
+- **Het verzint geen gelegenheid die niet bestaat.** Haalde een beheerder
+  "Formeel" uit de lijst, dan komt die niet via een achterdeur op elke blazer
+  terug.
+- **Het gokt niet waar het niet zeker is.** De weertabel is lang, de
+  gelegenheidstabel kort: of een spijkerbroek "Werk" is, hangt af van jouw werk
+  en niet van de broek. Een verkeerde tag is erger dan geen tag, want een leeg
+  veld sluit nooit iets uit en een verkeerde wél.
+- **Een look claimt niets wat z'n kleren niet claimen.** De tags van een look
+  zijn de *doorsnede* van wat de stukken erin zeggen: een look is pas voor de
+  regen als niks erin daar bezwaar tegen heeft.
+
+Voordat er iets wordt weggeschreven zie je hoeveel stuks het raakt en een paar
+voorbeelden. Alles is daarna gewoon aan te passen: een tag op de pagina van het
+kledingstuk, een look bij Looks.
+
+### Uitlegbaar zonder AI, met AI als je wilt
+
+Alles hierboven werkt **zonder enige externe dienst**. Dat is de standaard, en
+dat blijft zo: de app is zelf-gehost, stuurt niets naar buiten en heeft nergens
+een API-sleutel voor nodig. Elke keuze is te herleiden tot een regel die in dit
+project staat, en dus aan te passen.
+
+Wil je er tóch een taalmodel bij, dan kan dat — als **laag erbovenop**. Een
+beheerder zet 'm aan onder **Instellingen → AI (optioneel)**, met de uitleg
+erbij hoe je aan een API-sleutel komt; je hoeft er geen compose-bestand voor aan
+te raken. Wie dat liever wél in de omgeving regelt gebruikt `WARDROBE_AI_*` —
+zie [Wie zet 'm aan](#wie-zet-m-aan). De taakverdeling is dan scherp:
+
+Met de AI aan **stelt het model de looks zelf samen** en vult het tags aan waar
+de regels niets zeggen. Wat het daarbij meekrijgt en wat daarna wordt
+afgedwongen, is het hele punt:
+
+- **Het model krijgt jullie oordelen mee.** Welke paren de bewoners zelf
+  hebben goedgekeurd (een aanrader) en welke ze hebben afgekeurd (verboden),
+  plus de looks die al bestaan. Op een kast die al een tijd draait is dat
+  precies de kennis die er ligt.
+- **Maar dat het zich eraan hield, wordt niet aangenomen.** Elk voorstel gaat
+  langs een controle in de app: zit er een **afgekeurd paar** in, dan gaat die
+  hele look eruit — niet één stuk eruit wippen, want dan maak je van hun "nee"
+  een "ja, maar". Hetzelfde geldt voor verzonnen id's, looks die al bestaan en
+  dubbelen binnen dezelfde ronde. Het scherm zegt hoeveel voorstellen zijn
+  afgewezen en waarom.
+- **Alles wat terugkomt gaat langs de eigen woordenlijsten.** Een tag die deze
+  installatie niet kent, wordt weggegooid. Het model kan dus geen gelegenheid
+  introduceren die een beheerder heeft verwijderd.
+- **Een look claimt nog steeds niets wat z'n kleren tegenspreken.** Zegt het
+  model dat een winterjas voor de hitte is terwijl de kleding "Koud" zegt, dan
+  valt die tag af. Zeggen de kledingstukken zelf niets, dan mag het voorstel
+  blijven — dát is waar de AI-laag voor bestaat.
+- **Het overschrijft nog steeds niets.** Ook de AI vult alleen lege velden, en
+  een kledingstuk waar de regels al raad mee wisten gaat niet eens mee in de
+  vraag.
+- **Levert de AI te weinig, dan vult de app aan** met z'n eigen combinaties, zodat
+  de knop altijd iets doet.
+
+### Wie zet 'm aan
+
+Twee wegen, en de omgeving wint:
+
+* **In de app** — een beheerder vindt onder **Instellingen → AI (optioneel)** een
+  schakelaar, een veld voor de sleutel, de keuze van het model en hoeveel
+  denkwerk het erin steekt. Dat wordt in de database opgeslagen, dus het
+  overleeft een herstart zonder dat er iets aan de container verandert. Onder de
+  knop *"Hoe kom ik aan een API-sleutel?"* staat stap voor stap hoe je er een
+  maakt, inclusief het zetten van een uitgavenlimiet.
+* **In de omgeving** — staat er een `WARDROBE_AI_*` in je omgeving of je `.env`,
+  dan wint die. Dat veld is in de app nog wel te zíen maar niet te wijzigen, en
+  een poging levert een nette foutmelding op in plaats van een knop die stiekem
+  niets doet. Wat in je compose-bestand staat, staat daar met een reden.
+
+De sleutel komt **nooit** terug over de lijn — ook niet naar een beheerder. Het
+scherm hoort alleen dát er een staat, plus de laatste vier tekens zodat je ziet
+wélke. Hij zit niet in een export; alleen een **momentopname** (de ruwe
+database) bevat 'm, net als al het andere.
+
+Je betaalt per gebruik, rechtstreeks aan Anthropic, met je eigen sleutel. Eén
+druk op de knop is één verzoek. Het model is instelbaar: de standaard is het
+slimste (en duurste), maar dit is invulwerk en geen redeneerwerk — een goedkoper
+model volstaat hier prima.
+
+**Wat er de deur uit gaat**, en alleen als je de knop mét AI gebruikt: naam,
+categorie, kleur, maat en seizoen van de betrokken kledingstukken. **Geen
+foto's**, geen namen van personen, geen kastnamen, geen oordelen van
+huisgenoten. Staat het uit — de standaard — dan wordt er niets verstuurd en
+verschijnt de schakelaar niet eens in de app.
+
+Gaat de dienst onderuit, dan valt de knop terug op de regels en zegt het scherm
+erbij dat de AI niet meedeed. Het scherm vermeldt ook hoeveel looks en labels
+van de AI kwamen, zodat je nooit hoeft te raden waar iets vandaan komt.
 
 ### Draaglogboek: standaard uit
 

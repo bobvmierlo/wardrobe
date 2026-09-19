@@ -458,6 +458,13 @@ export interface RecommendationPage {
   empty_reason: string | null;
 }
 
+export interface TemperatureOption {
+  /** Shift in degrees on the temperature bands. Positive = feels warm sooner. */
+  value: number;
+  label: string;
+  hint: string;
+}
+
 export interface Preferences {
   theme: string;
   wear_log_enabled: boolean;
@@ -467,6 +474,9 @@ export interface Preferences {
   weather_mode: "auto" | "manual";
   manual_weather: string[];
   weather_available: boolean;
+  /** How this person experiences temperature, in degrees of shift. */
+  temperature_preference: number;
+  temperature_options: TemperatureOption[];
 }
 
 export interface DayPlan {
@@ -582,3 +592,65 @@ export const THEMES: { id: string; label: string; hint: string; swatch: string[]
     swatch: ["#101014", "#1b1b21", "#c9a227"],
   },
 ];
+
+// ---- Aanvullen: tags raden en looks samenstellen voor een bestaande kast ----
+
+export interface AutofillPreview {
+  item_count: number;
+  without_weather: number;
+  without_occasion: number;
+  /** How many of those the app can actually fill in. */
+  taggable: number;
+  outfit_count: number;
+  /** How many new looks it could build right now. */
+  composable: number;
+  /** Whether this installation has the optional AI layer configured. */
+  ai_available: boolean;
+}
+
+export interface TaggedItem {
+  id: number;
+  name: string;
+  category: string;
+  weather: string[];
+  occasions: string[];
+}
+
+export interface AutofillTagsResult {
+  tagged: number;
+  examples: TaggedItem[];
+  /** How many of those came from the AI rather than the rules. */
+  by_ai: number;
+  /** Set when the AI was asked for but could not be reached. */
+  ai_note: string | null;
+}
+
+export interface AutofillLooksResult {
+  created: Outfit[];
+  note: string | null;
+  /** How many of these the AI composed; the rest the app built itself. */
+  by_ai: number;
+  ai_note: string | null;
+}
+
+// ---- De AI-laag, zoals een beheerder 'm in de app instelt ----
+
+export interface AiModelOption {
+  value: string;
+  label: string;
+}
+
+export interface AiSettings {
+  enabled: boolean;
+  model: string;
+  effort: string;
+  /** Whether a key is stored, and its last four characters. The key itself
+   *  never leaves the server — not even to a beheerder. */
+  key_set: boolean;
+  key_hint: string | null;
+  /** Fields pinned in the server's environment, so not editable here. */
+  locked: string[];
+  models: AiModelOption[];
+  efforts: string[];
+  timeout_seconds: number;
+}

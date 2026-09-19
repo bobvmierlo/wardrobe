@@ -519,6 +519,14 @@ class WeatherOut(BaseModel):
 
 
 # ---- Per-user preferences ----
+class TemperatureOption(BaseModel):
+    """Eén stap op de schaal "heb ik het snel koud of snel warm"."""
+    #: Verschuiving in graden op de temperatuurbanden. Positief = eerder warm.
+    value: int
+    label: str
+    hint: str
+
+
 class PreferencesOut(BaseModel):
     theme: str
     wear_log_enabled: bool
@@ -530,6 +538,10 @@ class PreferencesOut(BaseModel):
     #: False when the operator switched the weather off for this installation,
     #: so the screens can say so instead of showing a button that cannot work.
     weather_available: bool = True
+    #: Hoe deze persoon temperatuur beleeft, in graden verschuiving.
+    temperature_preference: int = 0
+    #: De hele schaal, zodat het instellingenscherm geen tweede verzoek hoeft.
+    temperature_options: list[TemperatureOption] = []
 
 
 class PreferencesIn(BaseModel):
@@ -540,6 +552,8 @@ class PreferencesIn(BaseModel):
     longitude: float | None = Field(default=None, ge=-180, le=180)
     weather_mode: str | None = Field(default=None, pattern="^(auto|manual)$")
     manual_weather: list[str] | None = None
+    #: Begrensd op de schaal zelf; de route klemt wat er binnenkomt nog eens.
+    temperature_preference: int | None = Field(default=None, ge=-10, le=10)
 
 
 # ---- Week planner ----
@@ -677,3 +691,99 @@ class InsightsOut(BaseModel):
 
 
 RecommendationPage.model_rebuild()
+
+
+# ---- Aanvullen: tags raden en looks samenstellen voor een bestaande kast ----
+class AutofillPreview(BaseModel):
+    """What the two buttons would do, before either is pressed."""
+    item_count: int
+    #: Garments with nothing filled in for that field yet.
+    without_weather: int
+    without_occasion: int
+    #: How many of those this would actually be able to fill in — the rest are
+    #: garments where the category says nothing useful.
+    taggable: int
+    outfit_count: int
+    #: How many new looks could be built right now, up to what was asked for.
+    composable: int
+    #: Whether this installation has the optional AI layer configured. False
+    #: means the screen must not offer it — see app/ai.py.
+    ai_available: bool = False
+
+
+class TaggedItem(BaseModel):
+    """One garment and what was (or would be) written onto it."""
+    id: int
+    name: str
+    category: str
+    weather: list[str] = []
+    occasions: list[str] = []
+
+
+class AutofillTagsResult(BaseModel):
+    tagged: int
+    #: How many of those came from the AI layer rather than the rules. Always
+    #: reported, so nobody has to guess where a label came from.
+    by_ai: int = 0
+    #: Set when the AI was asked for but could not be reached; the rules ran
+    #: anyway, and this says so instead of failing the whole action.
+    ai_note: str | None = None
+    #: The first handful, so the screen can show what it did rather than only
+    #: a number. Everything is editable on the garment's own page afterwards.
+    examples: list[TaggedItem] = []
+
+
+class ComposedLook(BaseModel):
+    name: str
+    items: list[ItemOut]
+    seasons: list[str] = []
+    occasions: list[str] = []
+    weather_tags: list[str] = []
+    style_tags: list[str] = []
+    reason: str = ""
+
+
+class AutofillLooksResult(BaseModel):
+    created: list[OutfitOut] = []
+    #: How many of these the AI layer composed. The rest the app built itself,
+    #: which is also what happens when the AI returns too few or none.
+    by_ai: int = 0
+    #: Says what the AI layer did or could not do — including how many of its
+    #: proposals were thrown out, and why.
+    ai_note: str | None = None
+    #: Filled instead of ``created`` when nothing was saved (a dry run).
+    proposed: list[ComposedLook] = []
+    #: Why fewer came back than were asked for, when that happened.
+    note: str | None = None
+
+
+
+# ---- De AI-laag, zoals een beheerder 'm in de app instelt ----
+class AiModelOption(BaseModel):
+    value: str
+    label: str
+
+
+class AiSettingsOut(BaseModel):
+    """Wat er staat. Met opzet zónder de sleutel zelf."""
+    enabled: bool
+    model: str
+    effort: str
+    #: Of er een sleutel staat, en de laatste vier tekens ervan. De sleutel
+    #: zelf verlaat de server niet — ook niet naar een beheerder.
+    key_set: bool
+    key_hint: str | None = None
+    #: Velden die in de omgeving van de server vastliggen en hier dus niet te
+    #: wijzigen zijn.
+    locked: list[str] = []
+    models: list[AiModelOption] = []
+    efforts: list[str] = []
+    timeout_seconds: float = 60.0
+
+
+class AiSettingsIn(BaseModel):
+    enabled: bool | None = None
+    model: str | None = Field(default=None, max_length=80)
+    effort: str | None = Field(default=None, max_length=20)
+    #: Een lege string wist de sleutel; weglaten laat 'm staan.
+    api_key: str | None = Field(default=None, max_length=200)

@@ -43,7 +43,9 @@ log = get_logger("config")
 
 #: Never printed. Their presence and length are, because "did my secret arrive?"
 #: is a fair question and "what is it?" is not.
-SECRET_FIELDS = frozenset({"secret_key", "admin_password", "oidc_client_secret"})
+SECRET_FIELDS = frozenset(
+    {"secret_key", "admin_password", "oidc_client_secret", "ai_api_key"}
+)
 
 #: Headings, so thirty lines of output can be skimmed instead of read. Each
 #: entry is (first field of the group, heading).
@@ -51,6 +53,7 @@ GROUPS: tuple[tuple[str, str], ...] = (
     ("data_dir", "Opslag en basis"),
     ("login_max_attempts", "Beveiliging"),
     ("weather_enabled", "Weer"),
+    ("ai_enabled", "AI (optioneel)"),
     ("oidc_enabled", "Inloggen via SSO (OpenID Connect)"),
     ("frontend_dir", "Intern"),
 )
@@ -98,6 +101,29 @@ def _dotenv_names() -> set[str]:
         log.warning("Kon %s niet lezen om de herkomst te bepalen: %s", path, exc)
         return set()
     return names
+
+
+#: Berekend bij het eerste gebruik: de ``.env`` verandert niet meer terwijl de
+#: app draait, en 'm per verzoek van schijf lezen zou zonde zijn.
+_provided: set[str] | None = None
+
+
+def provided_names() -> set[str]:
+    """Elke WARDROBE_*-naam die de beheerder van de server zélf heeft gezet.
+
+    Gebruikt om te bepalen wat er in de app nog te wijzigen valt: wat in de
+    omgeving of de ``.env`` staat, staat daar met een reden, en hoort niet
+    stilletjes overschreven te worden door een knop in een scherm.
+    """
+    global _provided
+    if _provided is None:
+        _provided = _environ_names() | _dotenv_names()
+    return _provided
+
+
+def provided(field: str) -> bool:
+    """Of deze instelling door de operator is meegegeven."""
+    return _env_name(field) in provided_names()
 
 
 def _shown(field: str, value: object) -> str:

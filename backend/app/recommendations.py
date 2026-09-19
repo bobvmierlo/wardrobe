@@ -189,6 +189,42 @@ def rank_saved(
     return results
 
 
+def bare_skin_note(
+    apparent_c: float | None,
+    offset: int,
+) -> str | None:
+    """De zin die zegt of een korte broek er voor jóu nog in zit.
+
+    Bestaat omdat dit precies het stukje is dat een weerbericht niet kan
+    zeggen: bij vijftien graden loopt de een in korte broek en trekt de ander
+    een jas aan. Alleen de moeite waard als de persoonlijke voorkeur er
+    daadwerkelijk iets aan verandert — anders is het een open deur.
+    """
+    from .weather import bares_arms_and_legs, clamp_offset
+
+    if apparent_c is None:
+        return None
+    offset = clamp_offset(offset)
+    if not offset:
+        return None
+
+    personal = bares_arms_and_legs(apparent_c, offset)
+    average = bares_arms_and_legs(apparent_c, 0)
+    if personal == average:
+        return None  # jouw voorkeur maakt hier geen verschil
+
+    degrees = round(apparent_c)
+    if personal:
+        return (
+            f"Bij {degrees}° houdt bijna iedereen z'n benen bedekt, maar jij hebt"
+            " het snel warm — korte broek en korte mouwen kunnen voor jou prima."
+        )
+    return (
+        f"Bij {degrees}° gaan de meeste mensen in korte mouwen, maar jij hebt het"
+        " snel koud — hou het lekker bedekt."
+    )
+
+
 def weather_advice(forecast_tags: list[str], temperature: float | None = None) -> str:
     """The one-line nudge above the suggestions."""
     if "Regen" in forecast_tags:
