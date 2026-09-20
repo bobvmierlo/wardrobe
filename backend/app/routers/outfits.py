@@ -80,8 +80,9 @@ def recommendations(
     """What to wear today, given the weather and (optionally) the occasion.
 
     Saved outfits are ranked first — a human already said these clothes go
-    together — and the list is topped up with fresh combinations so a kast
-    with no saved outfits yet still answers the question on day one.
+    together — and the list is topped up with combinations built on the spot,
+    so a kast with no saved outfits yet still answers the question on day one.
+    A look that is already listed as saved is never offered again as an idea.
     """
     require_view(db, wardrobe_id, user)
     prefs = get_preferences(db, user)
@@ -122,7 +123,15 @@ def recommendations(
     # Top up with freshly built combinations when there are not enough saved
     # outfits that suit today.
     if len(results) < limit:
-        for suggestion in _build(db, wardrobe_id, occasion, weather_tags, limit - len(results)):
+        already = {frozenset(it.id for it in rec.items) for rec in ranked}
+        for suggestion in _build(
+            db,
+            wardrobe_id,
+            occasion,
+            weather_tags,
+            limit - len(results),
+            exclude=already,
+        ):
             results.append(
                 RecommendationOut(
                     items=suggestion["items"],
@@ -193,8 +202,20 @@ def _build(
     weather_tags: list[str],
     limit: int,
     season: str | None = None,
+    exclude: set[frozenset[int]] | None = None,
 ) -> list[dict]:
-    """Fresh combinations from the wardrobe, respecting everyone's verdicts."""
+    """Combinations from the wardrobe, respecting everyone's verdicts.
+
+    A pair anybody rejected is never built. A pair everybody approved *is*:
+    unlike the swipe screen, which hides settled combinations because it is
+    looking for things still to decide, these screens are answering "what can
+    I wear" — and a combination the household already approved is the best
+    answer there is, not a disqualified one. Without that, a kast that has
+    been swiped through end to end suggests nothing at all.
+
+    ``exclude`` drops outfits by their set of item ids, so the "Vandaag"
+    screen does not offer as new something it already listed as a saved look.
+    """
     items = wardrobe_items(db, wardrobe_id)
     if season:
         items = [it for it in items if not it.season or season.lower() in (it.season or "").lower()]
@@ -206,20 +227,27 @@ def _build(
         items,
         rejected,
         approved,
-        limit=limit,
+        limit=limit + len(exclude or ()),
         good_pairs=good_pairs,
         bad_pairs=bad_pairs,
         occasion=occasion,
         weather_tags=weather_tags,
+        skip_combinations=False,
     )
-    return [
-        {
-            "items": [ItemOut.model_validate(it) for it in b["items"]],
-            "score": b["score"],
-            "reason": b["reason"],
-        }
-        for b in built
-    ]
+    results: list[dict] = []
+    for b in built:
+        if exclude and frozenset(it.id for it in b["items"]) in exclude:
+            continue
+        results.append(
+            {
+                "items": [ItemOut.model_validate(it) for it in b["items"]],
+                "score": b["score"],
+                "reason": b["reason"],
+            }
+        )
+        if len(results) >= limit:
+            break
+    return results
 
 
 # ---------------------------------------------------------------------------

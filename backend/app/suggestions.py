@@ -303,8 +303,15 @@ def suggest_outfits(
             if tagged:
                 score += min(len(tagged), 3)
 
-        if skip_combinations and is_combination(base, approved_pairs):
-            continue  # already an approved combination, not a suggestion
+        settled = is_combination(base, approved_pairs)
+        if settled:
+            if skip_combinations:
+                continue  # already an approved combination, not a suggestion
+            # Kept, so say what it is: not "partly" approved but wholly so,
+            # and worth putting near the top.
+            reasons = [r for r in reasons if r != "deels al goedgekeurd"]
+            reasons.append("een al goedgekeurde combinatie")
+            score += 3
 
         reason = ", ".join(dict.fromkeys(r for r in reasons if r)) or "combinatie"
         results.append({"items": base, "score": score, "reason": reason.capitalize()})
