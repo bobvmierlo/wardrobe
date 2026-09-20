@@ -557,6 +557,78 @@ def test_discover_leaves_the_coat_at_home_when_it_is_warm(client, kast):
         assert "Winterjas" not in {i["name"] for i in suggestion["items"]}
 
 
+def test_discover_keeps_suggesting_after_the_whole_kast_is_swiped(client, kast):
+    """The bug: a kast everybody swiped through offered nothing at all.
+
+    The swipe screen drops a combination once it is approved — it is done with
+    it. Ontdekken must do the opposite: an approved combination is the best
+    answer to "wat kan ik aan", not a disqualified one.
+    """
+    token, wid = kast
+    tops = [
+        item(client, token, wid, "Wit overhemd", "Overhemd", color="wit"),
+        item(client, token, wid, "Blauwe polo", "Polo", color="blauw"),
+    ]
+    bottoms = [
+        item(client, token, wid, "Navy chino", "Chino", color="navy"),
+        item(client, token, wid, "Jeans", "Jeans", color="denim"),
+    ]
+
+    before = client.get("/api/outfits/discover", headers=h(token), params={"wardrobe_id": wid})
+    assert len(before.json()) == 4
+
+    for top in tops:
+        for bottom in bottoms:
+            r = client.post(
+                "/api/matches",
+                headers=h(token),
+                json={"item_a_id": top["id"], "item_b_id": bottom["id"], "verdict": "yes"},
+            )
+            assert r.status_code == 204, r.text
+
+    after = client.get("/api/outfits/discover", headers=h(token), params={"wardrobe_id": wid})
+    assert len(after.json()) == 4, "Ontdekken liet alles vallen wat al goedgekeurd was"
+    reasons = [x["reason"] for x in after.json()]
+    assert all("al goedgekeurde combinatie" in r.lower() for r in reasons), reasons
+
+    # The swipe screen, meanwhile, is rightly finished: nothing left to judge.
+    left = client.get("/api/matches/suggestions", headers=h(token), params={"wardrobe_id": wid})
+    assert left.json() == []
+
+
+def test_discover_still_never_builds_a_rejected_pair(client, kast):
+    token, wid = kast
+    top = item(client, token, wid, "Rode trui", "Trui", color="rood")
+    item(client, token, wid, "Navy chino", "Chino", color="navy")
+    bad = item(client, token, wid, "Roze broek", "Broek", color="roze")
+    client.post(
+        "/api/matches",
+        headers=h(token),
+        json={"item_a_id": top["id"], "item_b_id": bad["id"], "verdict": "no"},
+    )
+
+    r = client.get("/api/outfits/discover", headers=h(token), params={"wardrobe_id": wid})
+    combos = [{i["name"] for i in s["items"]} for s in r.json()]
+    assert {"Rode trui", "Navy chino"} in combos
+    assert {"Rode trui", "Roze broek"} not in combos
+
+
+def test_recommendations_do_not_offer_a_saved_look_twice(client, kast):
+    """A saved look is listed once, as "saved" — never again as a new idea."""
+    token, wid = kast
+    set_manual_weather(client, token, ["Mild", "Bewolkt"])
+    top = item(client, token, wid, "Overhemd", "Overhemd", color="wit", season="Alle seizoenen")
+    bottom = item(client, token, wid, "Broek", "Broek", color="navy", season="Alle seizoenen")
+    make_outfit(client, token, wid, "Mijn look", [top["id"], bottom["id"]])
+
+    r = client.get("/api/outfits/recommendations", headers=h(token), params={"wardrobe_id": wid})
+    recs = r.json()["recommendations"]
+    combos = [frozenset(i["id"] for i in rec["items"]) for rec in recs]
+    assert len(combos) == len(set(combos)), recs
+    mine = frozenset({top["id"], bottom["id"]})
+    assert [rec["source"] for rec, c in zip(recs, combos) if c == mine] == ["saved"]
+
+
 # ---------------------------------------------------------------------------
 # Week planner
 # ---------------------------------------------------------------------------
