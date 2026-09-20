@@ -200,7 +200,10 @@ export default function AutofillCard({ wardrobeId, onChanged }: Props) {
           <p className="muted" style={{ fontSize: "0.78rem", margin: "4px 0 0" }}>
             {preview.composable > 0
               ? `Er zijn nu ${preview.composable} nieuwe combinaties te maken uit wat er hangt, met dezelfde kleurregels als de rest van de app — en nooit een paar dat iemand afkeurde.`
-              : "Alles wat past staat al als look opgeslagen."}
+              : /* De server weet waaróm er niets kan; een uitgegrijsde knop
+                   zonder reden laat je zoeken naar een storing die er niet is. */
+                (preview.composable_reason ??
+                  "Er zijn nu geen nieuwe combinaties te maken.")}
           </p>
         </div>
       </div>

@@ -19,6 +19,7 @@ from ..models import Item, OccasionOption, Outfit, User
 from ..outfit_store import apply_tags as apply_outfit_tags
 from ..outfit_store import serialize, set_items, wardrobe_outfits
 from ..routers.color_rules import load_pairs
+from ..matching import group_of
 from ..routers.matches import verdict_pairs, wardrobe_items
 from ..tags import WEATHER_TAGS, split_tags
 from ..schemas import (
@@ -45,6 +46,39 @@ def _occasion_names(db: Session) -> list[str]:
         .order_by(OccasionOption.position, OccasionOption.name)
         .all()
     ]
+
+
+def _why_nothing(db: Session, items: list[Item], outfits: list) -> str:
+    """Waarom er geen enkele nieuwe look te maken valt.
+
+    Bestaat omdat een uitgegrijsde knop zonder reden iemand naar een storing
+    laat zoeken die er niet is: een kast met twee kledingstukken waarvan de
+    enige combinatie al bewaard is, is geen fout maar een kast met twee
+    kledingstukken.
+    """
+    if len(items) < 2:
+        return "Er zit nog te weinig in deze kast om iets te combineren."
+
+    groups = {group_of(it.category) for it in items}
+    has_base = "dress" in groups or ("top" in groups and "bottom" in groups)
+    if not has_base:
+        return (
+            "Er is wel kleding, maar geen bovenstuk met een onderstuk (of een"
+            " jurk) om een outfit van te maken."
+        )
+
+    rejected, _approved = verdict_pairs(db, {it.id for it in items})
+    if outfits:
+        return (
+            "Alles wat in deze kast past, staat al als look opgeslagen."
+            " Voeg kleding toe voor nieuwe combinaties."
+        )
+    if rejected:
+        return (
+            "Elke mogelijke combinatie is bij het combineren afgekeurd."
+            " Trek daar een oordeel in, of voeg kleding toe."
+        )
+    return "Geen combinaties gevonden die bij elkaar passen."
 
 
 def _look_context(db: Session, wardrobe_id: int, count: int, seed: list | None = None):
@@ -90,6 +124,7 @@ def preview(
     items, outfits, plans = _look_context(db, wardrobe_id, count)
     tag_plans = plan_tags(items, _occasion_names(db))
     return AutofillPreview(
+        composable_reason=_why_nothing(db, items, outfits) if not plans else None,
         item_count=len(items),
         without_weather=sum(1 for it in items if not (it.weather or "").strip()),
         without_occasion=sum(1 for it in items if not (it.occasion or "").strip()),
