@@ -405,6 +405,30 @@ class StyleProfile(Base):
     #: Occasions this person dresses for most, used to order suggestions.
     occasions: Mapped[str | None] = mapped_column(String(200), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # ---- The half of a stijl-DNA the app does not read ----
+    #
+    # Everything above steers the suggestions. Everything below is a page
+    # somebody keeps for themselves: what they concluded about their own
+    # style, in their own words, so it is there when they are standing in a
+    # shop wondering whether this suits them. The app stores it, shows it back
+    # and never argues with it — which is why these are free text and not
+    # picked from a vocabulary. A neckline the engine cannot see is not a
+    # neckline the person should be talked out of writing down.
+    #: "Modern, klassiek & elegant" — the one line that names the whole thing.
+    identity: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    #: "Warm & diep": which seasonal colour analysis they came out as.
+    color_season: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    #: Their own words for the overall feel ("quiet luxury", "tijdloos"),
+    #: comma-separated like every other tag column in this app.
+    aesthetics: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    #: The shapes that suit them: necklines, silhouettes, fabrics.
+    necklines: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    silhouettes: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    fabrics: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    #: One sentence to think of while getting dressed. Theirs, not ours.
+    mantra: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow, onupdate=utcnow
     )
@@ -633,6 +657,46 @@ class AppSetting(Base):
     value: Mapped[str] = mapped_column(String(200), default="")
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow, onupdate=utcnow
+    )
+
+
+class AiUsage(Base):
+    """One call to the AI layer: what it was for, and what it cost.
+
+    Written by :mod:`app.ai` after every request that reached Anthropic, so the
+    running total in Instellingen is a sum of things that actually happened
+    rather than an estimate of what might have. It exists because this is the
+    one feature in the app that spends somebody's money: a switch that bills
+    you per press has to be able to say how often it was pressed.
+
+    ``cost_cents`` is our own arithmetic on the published per-token prices (see
+    ``app/ai_pricing.py``), not a figure from Anthropic — it is an indication,
+    and the screen says so. Kept in thousandths of a cent because a single
+    tagging run on a small kast costs less than a cent and rounding it to one
+    would make every row read "0".
+
+    The rows carry no garment, no kast and no photo — only counts. Deleting an
+    account leaves its rows behind with a null ``user_id``, the same way the
+    audit trail does, so the total does not quietly drop when somebody leaves.
+    """
+
+    __tablename__ = "ai_usage"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    #: "tags", "looks" or "names" — which button spent this.
+    purpose: Mapped[str] = mapped_column(String(30), index=True)
+    model: Mapped[str] = mapped_column(String(80))
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    #: Cached reads are billed at a tenth; kept apart so the sum can be right.
+    cache_read_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cache_write_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    #: Thousandths of a dollar cent, rounded. Null when this model's price is
+    #: not in the table — better an empty column than a made-up number.
+    cost_millicents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True, nullable=True
     )
 
 

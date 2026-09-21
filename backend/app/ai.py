@@ -48,6 +48,37 @@ class AiUnavailable(Exception):
     """Aanroepen kon niet. Draagt een zin die getoond mag worden."""
 
 
+@dataclass
+class AiCall:
+    """Eén verzoek dat de deur uit ging, en hoeveel tokens het kostte.
+
+    Deze module schrijft niets naar de database — hij weet niet eens dat er een
+    is. Wie 'm aanroept geeft een lijst mee, krijgt 'm gevuld terug en bewaart
+    'm zelf (zie :mod:`app.ai_usage`). Zo blijft "praten met Anthropic" en
+    "bijhouden wat dat kost" van elkaar gescheiden, en blijft een test op deze
+    module een test zonder sessie.
+    """
+    purpose: str
+    model: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+
+
+def _count(usage, *names: str) -> int:
+    """Het eerste veld van ``usage`` dat bestaat en een getal is, of 0.
+
+    Meerdere namen omdat de SDK ze door de jaren heen anders heeft genoemd, en
+    een ontbrekend veld hier niets ergers mag zijn dan een nul in de teller.
+    """
+    for name in names:
+        value = getattr(usage, name, None)
+        if isinstance(value, int):
+            return value
+    return 0
+
+
 def is_configured(config: AiConfig) -> bool:
     """Of deze installatie de AI-laag überhaupt mag gebruiken."""
     return config.usable
@@ -69,12 +100,25 @@ def _client(config: AiConfig):
     )
 
 
-def _ask(config: AiConfig, system: str, prompt: str, schema: dict, max_tokens: int) -> dict:
+def _ask(
+    config: AiConfig,
+    system: str,
+    prompt: str,
+    schema: dict,
+    max_tokens: int,
+    purpose: str = "",
+    usage: list[AiCall] | None = None,
+) -> dict:
     """Eén vraag, één JSON-antwoord in de gevraagde vorm.
 
     Het enige punt in deze module dat het netwerk op gaat, zodat een test er
     één functie voor hoeft te vervangen — dezelfde opzet als
     :func:`app.weather._get_json`.
+
+    Ging het verzoek eruit, dan komt er een :class:`AiCall` in ``usage`` te
+    staan, ook als het antwoord daarna onbruikbaar blijkt: het is verstuurd en
+    het wordt dus gefactureerd, en een teller die alleen de geslaagde keren
+    telt vertelt precies het verkeerde verhaal over de rekening.
     """
     client = _client(config)
     request = {
@@ -108,6 +152,22 @@ def _ask(config: AiConfig, system: str, prompt: str, schema: dict, max_tokens: i
         raise AiUnavailable(
             "De AI-dienst antwoordde niet. De app heeft het zonder gedaan."
         ) from exc
+
+    if usage is not None:
+        counts = getattr(response, "usage", None)
+        usage.append(
+            AiCall(
+                purpose=purpose,
+                # Wat er terugkomt, niet wat we vroegen: bij een weigering kan
+                # het terugvalmodel geantwoord hebben, en dat heeft z'n eigen
+                # tarief.
+                model=str(getattr(response, "model", "") or config.model),
+                input_tokens=_count(counts, "input_tokens"),
+                output_tokens=_count(counts, "output_tokens"),
+                cache_read_tokens=_count(counts, "cache_read_input_tokens"),
+                cache_write_tokens=_count(counts, "cache_creation_input_tokens"),
+            )
+        )
 
     if getattr(response, "stop_reason", None) == "refusal":
         raise AiUnavailable("De AI-dienst wilde deze vraag niet beantwoorden.")
@@ -186,6 +246,7 @@ def suggest_tags(
     items: list,
     occasions: list[str],
     weather_tags: list[str],
+    usage: list[AiCall] | None = None,
 ) -> list[AiTags]:
     """Vraag het model om gelegenheid- en weertags voor deze kledingstukken.
 
@@ -208,7 +269,10 @@ def suggest_tags(
         ensure_ascii=False,
         indent=1,
     )
-    answer = _ask(config, TAG_SYSTEM, prompt, TAG_SCHEMA, max_tokens=8000)
+    answer = _ask(
+        config, TAG_SYSTEM, prompt, TAG_SCHEMA, max_tokens=8000,
+        purpose="tags", usage=usage,
+    )
 
     results: list[AiTags] = []
     for row in answer.get("items", []) or []:
@@ -280,7 +344,9 @@ NAME_SCHEMA = {
 MAX_NAME = 60
 
 
-def name_looks(config: AiConfig, looks: list[list]) -> dict[int, str]:
+def name_looks(
+    config: AiConfig, looks: list[list], usage: list[AiCall] | None = None
+) -> dict[int, str]:
     """Een naam per samengestelde look, op volgorde van binnenkomst.
 
     ``looks`` is een lijst van lijsten kledingstukken. Wat terugkomt is een
@@ -304,7 +370,10 @@ def name_looks(config: AiConfig, looks: list[list]) -> dict[int, str]:
         ensure_ascii=False,
         indent=1,
     )
-    answer = _ask(config, NAME_SYSTEM, prompt, NAME_SCHEMA, max_tokens=4000)
+    answer = _ask(
+        config, NAME_SYSTEM, prompt, NAME_SCHEMA, max_tokens=4000,
+        purpose="names", usage=usage,
+    )
 
     names: dict[int, str] = {}
     used: set[str] = set()
@@ -346,6 +415,11 @@ COMPOSE_SYSTEM = (
     " niet elk kledingstuk in elke outfit."
     "\n- Kies tags alleen uit de meegegeven lijsten, en alleen als ze voor"
     " élk kledingstuk in de outfit kloppen. Twijfel je, laat ze leeg."
+    "\n- Temperatuur en lucht zijn niet hetzelfde soort weer. Of een outfit bij"
+    " 'Koud', 'Mild', 'Warm' of 'Heet' past, bepaalt de kleding zelf. Of het"
+    " regent, sneeuwt, waait of bewolkt is, bepaalt de kleding niet: daar gaat"
+    " een jas overheen. Noem dus gerust 'Regen' of 'Winderig' bij een outfit"
+    " die bij die temperatuur past — dat maakt 'm niet ongeschikt."
     "\n- Geef elke outfit een korte Nederlandse naam van maximaal vier woorden."
     "\n- Antwoord uitsluitend met JSON in het gevraagde formaat."
 )
@@ -398,6 +472,7 @@ def compose_looks(
     occasions: list[str],
     weather_tags: list[str],
     count: int,
+    usage: list[AiCall] | None = None,
 ) -> list[AiLook]:
     """Vraag het model om outfits samen te stellen uit deze kast.
 
@@ -434,7 +509,10 @@ def compose_looks(
         ensure_ascii=False,
         indent=1,
     )
-    answer = _ask(config, COMPOSE_SYSTEM, prompt, COMPOSE_SCHEMA, max_tokens=8000)
+    answer = _ask(
+        config, COMPOSE_SYSTEM, prompt, COMPOSE_SCHEMA, max_tokens=8000,
+        purpose="looks", usage=usage,
+    )
 
     proposals: list[AiLook] = []
     for row in answer.get("outfits", []) or []:

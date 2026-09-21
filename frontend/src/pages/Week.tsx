@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import AppFooter from "../components/AppFooter";
+import LookMosaic from "../components/LookMosaic";
+import Modal from "../components/Modal";
 import OutfitStrip from "../components/OutfitStrip";
 import WardrobeSwitcher from "../components/WardrobeSwitcher";
 import { weatherIcon } from "../components/WeatherCard";
@@ -33,6 +35,7 @@ export default function Week() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [picking, setPicking] = useState<string | null>(null);
+  const [q, setQ] = useState("");
 
   const load = useCallback(async () => {
     if (!currentId) return;
@@ -60,6 +63,7 @@ export default function Week() {
     try {
       await api.planDay(currentId, day, outfitId);
       setPicking(null);
+      setQ("");
       load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Opslaan mislukt");
@@ -67,6 +71,16 @@ export default function Week() {
   }
 
   const today = new Date().toISOString().slice(0, 10);
+  const pickingDay = picking ? week?.days.find((d) => d.day === picking) : undefined;
+  const needle = q.trim().toLowerCase();
+  const choices = needle
+    ? outfits.filter((o) =>
+        [o.name, ...o.occasions, ...o.style_tags, ...o.items.map((i) => i.name)]
+          .join(" ")
+          .toLowerCase()
+          .includes(needle),
+      )
+    : outfits;
 
   return (
     <>
@@ -130,42 +144,73 @@ export default function Week() {
                   + Look kiezen
                 </button>
               )}
-
-              {picking === day.day && (
-                <div className="stack" style={{ marginTop: 8 }}>
-                  {outfits.length === 0 && (
-                    <p className="muted" style={{ fontSize: "0.85rem" }}>
-                      Nog geen looks om te plannen. Maak er eerst een bij <strong>Looks</strong>.
-                    </p>
-                  )}
-                  {outfits.map((outfit) => (
-                    <button
-                      className="btn-ghost"
-                      key={outfit.id}
-                      style={{ textAlign: "left" }}
-                      onClick={() => plan(day.day, outfit.id)}
-                    >
-                      {outfit.name}
-                      {/* The whole point of the forecast column: say out loud
-                          when a look is tagged for other weather than the day. */}
-                      {day.weather &&
-                        outfit.weather_tags.length > 0 &&
-                        !outfit.weather_tags.some((t) => day.weather!.tags.includes(t)) && (
-                          <span className="muted"> · past niet bij dit weer</span>
-                        )}
-                    </button>
-                  ))}
-                  <button className="btn-ghost" onClick={() => setPicking(null)}>
-                    Annuleren
-                  </button>
-                </div>
-              )}
             </div>
           ))}
         </div>
 
         <AppFooter />
       </div>
+
+      {/* Choosing what to wear on Tuesday by reading a list of names is not
+          choosing: you pick a look because of what it looks like. So the
+          picker shows the looks, in a dialog that opens where you are rather
+          than inside the day card you happened to tap. */}
+      {picking && (
+        <Modal
+          wide
+          title={`Look kiezen voor ${dayLabel(picking)}`}
+          onClose={() => {
+            setPicking(null);
+            setQ("");
+          }}
+        >
+          {outfits.length === 0 ? (
+            <p className="muted">
+              Nog geen looks om te plannen. Maak er eerst een bij <strong>Looks</strong>.
+            </p>
+          ) : (
+            <>
+              <div className="filterbar">
+                <input
+                  className="search"
+                  placeholder="Zoek een look…"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                />
+              </div>
+              {choices.length === 0 && <p className="muted">Geen look gevonden.</p>}
+              <div className="look-pick-grid">
+                {choices.map((outfit) => {
+                  // The whole point of the forecast column: say out loud when
+                  // a look is tagged for other weather than the day.
+                  const mismatch =
+                    pickingDay?.weather &&
+                    outfit.weather_tags.length > 0 &&
+                    !outfit.weather_tags.some((t) => pickingDay.weather!.tags.includes(t));
+                  return (
+                    <button
+                      type="button"
+                      className="look-pick-card"
+                      key={outfit.id}
+                      onClick={() => plan(picking, outfit.id)}
+                    >
+                      <LookMosaic items={outfit.items} max={4} compact />
+                      <span className="look-pick-name">{outfit.name}</span>
+                      {mismatch ? (
+                        <span className="look-pick-note warn">Past niet bij dit weer</span>
+                      ) : (
+                        outfit.occasions.length > 0 && (
+                          <span className="look-pick-note">{outfit.occasions.join(" · ")}</span>
+                        )
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </Modal>
+      )}
     </>
   );
 }

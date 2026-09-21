@@ -60,11 +60,27 @@ def _config(enabled=True, key="sk-ant-test"):
     )
 
 
-def answer_with(monkeypatch, payload, record=None):
-    """Laat de dienst dit antwoorden, en leg vast wat er heen ging."""
-    def fake(config, system, prompt, schema, max_tokens):
+def answer_with(monkeypatch, payload, record=None, tokens=None):
+    """Laat de dienst dit antwoorden, en leg vast wat er heen ging.
+
+    ``tokens`` is ``(in, uit)``: dan doet de nep-aanroep ook wat de echte doet
+    en zet er een :class:`app.ai.AiCall` bij, zodat de verbruiksteller iets te
+    tellen heeft.
+    """
+    def fake(config, system, prompt, schema, max_tokens, purpose="", usage=None):
         if record is not None:
-            record.append({"system": system, "prompt": prompt, "schema": schema})
+            record.append(
+                {"system": system, "prompt": prompt, "schema": schema, "purpose": purpose}
+            )
+        if tokens is not None and usage is not None:
+            usage.append(
+                ai_layer.AiCall(
+                    purpose=purpose,
+                    model=config.model,
+                    input_tokens=tokens[0],
+                    output_tokens=tokens[1],
+                )
+            )
         return payload
 
     monkeypatch.setattr(ai_layer, "_ask", fake)
@@ -241,7 +257,7 @@ def test_a_broken_answer_costs_the_ai_not_the_button(client, kast, ai_on, monkey
     item(client, token, wid, "Winterjas", "Jas")
     item(client, token, wid, "Gouden ketting", "Sieraad")
 
-    def boom(config, system, prompt, schema, max_tokens):
+    def boom(config, system, prompt, schema, max_tokens, purpose="", usage=None):
         raise ai_layer.AiUnavailable("De AI-dienst antwoordde niet.")
 
     monkeypatch.setattr(ai_layer, "_ask", boom)
@@ -514,7 +530,11 @@ def test_the_model_cannot_tag_a_look_against_its_own_clothes(client, kast, ai_on
     )
     assert r.status_code == 200, r.text
     look = r.json()["created"][0]
-    assert look["weather_tags"] == ["Koud"], "Heet spreekt de kleding tegen en valt af"
+    assert "Heet" not in look["weather_tags"], "Heet spreekt de kleding tegen en valt af"
+    assert "Koud" in look["weather_tags"]
+    # De luchten komen er wél bij: die spreken winterkleding niet tegen, want
+    # daar gaat een jas overheen. Zie app/tags.py:with_implied_skies.
+    assert "Sneeuw" in look["weather_tags"]
 
 
 def test_the_model_may_tag_a_look_whose_clothes_say_nothing(client, kast, ai_on, monkeypatch):
@@ -532,7 +552,11 @@ def test_the_model_may_tag_a_look_whose_clothes_say_nothing(client, kast, ai_on,
     assert r.status_code == 200, r.text
     look = r.json()["created"][0]
     assert look["occasions"] == ["Feest"]
-    assert look["weather_tags"] == ["Mild"]
+    assert "Mild" in look["weather_tags"]
+    # Mild is de temperatuur die het model noemde; de luchten die daarbij horen
+    # volgen daaruit, en sneeuw hoort daar niet bij.
+    assert "Regen" in look["weather_tags"]
+    assert "Sneeuw" not in look["weather_tags"]
 
 
 def test_an_unreachable_service_leaves_the_app_to_compose(client, kast, ai_on, monkeypatch):
@@ -540,7 +564,7 @@ def test_an_unreachable_service_leaves_the_app_to_compose(client, kast, ai_on, m
     item(client, token, wid, "Wit overhemd", "Overhemd", color="wit")
     item(client, token, wid, "Blauwe jeans", "Jeans", color="denim")
 
-    def boom(config, system, prompt, schema, max_tokens):
+    def boom(config, system, prompt, schema, max_tokens, purpose="", usage=None):
         raise ai_layer.AiUnavailable("De AI-dienst antwoordde niet.")
 
     monkeypatch.setattr(ai_layer, "_ask", boom)
@@ -567,3 +591,51 @@ def test_nothing_is_asked_when_there_is_nothing_to_compose(monkeypatch):
     monkeypatch.setattr(ai_layer, "_ask", fake)
     assert ai_layer.compose_looks(_config(), [], set(), set(), set(), ["Werk"], ["Koud"], 5) == []
     assert called == []
+
+
+# ---------------------------------------------------------------------------
+# Wat het kost
+# ---------------------------------------------------------------------------
+
+def test_a_request_that_went_out_is_counted(client, kast, ai_on, monkeypatch):
+    """De knop die geld uitgeeft, laat een spoor achter dat dat gebeurd is."""
+    from tests.test_wardrobes import ADMIN_PASS, ADMIN_USER
+
+    token, wid = kast
+    admin = login(client, ADMIN_USER, ADMIN_PASS)
+    client.delete("/api/ai/usage", headers=h(admin))
+
+    necklace = item(client, token, wid, "Gouden ketting", "Sieraad")
+    answer_with(
+        monkeypatch,
+        {"items": [{"id": necklace["id"], "occasions": ["Feest"], "weather": []}]},
+        tokens=(4_000, 900),
+    )
+    r = client.post(
+        "/api/autofill/tags", headers=h(token), params={"wardrobe_id": wid, "use_ai": True}
+    )
+    assert r.status_code == 200, r.text
+
+    meter = client.get("/api/ai/usage", headers=h(admin)).json()
+    assert meter["calls"] == 1
+    assert meter["input_tokens"] == 4_000
+    assert meter["output_tokens"] == 900
+    assert meter["cost_millicents"] > 0
+    assert meter["by_purpose"][0]["label"] == "Tags aanvullen"
+    client.delete("/api/ai/usage", headers=h(admin))
+
+
+def test_a_request_the_app_never_sent_costs_nothing(client, kast, monkeypatch):
+    """Met de laag uit gaat er niets de deur uit, dus staat er ook niets op de teller."""
+    from tests.test_wardrobes import ADMIN_PASS, ADMIN_USER
+
+    token, wid = kast
+    admin = login(client, ADMIN_USER, ADMIN_PASS)
+    client.delete("/api/ai/usage", headers=h(admin))
+
+    item(client, token, wid, "Winterjas", "Jas")
+    r = client.post(
+        "/api/autofill/tags", headers=h(token), params={"wardrobe_id": wid, "use_ai": True}
+    )
+    assert r.status_code == 200, r.text
+    assert client.get("/api/ai/usage", headers=h(admin)).json()["calls"] == 0

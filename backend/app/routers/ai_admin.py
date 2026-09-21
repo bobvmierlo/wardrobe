@@ -16,12 +16,13 @@ Twee dingen zijn hier belangrijker dan het gemak:
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from .. import app_settings, audit
+from .. import ai_usage, app_settings, audit
+from ..ai_pricing import PRICES_AS_OF
 from ..config import settings
 from ..database import get_db
 from ..deps import require_admin
 from ..models import User
-from ..schemas import AiSettingsIn, AiSettingsOut
+from ..schemas import AiSettingsIn, AiSettingsOut, AiUsageLine, AiUsageOut
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
@@ -130,3 +131,72 @@ def write_settings(
             user=admin,
         )
     return _current(db)
+
+
+# ---------------------------------------------------------------------------
+# Wat het tot nu toe heeft gekost
+# ---------------------------------------------------------------------------
+
+def _line(line: ai_usage.UsageLine) -> AiUsageLine:
+    return AiUsageLine(
+        label=line.label,
+        calls=line.calls,
+        input_tokens=line.input_tokens,
+        output_tokens=line.output_tokens,
+        cost_millicents=line.cost_millicents,
+        partial=line.partial,
+    )
+
+
+def _usage(db: Session) -> AiUsageOut:
+    data = ai_usage.report(db)
+    return AiUsageOut(
+        calls=data.calls,
+        input_tokens=data.input_tokens,
+        output_tokens=data.output_tokens,
+        cost_millicents=data.cost_millicents,
+        partial=data.partial,
+        first_call=data.first_call,
+        last_call=data.last_call,
+        month_calls=data.month_calls,
+        month_cost_millicents=data.month_cost_millicents,
+        by_purpose=[_line(line) for line in data.by_purpose],
+        by_model=[_line(line) for line in data.by_model],
+        prices_as_of=PRICES_AS_OF,
+    )
+
+
+@router.get("/usage", response_model=AiUsageOut)
+def read_usage(
+    _: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Hoeveel verzoeken er zijn gedaan, en ongeveer wat die kostten.
+
+    Alleen voor een beheerder, om dezelfde reden als de instellingen erboven:
+    dit is de rekening van degene die de sleutel heeft ingevuld. Bedragen zijn
+    een schatting op de gepubliceerde tarieven — zie :mod:`app.ai_pricing`.
+    """
+    return _usage(db)
+
+
+@router.delete("/usage", response_model=AiUsageOut)
+def clear_usage(
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Zet de teller op nul. Raakt verder niets.
+
+    De regels hangen aan geen kledingstuk en geen kast, dus dit kost alleen het
+    overzicht zelf — wat je wilt kunnen doen als je een sleutel vervangt en
+    opnieuw wilt beginnen met tellen.
+    """
+    removed = ai_usage.clear(db)
+    if removed:
+        audit.record(
+            db,
+            "ai.usage.clear",
+            f"AI-verbruiksteller gewist ({removed} verzoek(en))",
+            user=admin,
+        )
+    return _usage(db)

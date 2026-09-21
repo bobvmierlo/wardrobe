@@ -629,12 +629,28 @@ class StyleProfileOut(BaseModel):
     available_styles: list[str] = []
     available_occasions: list[str] = []
 
+    # ---- The part the engine never reads; see models.py:StyleProfile ----
+    identity: str | None = None
+    color_season: str | None = None
+    aesthetics: list[str] = []
+    necklines: list[str] = []
+    silhouettes: list[str] = []
+    fabrics: list[str] = []
+    mantra: str | None = None
+
 
 class StyleProfileIn(BaseModel):
     colors: list[str] | None = None
     styles: list[str] | None = None
     occasions: list[str] | None = None
     notes: str | None = Field(default=None, max_length=2000)
+    identity: str | None = Field(default=None, max_length=200)
+    color_season: str | None = Field(default=None, max_length=120)
+    aesthetics: list[str] | None = None
+    necklines: list[str] | None = None
+    silhouettes: list[str] | None = None
+    fabrics: list[str] | None = None
+    mantra: str | None = Field(default=None, max_length=2000)
 
 
 class GuideColor(BaseModel):
@@ -690,6 +706,34 @@ class InsightsOut(BaseModel):
     neglected: list[ItemOut] = []
 
 
+class ReadingOut(BaseModel):
+    """Wat de app van één getypte zin heeft gemaakt.
+
+    Gaat mee met het antwoord zodat het scherm de filters kan tonen die het
+    heeft toegepast — en ze met één tik te wijzigen zijn. "Het snapte je niet"
+    is dan zichtbaar in plaats van een lijst die om een onbekende reden leeg is.
+    """
+    occasion: str | None = None
+    season: str | None = None
+    weather: list[str] = []
+    #: De woorden waar dit uit volgde, zoals ze getypt zijn.
+    matched: list[str] = []
+    understood: bool = False
+
+
+class DiscoverOut(BaseModel):
+    """Het antwoord van Ontdekken: wat je al hebt, en wat er nog meer kan.
+
+    Twee lijsten en niet één, want ze betekenen iets anders. Een opgeslagen
+    look is een besluit dat iemand ooit heeft genomen; een voorstel is een
+    combinatie die de app zojuist heeft bedacht en die pas bestaat als je 'm
+    bewaart.
+    """
+    reading: ReadingOut | None = None
+    saved: list[OutfitOut] = []
+    suggestions: list[OutfitSuggestion] = []
+
+
 RecommendationPage.model_rebuild()
 
 
@@ -704,8 +748,14 @@ class AutofillPreview(BaseModel):
     #: garments where the category says nothing useful.
     taggable: int
     outfit_count: int
-    #: How many new looks could be built right now, up to what was asked for.
+    #: How many new looks could be built right now — all of them, not one
+    #: batch's worth. The button makes them a batch at a time; this is the
+    #: number the screen quotes, and it used to be the same as the batch size,
+    #: which made "er zijn er nog 20 te maken" true of every kast forever.
     composable: int
+    #: True when there were more than the preview bothered to count (see
+    #: ``app/routers/autofill.py:COUNT_CAP``), so the screen can say "300+".
+    composable_capped: bool = False
     #: Waaróm er niets te maken valt, als er niets te maken valt. "Er kan niets"
     #: zonder reden laat iemand zoeken naar een storing die er niet is.
     composable_reason: str | None = None
@@ -782,6 +832,43 @@ class AiSettingsOut(BaseModel):
     models: list[AiModelOption] = []
     efforts: list[str] = []
     timeout_seconds: float = 60.0
+
+
+class AiUsageLine(BaseModel):
+    """Eén regel in het verbruiksoverzicht: per soort verzoek, of per model."""
+    label: str
+    calls: int
+    input_tokens: int
+    output_tokens: int
+    #: Duizendsten van een dollarcent; het scherm rondt af.
+    cost_millicents: int
+    #: True als er een verzoek bij zit met een model waarvan we het tarief niet
+    #: kennen. Het bedrag is dan een ondergrens, en dat hoort erbij te staan.
+    partial: bool = False
+
+
+class AiUsageOut(BaseModel):
+    """Wat de AI-laag tot nu toe heeft gedaan, en ongeveer wat het kostte.
+
+    Een schatting op de gepubliceerde tarieven (``app/ai_pricing.py``), niet de
+    factuur. Het aantal verzoeken en de tokens zijn wél precies: die staan in
+    het antwoord van de dienst zelf.
+    """
+    calls: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_millicents: int = 0
+    partial: bool = False
+    first_call: str | None = None
+    last_call: str | None = None
+    month_calls: int = 0
+    month_cost_millicents: int = 0
+    by_purpose: list[AiUsageLine] = []
+    by_model: list[AiUsageLine] = []
+    #: Wanneer de prijslijst is overgenomen, zodat het scherm dat erbij kan
+    #: zetten in plaats van een bedrag van vorig jaar voor vandaag te laten
+    #: doorgaan.
+    prices_as_of: str = ""
 
 
 class AiSettingsIn(BaseModel):

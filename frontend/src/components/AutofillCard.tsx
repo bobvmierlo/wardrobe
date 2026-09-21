@@ -9,10 +9,9 @@ interface Props {
   onChanged: () => void;
 }
 
-const COUNTS = [5, 10, 20];
-//: How many the preview looks ahead for. The dropdown never offers more, so
-//: "er zijn er N te maken" is never an undercount of what a press would do.
-const MAX_PREVIEW = 20;
+//: How many looks one press makes. A batch, not a total — see the preview's
+//: `composable`, which is how many there are left altogether.
+const COUNTS = [5, 10, 20, 40];
 
 /** "Laat de app je kast aanvullen" — for a wardrobe that has been in use for
  *  a year with nothing tagged and no looks saved.
@@ -29,13 +28,13 @@ export default function AutofillCard({ wardrobeId, onChanged }: Props) {
   const [examples, setExamples] = useState<TaggedItem[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // Deliberately not keyed on `count`: working out what is composable runs the
-  // same generator the button does, and the count only decides how many of them
-  // get saved. Re-running that on every twiddle of a dropdown is work nobody
-  // asked for, on the one screen a large kast opens most.
+  // Deliberately not keyed on `count`: what is composable is a property of the
+  // kast, and the batch size only decides how many of them get saved. Asking
+  // the server again on every twiddle of a dropdown is work nobody asked for,
+  // on the one screen a large kast opens most.
   const load = useCallback(() => {
     api
-      .autofillPreview(wardrobeId, MAX_PREVIEW)
+      .autofillPreview(wardrobeId)
       .then(setPreview)
       .catch(() => setPreview(null));
   }, [wardrobeId]);
@@ -199,7 +198,12 @@ export default function AutofillCard({ wardrobeId, onChanged }: Props) {
           </div>
           <p className="muted" style={{ fontSize: "0.78rem", margin: "4px 0 0" }}>
             {preview.composable > 0
-              ? `Er zijn nu ${preview.composable} nieuwe combinaties te maken uit wat er hangt, met dezelfde kleurregels als de rest van de app — en nooit een paar dat iemand afkeurde.`
+              ? `Er zijn nu ${preview.composable}${
+                  preview.composable_capped ? "+" : ""
+                } nieuwe combinaties te maken uit wat er hangt, met dezelfde kleurregels als de rest van de app — en nooit een paar dat iemand afkeurde. Eén druk maakt er ${Math.min(
+                  count,
+                  preview.composable,
+                )}; daarna kun je opnieuw.`
               : /* De server weet waaróm er niets kan; een uitgegrijsde knop
                    zonder reden laat je zoeken naar een storing die er niet is. */
                 (preview.composable_reason ??

@@ -123,8 +123,14 @@ class Settings(BaseSettings):
     # an operator can point them at their own instance (both are open source).
     weather_api_url: str = "https://api.open-meteo.com/v1/forecast"
     geocoding_api_url: str = "https://geocoding-api.open-meteo.com/v1/search"
-    # Zippopotam: looking a place up by postcode, which the geocoder above does
-    # not do reliably for Dutch ones.
+    # PDOK Locatieserver (Kadaster): looking a Dutch postcode up. Open data,
+    # no account and no key, and — unlike the two services above — it actually
+    # has the Dutch postcodes. Open-Meteo's geocoder does not do postcodes at
+    # all, and Zippopotam has no Dutch data: every "5421 AB" came back 404 and
+    # fell through to a name search that found nothing either.
+    pdok_api_url: str = "https://api.pdok.nl/bzk/locatieserver/search/v3_1/free"
+    # Zippopotam: the same job for everywhere else, which is what it is good
+    # at. Only used when weather_country is not "nl".
     postcode_api_url: str = "https://api.zippopotam.us"
     # Which country a bare postcode ("5421") is assumed to be in.
     weather_country: str = "nl"

@@ -172,6 +172,14 @@ LATE_COLUMNS: tuple[tuple[str, str, str], ...] = (
     # user_preferences bestaat sinds de vorige release, dus create_all maakt de
     # tabel niet opnieuw en deze kolom moet er los bij.
     ("user_preferences", "temperature_preference", "INTEGER DEFAULT 0"),
+    # Hetzelfde voor het stijl-DNA: de tabel stond er al, deze velden niet.
+    ("style_profiles", "identity", "VARCHAR(200)"),
+    ("style_profiles", "color_season", "VARCHAR(120)"),
+    ("style_profiles", "aesthetics", "VARCHAR(300)"),
+    ("style_profiles", "necklines", "VARCHAR(300)"),
+    ("style_profiles", "silhouettes", "VARCHAR(300)"),
+    ("style_profiles", "fabrics", "VARCHAR(300)"),
+    ("style_profiles", "mantra", "TEXT"),
 )
 
 

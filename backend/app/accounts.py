@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 from .images import delete_files
 from .logging_setup import get_logger
 from .models import (
+    AiUsage,
     AuditLog,
     Invitation,
     Outfit,
@@ -147,9 +148,14 @@ def delete_account(db: Session, user: User, reassign_items_to: User) -> dict[str
             {model.created_by_id: reassign_items_to.id}, synchronize_session=False
         )
 
-    # The audit trail keeps the name and loses the link.
+    # The audit trail keeps the name and loses the link. The AI meter is the
+    # same idea for a different reason: it is a running bill, and it should not
+    # quietly get cheaper because somebody left the household.
     db.query(AuditLog).filter(AuditLog.user_id == user_id).update(
         {AuditLog.user_id: None}, synchronize_session=False
+    )
+    db.query(AiUsage).filter(AiUsage.user_id == user_id).update(
+        {AiUsage.user_id: None}, synchronize_session=False
     )
 
     db.delete(user)

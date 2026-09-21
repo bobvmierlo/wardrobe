@@ -1446,3 +1446,352 @@ a.btn-ghost {
 .pack-row:last-child { border-bottom: none; }
 .pack-row.done .pack-name { text-decoration: line-through; color: var(--muted); }
 .pack-name { flex: 1; }
+
+/* ======================================================================
+   FILTERS, GRIDS AND DIALOGS ADDED FOR THE BIGGER SCREENS
+   ======================================================================
+   Three screens (Kast, Looks, Ontdekken) ask the same kind of question —
+   "narrow this down" — and each had grown its own answer. They share these
+   rules instead, so narrowing down works the same way wherever you are. */
+
+/* ---- the filter bar ----
+   A search field and a row of dropdowns. On a phone the dropdowns wrap two to
+   a row and stay thumb-sized; on a wide screen they line up beside the search
+   field. Deliberately <select>: a native picker is one tap and one scroll on a
+   phone, where a row of thirty chips is a horizontal hunt. */
+.filterbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.filterbar .search {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+/* The dropdowns live in a row of their own so they can be folded away as a
+   group. `display: contents` on a wide screen lets them lay out as if this
+   wrapper were not there, which is what keeps them on one line beside the
+   search field. */
+.filterbar-fields {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.filterbar:not(.open) .filterbar-fields { display: none; }
+.filterbar select {
+  flex: 1 1 calc(50% - 4px);
+  min-width: 0;
+  width: auto;
+  padding: 10px 12px;
+  font-size: 0.85rem;
+}
+/* A filter that is actually filtering should look like it. */
+.filterbar select.on {
+  border-color: var(--primary);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 40%, transparent);
+}
+.filterbar .chip { flex: none; }
+.filter-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin: -4px 0 12px;
+}
+.filter-summary button {
+  padding: 5px 12px;
+  font-size: 0.8rem;
+  border-radius: 999px;
+}
+
+/* ---- colour swatches ----
+   A colour is the one property of a garment that a word describes badly.
+   Used by the kast's palette strip and by Inzichten. */
+.palette-bar {
+  display: flex;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 14px;
+  border: 1px solid var(--border);
+}
+.palette-bar span { display: block; height: 100%; }
+.swatch-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.swatch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.82rem;
+}
+.swatch .dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  flex: none;
+}
+.swatch .count { color: var(--muted); font-size: 0.76rem; }
+/* The same dot, inside a chip in a TagPicker. */
+.chip-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  margin-right: 7px;
+  vertical-align: -1px;
+}
+.swatch.active { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+
+/* ---- looks as a grid ----
+   A look is a picture, and a picture in a column 640px wide with one look per
+   screenful is a lot of scrolling for a lookbook of three hundred. */
+.looks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.look-card {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  /* The complaint that started this: everything sat on top of everything. */
+  gap: 12px;
+}
+.look-card .look-title {
+  font-weight: 600;
+  font-size: 0.98rem;
+  line-height: 1.25;
+}
+.look-card .look-sub {
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.look-card .chips.wrap { gap: 6px; }
+.look-card .look-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+/* Icon-sized buttons, so five of them fit on a card without a second row. */
+.icon-btn {
+  padding: 7px 10px;
+  font-size: 0.85rem;
+  line-height: 1;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 10px;
+}
+.icon-btn:hover { color: var(--text); border-color: var(--primary); }
+.icon-btn:disabled { opacity: 0.45; cursor: default; }
+.icon-btn.danger:hover { color: var(--no); border-color: var(--no); }
+.icon-btn.on { color: var(--primary); border-color: var(--primary); }
+
+/* A mosaic of the garments in a look: one big, the rest beside it. Reads as
+   an outfit rather than as a row of unrelated squares. */
+.look-mosaic {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 6px;
+}
+.look-mosaic .tile {
+  aspect-ratio: 1;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+.look-mosaic .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.look-mosaic .tile.lead { grid-row: span 2; aspect-ratio: auto; min-height: 100%; }
+.look-mosaic .tile.more { font-size: 0.78rem; font-weight: 600; }
+/* One row of equal tiles, for a card too small for a two-row mosaic. */
+.look-mosaic.compact { grid-template-columns: repeat(4, 1fr); gap: 4px; }
+
+/* ---- a general dialog ----
+   Same shell as the photo editor's, for anything that must not depend on
+   where the page happens to be scrolled. */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 16px;
+  overflow-y: auto;
+}
+.modal-panel {
+  width: 100%;
+  max-width: 560px;
+  margin: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 32px);
+}
+.modal-panel.wide { max-width: 860px; }
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+.modal-head h2 { margin: 0; font-size: 1.05rem; }
+.modal-close {
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 10px;
+  line-height: 1;
+  font-size: 1.1rem;
+}
+.modal-close:hover { color: var(--text); border-color: var(--primary); }
+.modal-body { padding: 18px; overflow-y: auto; }
+.modal-foot {
+  display: flex;
+  gap: 10px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.modal-foot > * { flex: 1; }
+
+/* ---- picking a look, with the looks visible ----
+   The planner used to list their names. A name is not what you are choosing
+   between when you are deciding what to wear on Tuesday.
+
+   Named "look-pick" rather than "pick": `.pick-card` and `.pick-name` were
+   already taken by the garment strip on Combinaties, whose cards are a fixed
+   104px wide and whose names deliberately do not wrap. Sharing those names
+   meant this grid quietly inherited a width and a nowrap it had no use for. */
+.look-pick-grid {
+  display: grid;
+  /* 140 rather than 170: on a phone that is the difference between two looks
+     per row and one, and one per row is the list this screen replaced. */
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+.look-pick-card {
+  /* A <button> is a form control, and a form control in a grid sizes itself
+     to its content rather than stretching to its track. */
+  width: 100%;
+  display: block;
+  padding: 10px;
+  text-align: left;
+  white-space: normal;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+.look-pick-card:hover { border-color: var(--primary); }
+/* Two lines before it gives up: "Navy oversi…" is not something you can pick
+   between, and every autogenerated name in a kast starts the same way. */
+.look-pick-card .look-pick-name {
+  display: -webkit-box;
+  margin-top: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.25;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.look-pick-card .look-pick-note {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.look-pick-card .look-pick-note.warn { color: var(--fav); }
+
+/* ---- the AI meter in Instellingen ---- */
+.meter-rows { display: flex; flex-direction: column; gap: 2px; margin-top: 10px; }
+.meter-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.84rem;
+}
+.meter-row:last-child { border-bottom: none; }
+.meter-row .meter-value { color: var(--muted); white-space: nowrap; }
+
+/* ---- Stijl-DNA ---- */
+.dna-cols { display: grid; gap: 0 16px; }
+
+/* Destinations that only exist on the rail: on a phone they live under
+   "Meer", which is what keeps the bottom bar readable — five links is what
+   fits under a thumb, and this is the sixth through the fifteenth. */
+.bottomnav a.rail-only,
+.bottomnav .rail-group { display: none; }
+
+@media (min-width: 640px) {
+  .filterbar .search { flex: 2 1 240px; }
+  .filterbar select { flex: 0 1 190px; }
+  /* There is room for all of them here, so the toggle would only be a button
+     that hides things for no reason. */
+  .filterbar .filter-toggle { display: none; }
+  .filterbar .filterbar-fields,
+  .filterbar:not(.open) .filterbar-fields { display: contents; }
+  .dna-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (min-width: 900px) {
+  /* ---- the rail is long enough for every screen, so it shows every screen ----
+     Five links and a "Meer" is what a thumb needs; a rail is 232 pixels of
+     empty space below them, and hiding half the app behind one more click to
+     save room that is not short is the wrong trade. */
+  .bottomnav .inner { gap: 2px; padding-bottom: 24px; }
+  .bottomnav a.rail-only { display: flex; }
+  .bottomnav .rail-group {
+    display: block;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    padding: 16px 14px 4px;
+    font-weight: 700;
+  }
+  /* "Meer" is the phone's door to everything the rail already shows. */
+  .bottomnav a.phone-only { display: none; }
+  .look-card .look-title { font-size: 1rem; }
+}

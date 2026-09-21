@@ -15,7 +15,8 @@ from .. import audit
 from ..access import require_edit, require_view
 from ..database import get_db
 from ..deps import get_current_user
-from ..models import Outfit, User
+from ..interpret import interpret
+from ..models import OccasionOption, Outfit, User
 from ..preferences import as_weather_out, forecast_for, get_preferences, get_profile
 from ..outfit_store import (
     apply_tags,
@@ -33,17 +34,19 @@ from ..recommendations import bare_skin_note, rank_saved, weather_advice
 from ..routers.color_rules import load_pairs
 from ..routers.matches import verdict_pairs, wardrobe_items
 from ..schemas import (
+    DiscoverOut,
     ItemOut,
     OutfitIn,
     OutfitOut,
     OutfitSuggestion,
+    ReadingOut,
     RecommendationOut,
     RecommendationPage,
     WearIn,
     WearOut,
 )
 from ..suggestions import suggest_outfits
-from ..tags import split_tags
+from ..tags import has_any, split_tags
 
 router = APIRouter(prefix="/api/outfits", tags=["outfits"])
 
@@ -176,6 +179,10 @@ def discover(
     occasion: str | None = None,
     season: str | None = None,
     weather: str | None = Query(default=None, description="Comma-separated weather tags"),
+    around: int | None = Query(
+        default=None,
+        description="Only outfits containing this garment — 'bouw iets om dit heen'",
+    ),
     limit: int = Query(default=12, ge=1, le=40),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -185,13 +192,98 @@ def discover(
     The "Ontdekken" screen. Unlike the recommendations above this ignores what
     is saved and what you wore lately — it is for browsing what the wardrobe
     *could* do, not for deciding what to put on in ten minutes.
+
+    ``around`` answers the other question people actually arrive with, which is
+    not "surprise me" but "I want to wear *this* today, now what?". The garment
+    is not filtered for on the way out: it is handed to the composer, which
+    only builds outfits it takes part in — so an answer is never an outfit that
+    happens to contain it by luck.
     """
     require_view(db, wardrobe_id, user)
     weather_tags = split_tags(weather)
-    built = _build(db, wardrobe_id, occasion, weather_tags, limit, season=season)
+    built = _build(
+        db, wardrobe_id, occasion, weather_tags, limit, season=season, around=around
+    )
     return [
         OutfitSuggestion(items=b["items"], score=b["score"], reason=b["reason"])
         for b in built
+    ]
+
+
+@router.get("/discover/describe", response_model=DiscoverOut)
+def discover_described(
+    wardrobe_id: int,
+    q: str = Query(default="", max_length=500),
+    limit: int = Query(default=12, ge=1, le=40),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """"Zaterdag met vriendinnen naar een wijnfestival buiten in Gemert."
+
+    Één zin over wat je gaat doen, in plaats van drie keuzelijsten. De zin
+    wordt gelezen door :mod:`app.interpret` — woordherkenning, geen taalmodel,
+    zodat dit het ook doet in een installatie zonder internet — en wat daar
+    uitkomt gaat als gewone filters door dezelfde machinerie als de rest van
+    het scherm.
+
+    Het antwoord heeft twee lijsten, want het zijn twee verschillende dingen:
+    de **looks die je al hebt** die hierbij passen (iemands eigen besluit van
+    ooit) en **voorstellen** die de app nu bedenkt (bestaan pas als je ze
+    bewaart). Er staat altijd bij wát er van de zin begrepen is, zodat een
+    lege lijst nooit een raadsel is.
+    """
+    require_view(db, wardrobe_id, user)
+    reading = interpret(q, _occasion_names(db))
+
+    saved = wardrobe_outfits(db, wardrobe_id)
+    if reading.occasion:
+        saved = [
+            o for o in saved if reading.occasion.lower() in (o.occasion or "").lower()
+        ]
+    if reading.season:
+        saved = [
+            o
+            for o in saved
+            if not o.season or reading.season.lower() in (o.season or "").lower()
+        ]
+    if reading.weather:
+        saved = [o for o in saved if has_any(o.weather, reading.weather)]
+
+    built = _build(
+        db,
+        wardrobe_id,
+        reading.occasion,
+        reading.weather,
+        limit,
+        season=reading.season,
+        # Wat al bewaard is, staat hierboven al in de lijst; nog een keer
+        # voorstellen wat je al hebt is geen ontdekking.
+        exclude={frozenset(it.id for it in o.items) for o in saved},
+    )
+    wears = wear_index(db, user.id, [o.id for o in saved])
+    return DiscoverOut(
+        reading=ReadingOut(
+            occasion=reading.occasion,
+            season=reading.season,
+            weather=reading.weather,
+            matched=reading.matched,
+            understood=reading.understood,
+        ),
+        saved=[serialize(o, wears.get(o.id, [])) for o in saved[:limit]],
+        suggestions=[
+            OutfitSuggestion(items=b["items"], score=b["score"], reason=b["reason"])
+            for b in built
+        ],
+    )
+
+
+def _occasion_names(db: Session) -> list[str]:
+    """De gelegenheden van deze installatie, in hun eigen volgorde."""
+    return [
+        o.name
+        for o in db.query(OccasionOption)
+        .order_by(OccasionOption.position, OccasionOption.name)
+        .all()
     ]
 
 
@@ -203,6 +295,7 @@ def _build(
     limit: int,
     season: str | None = None,
     exclude: set[frozenset[int]] | None = None,
+    around: int | None = None,
 ) -> list[dict]:
     """Combinations from the wardrobe, respecting everyone's verdicts.
 
@@ -215,10 +308,23 @@ def _build(
 
     ``exclude`` drops outfits by their set of item ids, so the "Vandaag"
     screen does not offer as new something it already listed as a saved look.
+
+    ``around`` names a garment every outfit has to contain. It survives the
+    season filter above whatever it is tagged with: somebody who said "I want
+    to wear this" has settled that question, and dropping their garment to
+    honour a dropdown would answer a question they did not ask.
     """
     items = wardrobe_items(db, wardrobe_id)
     if season:
-        items = [it for it in items if not it.season or season.lower() in (it.season or "").lower()]
+        items = [
+            it
+            for it in items
+            if it.id == around
+            or not it.season
+            or season.lower() in (it.season or "").lower()
+        ]
+    if around is not None and not any(it.id == around for it in items):
+        return []  # not in this kast (or not one this person may see)
     if len(items) < 2:
         return []
     rejected, approved = verdict_pairs(db, {it.id for it in items})
@@ -233,6 +339,7 @@ def _build(
         occasion=occasion,
         weather_tags=weather_tags,
         skip_combinations=False,
+        must_include=around,
     )
     results: list[dict] = []
     for b in built:

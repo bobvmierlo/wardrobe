@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from .. import ai as ai_layer
+from .. import ai_usage
 from .. import app_settings
 from .. import audit
 from ..access import require_edit, require_view
@@ -37,6 +38,21 @@ router = APIRouter(prefix="/api/autofill", tags=["autofill"])
 #: Most anyone wants in one go. A hundred looks nobody asked for is not a
 #: filled wardrobe, it is a mess to clean up.
 MAX_LOOKS = 40
+
+#: How far the preview counts before it gives up and says "meer dan dit".
+#:
+#: The preview used to count only as far as the largest batch the button
+#: offers, so a kast with hundreds of untried combinations reported exactly as
+#: many as you could make in one press — and kept reporting that number after
+#: every press, because there were always at least that many left. The count
+#: and the batch are two different questions, so this is a separate, much
+#: larger number: it is what "er zijn er nog N te maken" actually means.
+#:
+#: Not unbounded. :func:`app.suggestions.suggest_outfits` already builds every
+#: top/bottom combination the kast allows, so counting further is cheap but not
+#: free, and past a couple of hundred "nog heel veel" is the honest answer
+#: anyway.
+COUNT_CAP = 300
 
 
 def _occasion_names(db: Session) -> list[str]:
@@ -115,13 +131,19 @@ def _look_context(db: Session, wardrobe_id: int, count: int, seed: list | None =
 @router.get("/preview", response_model=AutofillPreview)
 def preview(
     wardrobe_id: int,
-    count: int = Query(default=10, ge=1, le=MAX_LOOKS),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """What both buttons would do. Changes nothing."""
+    """What both buttons would do. Changes nothing.
+
+    Takes no batch size, unlike the button it describes: how many looks there
+    are left to make and how many you want in one go are two different
+    questions, and answering the first with the second is what made the screen
+    say "er zijn er nog 20 te maken" to every kast forever. See
+    :data:`COUNT_CAP`.
+    """
     require_view(db, wardrobe_id, user)
-    items, outfits, plans = _look_context(db, wardrobe_id, count)
+    items, outfits, plans = _look_context(db, wardrobe_id, COUNT_CAP)
     tag_plans = plan_tags(items, _occasion_names(db))
     return AutofillPreview(
         composable_reason=_why_nothing(db, items, outfits) if not plans else None,
@@ -131,6 +153,7 @@ def preview(
         taggable=len(tag_plans),
         outfit_count=len(outfits),
         composable=len(plans),
+        composable_capped=len(plans) >= COUNT_CAP,
         ai_available=app_settings.ai_config(db).usable,
     )
 
@@ -158,10 +181,15 @@ def fill_tags(
     plans = plan_tags(items, occasions)
 
     by_ai, ai_note = 0, None
+    calls: list[ai_layer.AiCall] = []
     if use_ai:
-        extra, ai_note = _ai_tag_plans(app_settings.ai_config(db), items, plans, occasions)
+        extra, ai_note = _ai_tag_plans(
+            app_settings.ai_config(db), items, plans, occasions, calls
+        )
         by_ai = len(extra)
         plans = plans + extra
+    # Ook bij een proefdraai: het verzoek is verstuurd en wordt dus berekend.
+    ai_usage.record(db, calls, user)
 
     examples = [
         TaggedItem(
@@ -199,6 +227,7 @@ def _ai_tag_plans(
     items: list[Item],
     rule_plans: list[TagPlan],
     occasions: list[str],
+    usage: list[ai_layer.AiCall],
 ) -> tuple[list[TagPlan], str | None]:
     """Ask the model about the garments the rules left untouched.
 
@@ -220,7 +249,9 @@ def _ai_tag_plans(
         return [], None
 
     try:
-        suggestions = ai_layer.suggest_tags(config, remaining, occasions, WEATHER_TAGS)
+        suggestions = ai_layer.suggest_tags(
+            config, remaining, occasions, WEATHER_TAGS, usage=usage
+        )
     except ai_layer.AiUnavailable as exc:
         return [], str(exc)
 
@@ -247,6 +278,7 @@ def _ai_look_plans(
     wardrobe_id: int,
     outfits: list,
     count: int,
+    usage: list[ai_layer.AiCall],
 ) -> tuple[list, int, str | None]:
     """Let the model compose looks, then hold every proposal to the kast's rules.
 
@@ -273,6 +305,7 @@ def _ai_look_plans(
             _occasion_names(db),
             WEATHER_TAGS,
             count,
+            usage=usage,
         )
     except ai_layer.AiUnavailable as exc:
         return [], 0, str(exc)
@@ -315,6 +348,7 @@ def compose_looks(
 
     by_ai, ai_note = 0, None
     plans: list = []
+    calls: list[ai_layer.AiCall] = []
 
     if use_ai:
         config = app_settings.ai_config(db)
@@ -322,7 +356,10 @@ def compose_looks(
             ai_note = "De AI-laag staat uit in deze installatie."
         else:
             outfits = wardrobe_outfits(db, wardrobe_id)
-            plans, by_ai, ai_note = _ai_look_plans(db, config, wardrobe_id, outfits, count)
+            plans, by_ai, ai_note = _ai_look_plans(
+                db, config, wardrobe_id, outfits, count, calls
+            )
+    ai_usage.record(db, calls, user)
 
     # De app vult aan wat de AI niet leverde — of doet alles, als die uitstaat.
     items, outfits, own = _look_context(

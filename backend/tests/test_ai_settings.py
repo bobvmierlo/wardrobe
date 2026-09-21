@@ -177,3 +177,115 @@ def test_a_change_lands_in_the_audit_trail(client, admin):
     detail = entries[0]["detail"]
     assert "sleutel vervangen" in detail
     assert "sk-ant-test" not in detail, "en de sleutel staat er niet in"
+
+
+# ---------------------------------------------------------------------------
+# Wat het kost
+# ---------------------------------------------------------------------------
+
+def usage(client, token):
+    r = client.get("/api/ai/usage", headers=h(token))
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+@pytest.fixture
+def empty_meter(client):
+    """Eén database voor de hele sessie, dus de teller eerst op nul zetten."""
+    token = login(client, ADMIN_USER, ADMIN_PASS)
+    client.delete("/api/ai/usage", headers=h(token))
+    yield
+    client.delete("/api/ai/usage", headers=h(token))
+
+
+def test_an_untouched_installation_has_spent_nothing(client, admin, empty_meter):
+    body = usage(client, admin)
+    assert body["calls"] == 0
+    assert body["cost_millicents"] == 0
+    assert body["by_model"] == []
+    assert body["prices_as_of"], "het scherm moet kunnen zeggen van wanneer de tarieven zijn"
+
+
+def test_a_call_lands_in_the_meter_with_a_price_on_it(client, admin, empty_meter):
+    """De enige knop in de app die geld kost, hoort te kunnen zeggen hoeveel."""
+    from app import ai as ai_layer
+    from app import ai_usage
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        ai_usage.record(
+            db,
+            [
+                ai_layer.AiCall(
+                    purpose="tags",
+                    model="claude-sonnet-5",
+                    input_tokens=5_000,
+                    output_tokens=1_200,
+                )
+            ],
+        )
+    finally:
+        db.close()
+
+    body = usage(client, admin)
+    assert body["calls"] == 1
+    assert body["input_tokens"] == 5_000
+    # 5.000 × $3/M + 1.200 × $15/M = $0,033 = 3,3 cent = 3300 duizendsten.
+    assert body["cost_millicents"] == 3_300
+    assert body["partial"] is False
+    assert body["month_calls"] == 1
+    assert body["by_purpose"][0]["label"] == "Tags aanvullen"
+    assert body["by_model"][0]["label"] == "claude-sonnet-5"
+
+
+def test_a_model_without_a_published_price_is_counted_but_not_costed(client, admin, empty_meter):
+    """Liever een onvolledig bedrag dan een verzonnen bedrag."""
+    from app import ai as ai_layer
+    from app import ai_usage
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        ai_usage.record(
+            db,
+            [ai_layer.AiCall(purpose="looks", model="een-eigen-model", input_tokens=10)],
+        )
+    finally:
+        db.close()
+
+    body = usage(client, admin)
+    assert body["calls"] == 1
+    assert body["cost_millicents"] == 0
+    assert body["partial"] is True, "het scherm hoort te zeggen dat dit een ondergrens is"
+
+
+def test_only_a_beheerder_may_read_the_bill(client, admin):
+    _, un, pw = make_user(client, admin, "Huisgenoot")
+    token = login(client, un, pw)
+    assert client.get("/api/ai/usage", headers=h(token)).status_code == 403
+    assert client.delete("/api/ai/usage", headers=h(token)).status_code == 403
+
+
+def test_clearing_the_meter_empties_it_and_is_logged(client, admin, empty_meter):
+    from app import ai as ai_layer
+    from app import ai_usage
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        ai_usage.record(
+            db, [ai_layer.AiCall(purpose="tags", model="claude-haiku-4-5", input_tokens=1)]
+        )
+    finally:
+        db.close()
+    assert usage(client, admin)["calls"] == 1
+
+    r = client.delete("/api/ai/usage", headers=h(admin))
+    assert r.status_code == 200, r.text
+    assert r.json()["calls"] == 0
+
+    entries = client.get(
+        "/api/audit", headers=h(admin), params={"action": "ai.usage.clear"}
+    ).json()["entries"]
+    assert entries, "de rekening wissen is iets wat je moet kunnen terugzien"

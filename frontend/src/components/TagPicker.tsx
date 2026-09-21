@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 interface Props {
   label: string;
@@ -10,6 +10,10 @@ interface Props {
   /** Let people type a tag of their own (style words, not weather). */
   allowCustom?: boolean;
   hint?: string;
+  /** Something to draw inside each chip, ahead of its label. Used by the
+   *  colour picker, where the word "beige" is a far worse description of the
+   *  option than the colour itself is. */
+  decorate?: (tag: string) => ReactNode;
 }
 
 /** A row of chips you switch on and off. The tag vocabularies (occasion,
@@ -21,6 +25,7 @@ export default function TagPicker({
   onChange,
   allowCustom = false,
   hint,
+  decorate,
 }: Props) {
   const [typed, setTyped] = useState("");
   const all = [...options, ...value.filter((v) => !options.includes(v))];
@@ -53,6 +58,7 @@ export default function TagPicker({
             aria-pressed={value.includes(tag)}
             onClick={() => toggle(tag)}
           >
+            {decorate?.(tag)}
             {tag}
           </button>
         ))}

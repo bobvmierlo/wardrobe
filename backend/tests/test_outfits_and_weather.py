@@ -74,33 +74,112 @@ def test_an_unknown_weather_code_still_answers_something():
 # Looking a place up
 # ---------------------------------------------------------------------------
 
-def test_postcode_search_uses_the_postcode_service(client, kast, monkeypatch):
+def test_a_dutch_postcode_goes_to_pdok(client, kast, monkeypatch):
+    """Het eigen land van deze app hoort te werken.
+
+    Dit liep op Zippopotam, dat geen Nederlandse postcodes heeft: elke "5421
+    AB" werd een 404, viel door naar de naamzoeker, en die maakt van vier
+    cijfers niets. Je eigen postcode intypen leverde dus gewoon geen resultaat.
+    """
     token, _ = kast
     calls = []
 
     def fake(url, params):
-        calls.append(url)
+        calls.append((url, params))
         return {
-            "post code": "5421",
-            "country": "The Netherlands",
-            "places": [
-                {
-                    "place name": "Gemert",
-                    "latitude": "51.5583",
-                    "longitude": "5.6889",
-                    "state": "Noord-Brabant",
-                }
-            ],
+            "response": {
+                "docs": [
+                    {
+                        "type": "postcode",
+                        "weergavenaam": "5421 AB Gemert",
+                        "postcode": "5421AB",
+                        "woonplaatsnaam": "Gemert",
+                        "provincienaam": "Noord-Brabant",
+                        "centroide_ll": "POINT(5.6889 51.5583)",
+                    },
+                    # Dezelfde plaats nog eens: een postcode heeft vaak tien
+                    # straten, en dat zijn geen tien keuzes voor een mens.
+                    {
+                        "type": "postcode",
+                        "postcode": "5421AC",
+                        "woonplaatsnaam": "Gemert",
+                        "provincienaam": "Noord-Brabant",
+                        "centroide_ll": "POINT(5.6901 51.5590)",
+                    },
+                ]
+            }
         }
 
     monkeypatch.setattr(weather_service, "_get_json", fake)
     r = client.get("/api/weather/search", headers=h(token), params={"q": "5421 AB"})
     assert r.status_code == 200, r.text
     results = r.json()
+    assert len(results) == 1, "één plaats, niet één per straat"
     assert results[0]["name"] == "Gemert"
     assert results[0]["label"] == "Gemert, Noord-Brabant"
-    assert results[0]["postcode"] == "5421"
-    assert calls and calls[0].endswith("/nl/5421")
+    assert results[0]["postcode"] == "5421AB"
+    # POINT() zet de lengtegraad voorop; omgekeerd lees je komt in zee uit.
+    assert results[0]["latitude"] == pytest.approx(51.5583)
+    assert results[0]["longitude"] == pytest.approx(5.6889)
+
+    url, params = calls[0]
+    assert "pdok" in url
+    assert params["q"] == "5421 AB"
+    assert "zippopotam" not in url
+
+
+def test_the_four_digits_on_their_own_are_enough(client, kast, monkeypatch):
+    token, _ = kast
+    asked = []
+
+    def fake(url, params):
+        asked.append(params.get("q"))
+        return {
+            "response": {
+                "docs": [
+                    {
+                        "postcode": "5421AA",
+                        "woonplaatsnaam": "Gemert",
+                        "provincienaam": "Noord-Brabant",
+                        "centroide_ll": "POINT(5.6889 51.5583)",
+                    }
+                ]
+            }
+        }
+
+    monkeypatch.setattr(weather_service, "_get_json", fake)
+    r = client.get("/api/weather/search", headers=h(token), params={"q": "5421"})
+    assert r.status_code == 200, r.text
+    assert r.json()[0]["name"] == "Gemert"
+    assert asked == ["5421"]
+
+
+def test_a_postcode_elsewhere_still_goes_to_zippopotam(client, kast, monkeypatch):
+    """Zippopotam is prima voor de landen die het wél heeft."""
+    token, _ = kast
+    calls = []
+    monkeypatch.setattr(weather_service.settings, "weather_country", "us")
+
+    def fake(url, params):
+        calls.append(url)
+        return {
+            "post code": "90210",
+            "country": "United States",
+            "places": [
+                {
+                    "place name": "Beverly Hills",
+                    "latitude": "34.0901",
+                    "longitude": "-118.4065",
+                    "state": "California",
+                }
+            ],
+        }
+
+    monkeypatch.setattr(weather_service, "_get_json", fake)
+    r = client.get("/api/weather/search", headers=h(token), params={"q": "9021"})
+    assert r.status_code == 200, r.text
+    assert r.json()[0]["name"] == "Beverly Hills"
+    assert calls and calls[0].endswith("/us/9021")
 
 
 def test_a_place_name_goes_to_the_geocoder(client, kast, monkeypatch):
@@ -132,7 +211,7 @@ def test_an_unknown_postcode_falls_through_to_the_name_search(client, kast, monk
 
     def fake(url, params):
         seen.append(url)
-        if "zippopotam" in url or params == {}:
+        if "pdok" in url:
             raise weather_service.WeatherUnavailable("404")
         return {"results": [{"name": "9999", "latitude": 1.0, "longitude": 2.0}]}
 
@@ -804,6 +883,48 @@ def test_style_dna_is_saved_and_only_accepts_colours_the_engine_knows(client, ka
     assert "navy" in body["available_colors"]
 
 
+def test_the_half_of_a_stijl_dna_the_engine_never_reads_is_kept_as_typed(client, kast):
+    """Iemands eigen conclusies over z'n eigen vorm, in z'n eigen woorden.
+
+    Hier wordt met opzet niets gecorrigeerd: de app heeft geen lijst met
+    halslijnen om iemand mee tegen te spreken, en een stijlwoord dat de
+    aanbevelingen niet kennen is geen reden om het niet te mogen opschrijven.
+    """
+    token, _ = kast
+    r = client.put(
+        "/api/me/style",
+        headers=h(token),
+        json={
+            "identity": "Modern, klassiek & elegant",
+            "color_season": "Warm & diep",
+            "aesthetics": ["quiet luxury", "tijdloos"],
+            "necklines": ["V-hals", "open kraag"],
+            "silhouettes": ["getailleerd", "high-waist"],
+            "fabrics": ["linnen", "fijne breisels"],
+            "mantra": "Liever één goede jas dan drie matige.",
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["identity"] == "Modern, klassiek & elegant"
+    assert body["color_season"] == "Warm & diep"
+    assert body["aesthetics"] == ["quiet luxury", "tijdloos"]
+    assert body["necklines"] == ["V-hals", "open kraag"]
+    assert body["silhouettes"] == ["getailleerd", "high-waist"]
+    assert body["fabrics"] == ["linnen", "fijne breisels"]
+    assert "goede jas" in body["mantra"]
+
+    # En het staat er de volgende keer nog steeds.
+    again = client.get("/api/me/style", headers=h(token)).json()
+    assert again["identity"] == "Modern, klassiek & elegant"
+
+    # Eén veld wijzigen laat de rest met rust.
+    client.put("/api/me/style", headers=h(token), json={"mantra": ""})
+    after = client.get("/api/me/style", headers=h(token)).json()
+    assert after["mantra"] is None
+    assert after["necklines"] == ["V-hals", "open kraag"]
+
+
 def test_style_dna_gives_outfits_in_your_own_palette_a_nudge(client, kast):
     token, wid = kast
     set_manual_weather(client, token, ["Mild", "Bewolkt"])
@@ -978,3 +1099,96 @@ def test_the_opruim_list_flags_an_unworn_garment_once_a_wear_log_exists(client, 
     # And a garment in no look at all shows up either way.
     loose = _Item(2, long_ago)
     assert [i.id for i in _neglected([loose], [], {}, 180, False)] == [2]
+
+
+# ---------------------------------------------------------------------------
+# Ontdekken: één zin in plaats van drie keuzelijsten
+# ---------------------------------------------------------------------------
+
+def test_a_typed_sentence_becomes_filters(client, kast):
+    token, wid = kast
+    r = client.get(
+        "/api/outfits/discover/describe",
+        headers=h(token),
+        params={"wardrobe_id": wid, "q": "Bruiloft in juli, hopelijk zonnig"},
+    )
+    assert r.status_code == 200, r.text
+    reading = r.json()["reading"]
+    assert reading["occasion"] == "Feest"
+    assert reading["season"] == "Zomer"
+    assert reading["weather"] == ["Zonnig"]
+    assert reading["understood"] is True
+    # En het zegt waaróm, zodat een lege lijst geen raadsel is.
+    assert "bruiloft" in reading["matched"]
+
+
+def test_a_sentence_it_cannot_place_says_so(client, kast):
+    token, wid = kast
+    r = client.get(
+        "/api/outfits/discover/describe",
+        headers=h(token),
+        params={"wardrobe_id": wid, "q": "hmm"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["reading"]["understood"] is False
+
+
+def test_the_description_separates_what_you_have_from_what_it_invents(client, kast):
+    token, wid = kast
+    top = add_item(client, token, wid, "Wit overhemd", "Overhemd", color="wit").json()
+    bottom = add_item(client, token, wid, "Nette broek", "Broek", color="navy").json()
+    saved = client.post(
+        f"/api/outfits?wardrobe_id={wid}",
+        headers=h(token),
+        json={
+            "name": "Naar kantoor",
+            "item_ids": [top["id"], bottom["id"]],
+            "occasions": ["Werk"],
+        },
+    )
+    assert saved.status_code == 201, saved.text
+
+    r = client.get(
+        "/api/outfits/discover/describe",
+        headers=h(token),
+        params={"wardrobe_id": wid, "q": "morgen naar kantoor"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert [o["name"] for o in body["saved"]] == ["Naar kantoor"]
+    # En wat je al bewaard hebt komt er niet ook nog eens als "voorstel" bij.
+    ids = {top["id"], bottom["id"]}
+    assert all({i["id"] for i in s["items"]} != ids for s in body["suggestions"])
+
+
+def test_building_around_one_garment_only_returns_outfits_with_it(client, kast):
+    token, wid = kast
+    shirt = add_item(client, token, wid, "Wit overhemd", "Overhemd", color="wit").json()
+    add_item(client, token, wid, "Grijze trui", "Trui", color="grijs")
+    add_item(client, token, wid, "Nette broek", "Broek", color="navy")
+    add_item(client, token, wid, "Blauwe jeans", "Jeans", color="denim")
+
+    r = client.get(
+        "/api/outfits/discover",
+        headers=h(token),
+        params={"wardrobe_id": wid, "around": shirt["id"]},
+    )
+    assert r.status_code == 200, r.text
+    results = r.json()
+    assert results, "er valt wel iets om dit overhemd heen te bouwen"
+    for suggestion in results:
+        assert any(i["id"] == shirt["id"] for i in suggestion["items"])
+
+
+def test_building_around_a_garment_from_another_kast_returns_nothing(client, kast):
+    token, wid = kast
+    add_item(client, token, wid, "Wit overhemd", "Overhemd", color="wit")
+    add_item(client, token, wid, "Nette broek", "Broek", color="navy")
+
+    r = client.get(
+        "/api/outfits/discover",
+        headers=h(token),
+        params={"wardrobe_id": wid, "around": 999_999},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json() == []

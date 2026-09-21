@@ -83,3 +83,66 @@ def has_any(value: str | None, wanted: list[str]) -> bool:
     if not tags or not wanted:
         return True
     return bool(overlap(tags, wanted))
+
+
+#: The sky conditions, as opposed to the temperature bands above. Everything in
+#: :data:`WEATHER_TAGS` is one or the other.
+SKY_TAGS: list[str] = [t for t in WEATHER_TAGS if t not in TEMPERATURE_TAGS]
+
+#: Which skies each temperature band can be worn in.
+#:
+#: The asymmetry between the two halves of the vocabulary is the whole point.
+#: A temperature band is a property of the clothes — a winter coat is for cold
+#: weather and stays wrong on a hot day, whatever the sky does. A sky is not:
+#: you put a coat *over* the outfit when it rains, and the jumper and jeans
+#: underneath are the same jumper and jeans they were on a dry day. So an
+#: outfit that suits a temperature suits every sky that temperature happens in,
+#: and the only exclusions here are the ones the weather itself makes: it does
+#: not snow when it is warm, and "Heet" is not a cloudy afternoon.
+SKY_BY_TEMPERATURE: dict[str, tuple[str, ...]] = {
+    "Koud": ("Zonnig", "Bewolkt", "Regen", "Sneeuw", "Winderig"),
+    "Mild": ("Zonnig", "Bewolkt", "Regen", "Winderig"),
+    "Warm": ("Zonnig", "Bewolkt", "Winderig"),
+    "Heet": ("Zonnig",),
+}
+
+
+def temperatures(tags: list[str]) -> list[str]:
+    """Just the temperature bands out of a set of weather tags."""
+    return overlap(tags, TEMPERATURE_TAGS)
+
+
+def skies(tags: list[str]) -> list[str]:
+    """Just the sky conditions out of a set of weather tags."""
+    return overlap(tags, SKY_TAGS)
+
+
+def implied_skies(tags: list[str]) -> list[str]:
+    """Every sky the temperatures in ``tags`` can occur in.
+
+    Empty when there is no temperature to reason from: guessing a sky off
+    nothing would be inventing, and an empty weather column already means "no
+    objection" everywhere in the app (see :func:`has_any`).
+    """
+    found: list[str] = []
+    for temperature in temperatures(tags):
+        for sky in SKY_BY_TEMPERATURE.get(temperature, ()):
+            if sky not in found:
+                found.append(sky)
+    return [tag for tag in WEATHER_TAGS if tag in found]
+
+
+def with_implied_skies(tags: list[str]) -> list[str]:
+    """``tags`` plus the skies those temperatures can be worn in.
+
+    What an outfit gets tagged with. Without this a jumper-and-jeans that both
+    say "Koud" comes out as a look for cold weather *and nothing else*, so the
+    planner calls it unsuitable the moment it rains — which is exactly the day
+    you would wear it, with a coat on top. Tags already on the outfit are kept
+    in the vocabulary's own order, so the result reads the same way the form
+    offers it.
+    """
+    if not tags:
+        return []
+    keep = {normalize(t) for t in [*tags, *implied_skies(tags)]}
+    return [tag for tag in WEATHER_TAGS if normalize(tag) in keep]
