@@ -3,8 +3,12 @@
 Two free services, neither of which needs an account or an API key:
 
 * **Open-Meteo** for the forecast, and for looking a place up by name.
-* **Zippopotam** for looking a place up by postcode, which Open-Meteo's
-  geocoder only handles for some countries and not reliably for Dutch ones.
+* **PDOK's Locatieserver** (the Dutch Kadaster's own address service) for
+  looking a place up by a Dutch postcode, which Open-Meteo's geocoder does not
+  do at all.
+* **Zippopotam** for a postcode in any other country — it is built on the
+  GeoNames postal data, which covers most of the world but, notably, not the
+  Netherlands.
 
 Both are called by the *server*, never by the browser. That is not an
 accident: the app's own Content-Security-Policy says ``connect-src 'self'``,
@@ -254,13 +258,17 @@ def clear_cache() -> None:
     _daily_cache.clear()
 
 
-_POSTCODE_RE = re.compile(r"^\s*(\d{4})\s*[a-zA-Z]{0,2}\s*$")
+_POSTCODE_RE = re.compile(r"^\s*(\d{4})\s*([a-zA-Z]{0,2})\s*$")
+
+#: "POINT(5.6889 51.5583)" — how PDOK writes a coordinate. Longitude first,
+#: which is the opposite order from everything else in this module.
+_POINT_RE = re.compile(r"POINT\(\s*([-\d.]+)\s+([-\d.]+)\s*\)", re.IGNORECASE)
 
 
 def search_places(query: str, limit: int = 8) -> list[Place]:
     """Places matching a typed name or postcode.
 
-    A Dutch-style postcode ("5420", "5421 AB") goes to the postcode service,
+    A Dutch-style postcode ("5420", "5421 AB") goes to a postcode service,
     which knows them; everything else is a name and goes to the geocoder. A
     postcode that turns up nothing falls through to the name search, so typing
     a foreign postcode still has a chance of working.
@@ -273,14 +281,83 @@ def search_places(query: str, limit: int = 8) -> list[Place]:
 
     postcode = _POSTCODE_RE.match(query)
     if postcode:
-        places = _search_postcode(postcode.group(1))
+        digits, letters = postcode.group(1), postcode.group(2).upper()
+        places = _search_postcode(digits, letters)
         if places:
             return places[:limit]
     return _search_name(query, limit)
 
 
-def _search_postcode(code: str) -> list[Place]:
+def _search_postcode(digits: str, letters: str = "") -> list[Place]:
+    """A postcode, from whichever service knows the country we are in.
+
+    Two services because one of them does not cover this app's own country.
+    Zippopotam is built on the GeoNames postal data, which does not include
+    the Netherlands — ``api.zippopotam.us/nl/5421`` is a 404, and always was.
+    That failure was silent: the lookup fell through to the name search, the
+    name search made nothing of four digits either, and typing your own
+    postcode simply returned no results.
+
+    So a Dutch postcode goes to PDOK's Locatieserver instead — the Kadaster's
+    own, open, keyless address service — and everywhere else keeps using
+    Zippopotam, which is good at exactly that.
+    """
     country = (settings.weather_country or "nl").strip().lower()
+    if country == "nl":
+        return _search_postcode_nl(digits, letters)
+    return _search_postcode_zippopotam(country, digits)
+
+
+def _search_postcode_nl(digits: str, letters: str = "") -> list[Place]:
+    """A Dutch postcode via PDOK's Locatieserver.
+
+    The full "5421 AB" narrows it to one street; the four digits on their own
+    to a town, which is all the weather needs anyway. Both are asked for the
+    same way, and the answers are folded down to one entry per town: twenty
+    streets in the same place is not twenty choices to a person picking where
+    they live.
+    """
+    query = f"{digits} {letters}".strip()
+    try:
+        data = _get_json(
+            settings.pdok_api_url,
+            {"q": query, "fq": "type:postcode", "rows": 25},
+        )
+    except WeatherUnavailable:
+        return []
+
+    places: list[Place] = []
+    seen: set[str] = set()
+    for doc in ((data.get("response") or {}).get("docs") or []):
+        if not isinstance(doc, dict):
+            continue
+        point = _POINT_RE.search(str(doc.get("centroide_ll") or ""))
+        town = (doc.get("woonplaatsnaam") or "").strip()
+        if point is None or not town:
+            continue
+        if town.lower() in seen:
+            continue
+        seen.add(town.lower())
+        try:
+            places.append(
+                Place(
+                    name=town,
+                    # PDOK writes POINT(lon lat); everything else here is
+                    # (lat, lon), and swapping them lands you in the sea.
+                    latitude=float(point.group(2)),
+                    longitude=float(point.group(1)),
+                    region=(doc.get("provincienaam") or "").strip() or None,
+                    country="Nederland",
+                    postcode=(doc.get("postcode") or "").strip() or query,
+                )
+            )
+        except (TypeError, ValueError):
+            continue
+    return places
+
+
+def _search_postcode_zippopotam(country: str, code: str) -> list[Place]:
+    """A postcode anywhere Zippopotam has data for. Never the Netherlands."""
     url = f"{settings.postcode_api_url.rstrip('/')}/{country}/{code}"
     try:
         data = _get_json(url, {})

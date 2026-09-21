@@ -521,6 +521,35 @@ export interface StyleProfile {
   available_colors: string[];
   available_styles: string[];
   available_occasions: string[];
+  /** The half the recommendation engine never reads — see
+   *  backend/app/models.py:StyleProfile. Free text on purpose: these are
+   *  somebody's own conclusions about their own shape, and the app has no
+   *  list to correct them with. */
+  identity: string | null;
+  color_season: string | null;
+  aesthetics: string[];
+  necklines: string[];
+  silhouettes: string[];
+  fabrics: string[];
+  mantra: string | null;
+}
+
+/** What the app made of one typed sentence on "Ontdekken". */
+export interface Reading {
+  occasion: string | null;
+  season: string | null;
+  weather: string[];
+  /** The words it went on, so an empty result is never a riddle. */
+  matched: string[];
+  understood: boolean;
+}
+
+export interface DiscoverResult {
+  reading: Reading | null;
+  /** Looks already saved that fit — somebody's own decision from before. */
+  saved: Outfit[];
+  /** Combinations the app just worked out; they exist once you keep one. */
+  suggestions: OutfitSuggestion[];
 }
 
 export interface GuideColor {
@@ -602,8 +631,11 @@ export interface AutofillPreview {
   /** How many of those the app can actually fill in. */
   taggable: number;
   outfit_count: number;
-  /** How many new looks it could build right now. */
+  /** How many new looks there are left to build — all of them, not one
+   *  batch's worth. The button makes them a batch at a time. */
   composable: number;
+  /** True when the server stopped counting; the screen then says "300+". */
+  composable_capped: boolean;
   /** Why none can be built, when none can be. */
   composable_reason: string | null;
   /** Whether this installation has the optional AI layer configured. */
@@ -655,4 +687,35 @@ export interface AiSettings {
   models: AiModelOption[];
   efforts: string[];
   timeout_seconds: number;
+}
+
+
+// ---- Wat de AI-laag heeft gekost ----
+
+export interface AiUsageLine {
+  label: string;
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  /** Thousandths of a dollar cent; the screen rounds. */
+  cost_millicents: number;
+  /** True when a model without a published price is in this line, so the
+   *  amount is a floor rather than a total. */
+  partial: boolean;
+}
+
+export interface AiUsage {
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  cost_millicents: number;
+  partial: boolean;
+  first_call: string | null;
+  last_call: string | null;
+  month_calls: number;
+  month_cost_millicents: number;
+  by_purpose: AiUsageLine[];
+  by_model: AiUsageLine[];
+  /** When the price list was copied over, so the screen can say so. */
+  prices_as_of: string;
 }

@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from .matching import group_of
 from .models import Item
 from .suggestions import normalize_color, suggest_outfits
-from .tags import join_tags, split_tags
+from .tags import join_tags, split_tags, with_implied_skies
 
 #: Weather that follows from what a garment *is*. Matched as substrings against
 #: the category **and the name**, the way :mod:`app.matching` matches
@@ -202,6 +202,19 @@ def _shared(items: list[Item], attribute: str) -> list[str]:
     return ordered
 
 
+def _weather_for_look(items: list[Item]) -> list[str]:
+    """The weather a look is for: what its clothes agree on, plus the skies.
+
+    The intersection alone reads far too narrowly. A jumper and a pair of jeans
+    agree on "Koud", and a look tagged only "Koud" is one the planner calls
+    unsuitable the moment it rains — on precisely the day you would wear it,
+    with a coat over the top. What the clothes settle is the *temperature*;
+    which skies that temperature happens in follows from the temperature, and
+    :func:`app.tags.with_implied_skies` is where that is written down.
+    """
+    return with_implied_skies(_shared(items, "weather"))
+
+
 def _union(items: list[Item], attribute: str) -> list[str]:
     """Every tag anything in the outfit carries — for descriptive tags only."""
     ordered: list[str] = []
@@ -307,7 +320,7 @@ def plan_looks(
                     items=chosen,
                     seasons=_shared(chosen, "season"),
                     occasions=_shared(chosen, "occasion"),
-                    weather=_shared(chosen, "weather"),
+                    weather=_weather_for_look(chosen),
                     styles=_union(chosen, "style"),
                     reason=candidate["reason"],
                 )
@@ -425,7 +438,7 @@ def validate_ai_looks(
                 # zegt is een feit. Dus: alleen houden wat beide vinden.
                 seasons=_shared(items, "season"),
                 occasions=_agreed(items, "occasion", proposal.occasions),
-                weather=_agreed(items, "weather", proposal.weather),
+                weather=_agreed_weather(items, proposal.weather),
                 styles=_union(items, "style"),
                 reason=proposal.reason or "samengesteld met AI",
             )
@@ -449,3 +462,27 @@ def _agreed(items: list[Item], attribute: str, proposed: list[str]) -> list[str]
         return proposed if not tagged else []
     keep = {tag.lower() for tag in shared}
     return [tag for tag in proposed if tag.lower() in keep]
+
+
+def _agreed_weather(items: list[Item], proposed: list[str]) -> list[str]:
+    """Hetzelfde als :func:`_agreed`, maar met de luchten erbij.
+
+    Het model mag hier ruimer voorstellen dan de doorsnede van de kleding, want
+    de doorsnede gaat over temperatuur en de lucht volgt daaruit (zie
+    :func:`app.tags.with_implied_skies`). Stelt het model "Regen" voor bij een
+    trui en een spijkerbroek die het over "Koud" eens zijn, dan is dat geen
+    tegenspraak maar dezelfde dag met een jas erover — en zonder deze functie
+    viel dat voorstel weg.
+    """
+    allowed = with_implied_skies(_shared(items, "weather"))
+    if not proposed:
+        return allowed
+    if not allowed:
+        tagged = [item for item in items if split_tags(item.weather)]
+        return with_implied_skies(proposed) if not tagged else []
+    keep = {tag.lower() for tag in allowed}
+    kept = [tag for tag in proposed if tag.lower() in keep]
+    # Het model dat er één noemt mag de look niet smaller maken dan wat de
+    # kleding zelf al toestond: het antwoord is een keuze uit `allowed`, en
+    # zwijgen over de rest is geen bezwaar maken.
+    return with_implied_skies(kept) if kept else allowed

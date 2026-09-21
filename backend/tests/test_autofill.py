@@ -8,6 +8,7 @@ repeat a look that already exists.
 
 import pytest
 
+from app.tags import TEMPERATURE_TAGS
 from tests.test_wardrobes import (
     ADMIN_PASS,
     ADMIN_USER,
@@ -175,7 +176,7 @@ def test_looks_are_composed_and_saved_with_the_tags_their_clothes_agree_on(clien
     assert len(saved) == len(created)
 
 
-def test_a_look_only_claims_weather_all_of_its_clothes_agree_on(client, kast):
+def test_a_look_only_claims_a_temperature_all_of_its_clothes_agree_on(client, kast):
     token, wid = kast
     # A coat for the cold and shorts for the heat can be combined by colour, but
     # the look that results is for neither: the tags must not claim otherwise.
@@ -190,9 +191,48 @@ def test_a_look_only_claims_weather_all_of_its_clothes_agree_on(client, kast):
     for look in r.json()["created"]:
         tagged = [i for i in look["items"] if i["weather_tags"]]
         if len(tagged) > 1:
-            # Whatever it claims, every tagged garment in it must agree.
+            # The temperature is the clothes' own business, so whatever the look
+            # claims there, every tagged garment in it must agree.
             for tag in look["weather_tags"]:
-                assert all(tag in i["weather_tags"] for i in tagged)
+                if tag in TEMPERATURE_TAGS:
+                    assert all(tag in i["weather_tags"] for i in tagged)
+
+
+def test_a_look_for_the_cold_is_also_a_look_for_rain_and_snow(client, kast):
+    """De lucht is niet aan de kleding.
+
+    Een trui en een spijkerbroek die het over "Koud" eens zijn, leverden een
+    look op die alleen bij "Koud" paste — en die viel in de weekplanner dus af
+    zodra het regende, op precies de dag dat je 'm aantrekt. Met een jas erover.
+    """
+    token, wid = kast
+    item(client, token, wid, "Grijze trui", "Trui", color="grijs", weather="Koud")
+    item(client, token, wid, "Blauwe jeans", "Jeans", color="denim", weather="Koud")
+
+    r = client.post(
+        "/api/autofill/looks", headers=h(token), params={"wardrobe_id": wid, "count": 1}
+    )
+    assert r.status_code == 200, r.text
+    tags = r.json()["created"][0]["weather_tags"]
+    assert "Koud" in tags
+    for sky in ("Regen", "Sneeuw", "Winderig", "Bewolkt"):
+        assert sky in tags, sky
+    # Maar de temperatuur blijft wat de kleding zegt.
+    assert "Heet" not in tags and "Warm" not in tags
+
+
+def test_a_summer_look_does_not_claim_the_snow(client, kast):
+    token, wid = kast
+    item(client, token, wid, "Linnen shirt", "Shirt", color="wit", weather="Heet")
+    item(client, token, wid, "Korte broek", "Shorts", color="beige", weather="Heet")
+
+    r = client.post(
+        "/api/autofill/looks", headers=h(token), params={"wardrobe_id": wid, "count": 1}
+    )
+    assert r.status_code == 200, r.text
+    tags = r.json()["created"][0]["weather_tags"]
+    assert "Heet" in tags and "Zonnig" in tags
+    assert "Sneeuw" not in tags and "Regen" not in tags
 
 
 def test_running_it_twice_does_not_produce_the_same_looks(client, kast):
@@ -280,6 +320,50 @@ def test_the_preview_says_what_both_buttons_would_do(client, kast):
     listed = client.get("/api/items", headers=h(token), params={"wardrobe_id": wid}).json()
     assert all(not i["weather_tags"] for i in listed)
     assert client.get("/api/outfits", headers=h(token), params={"wardrobe_id": wid}).json() == []
+
+
+def test_the_preview_counts_every_look_left_not_one_batch(client, kast):
+    """Drie bovenstukken en drie onderstukken zijn meer dan één knopdruk waard.
+
+    Het aantal dat het scherm noemt hoort te zeggen hoeveel er nog te máken
+    zijn, niet hoeveel er in één keer worden gemaakt. Zolang dat hetzelfde
+    getal was, stond er bij elke kast "er zijn er nog N te maken" met N precies
+    gelijk aan de batchgrootte — voor altijd, want er bleven er altijd zoveel
+    over.
+    """
+    token, wid = kast
+    stocked(client, token, wid)
+
+    def composable():
+        return client.get(
+            "/api/autofill/preview", headers=h(token), params={"wardrobe_id": wid}
+        ).json()["composable"]
+
+    before = composable()
+    assert before > 2, "deze kast levert meer combinaties op dan een enkele batch"
+
+    made = client.post(
+        "/api/autofill/looks", headers=h(token), params={"wardrobe_id": wid, "count": 2}
+    ).json()["created"]
+    assert len(made) == 2
+    # En het getal loopt terug: wat bewaard is, is niet meer te maken.
+    assert composable() < before
+
+
+def test_the_preview_ignores_a_batch_size_it_is_handed(client, kast):
+    """De vraag "hoeveel zijn er nog" heeft niets met de batchgrootte te maken."""
+    token, wid = kast
+    stocked(client, token, wid)
+
+    counts = {
+        client.get(
+            "/api/autofill/preview",
+            headers=h(token),
+            params={"wardrobe_id": wid, "count": n},
+        ).json()["composable"]
+        for n in (1, 5, 20)
+    }
+    assert len(counts) == 1, "het antwoord mag niet van de gevraagde batch afhangen"
 
 
 def test_a_dry_run_of_the_composer_saves_nothing(client, kast):

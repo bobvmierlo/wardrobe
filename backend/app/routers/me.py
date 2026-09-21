@@ -108,6 +108,13 @@ def read_style(
         available_occasions=[
             o.name for o in db.query(OccasionOption).order_by(OccasionOption.position).all()
         ],
+        identity=profile.identity,
+        color_season=profile.color_season,
+        aesthetics=split_tags(profile.aesthetics),
+        necklines=split_tags(profile.necklines),
+        silhouettes=split_tags(profile.silhouettes),
+        fabrics=split_tags(profile.fabrics),
+        mantra=profile.mantra,
     )
 
 
@@ -126,6 +133,26 @@ def write_style(
         profile.occasions = join_tags(body.occasions)
     if body.notes is not None:
         profile.notes = body.notes.strip() or None
+
+    # The descriptive half: stored as typed. No vocabulary is checked against
+    # it on purpose — these are somebody's own conclusions about their own
+    # shape, and the app has no list to correct them with. See
+    # models.py:StyleProfile.
+    if body.identity is not None:
+        profile.identity = body.identity.strip() or None
+    if body.color_season is not None:
+        profile.color_season = body.color_season.strip() or None
+    if body.aesthetics is not None:
+        profile.aesthetics = join_tags(body.aesthetics)
+    if body.necklines is not None:
+        profile.necklines = join_tags(body.necklines)
+    if body.silhouettes is not None:
+        profile.silhouettes = join_tags(body.silhouettes)
+    if body.fabrics is not None:
+        profile.fabrics = join_tags(body.fabrics)
+    if body.mantra is not None:
+        profile.mantra = body.mantra.strip() or None
+
     db.commit()
     db.refresh(profile)
     return read_style(user, db)

@@ -1,6 +1,7 @@
 import { reportOffline } from "./online";
 import type {
   AiSettings,
+  AiUsage,
   AuditPage,
   AuthConfig,
   AutofillLooksResult,
@@ -9,6 +10,7 @@ import type {
   BackupPreview,
   Category,
   DayPlan,
+  DiscoverResult,
   Insights,
   ColorLogic,
   ColorRule,
@@ -496,14 +498,27 @@ export const api = {
   },
   discover: (
     wardrobeId: number,
-    filters: { occasion?: string; season?: string; weather?: string[] } = {},
+    filters: {
+      occasion?: string;
+      season?: string;
+      weather?: string[];
+      /** Only outfits containing this garment — "bouw iets om dit heen". */
+      around?: number | null;
+    } = {},
   ) => {
     const sp = new URLSearchParams({ wardrobe_id: String(wardrobeId) });
     if (filters.occasion) sp.set("occasion", filters.occasion);
     if (filters.season) sp.set("season", filters.season);
     if (filters.weather?.length) sp.set("weather", filters.weather.join(","));
+    if (filters.around) sp.set("around", String(filters.around));
     return request<OutfitSuggestion[]>(`/api/outfits/discover?${sp}`);
   },
+  /** One typed sentence instead of three dropdowns. Answers with what it made
+   *  of it, the saved looks that fit, and fresh suggestions. */
+  describe: (wardrobeId: number, q: string) =>
+    request<DiscoverResult>(
+      `/api/outfits/discover/describe?wardrobe_id=${wardrobeId}&q=${encodeURIComponent(q)}`,
+    ),
 
   // ---- weather ----
   weatherTags: () => request<string[]>("/api/weather/tags"),
@@ -522,7 +537,19 @@ export const api = {
       body: JSON.stringify(data),
     }),
   styleProfile: () => request<StyleProfile>("/api/me/style"),
-  saveStyleProfile: (data: { colors?: string[]; styles?: string[]; occasions?: string[]; notes?: string | null }) =>
+  saveStyleProfile: (data: {
+    colors?: string[];
+    styles?: string[];
+    occasions?: string[];
+    notes?: string | null;
+    identity?: string | null;
+    color_season?: string | null;
+    aesthetics?: string[];
+    necklines?: string[];
+    silhouettes?: string[];
+    fabrics?: string[];
+    mantra?: string | null;
+  }) =>
     request<StyleProfile>("/api/me/style", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -583,8 +610,11 @@ export const api = {
     }),
 
   // ---- aanvullen (tags raden, looks samenstellen) ----
-  autofillPreview: (wardrobeId: number, count = 10) =>
-    request<AutofillPreview>(`/api/autofill/preview?wardrobe_id=${wardrobeId}&count=${count}`),
+  /** How many looks there are left to make. Takes no batch size: that is a
+   *  different question, and answering it with the batch is what made the
+   *  screen say "er zijn er nog 20 te maken" to every kast forever. */
+  autofillPreview: (wardrobeId: number) =>
+    request<AutofillPreview>(`/api/autofill/preview?wardrobe_id=${wardrobeId}`),
   /** Fill in the tags that are obvious. Never overwrites what is already set. */
   autofillTags: (wardrobeId: number, dryRun = false, useAi = false) =>
     request<AutofillTagsResult>(
@@ -611,6 +641,10 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     }),
+
+  /** What the AI layer has cost so far (beheerder only). */
+  aiUsage: () => request<AiUsage>("/api/ai/usage"),
+  clearAiUsage: () => request<AiUsage>("/api/ai/usage", { method: "DELETE" }),
 
   // ---- insights ----
   insights: (wardrobeId: number) => request<Insights>(`/api/insights?wardrobe_id=${wardrobeId}`),

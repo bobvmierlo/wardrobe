@@ -65,6 +65,8 @@ ACTION_LABELS: dict[str, str] = {
     "backup.snapshot": "Momentopname gedownload",
     "backup.scheduled": "Automatische back-up",
     "backup.restore": "Back-up teruggezet",
+    "ai.settings": "AI-instellingen gewijzigd",
+    "ai.usage.clear": "AI-verbruiksteller gewist",
 }
 
 

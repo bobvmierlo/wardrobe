@@ -5,6 +5,9 @@ Een zelf-gehoste, mobiel-vriendelijke web-app om je kledingkast te inventarisere
 welke stukken bij elkaar passen — via een **Tinder-achtige swipe**.
 
 - 📷 **Inventariseren** – foto maken met je telefoon, merk/categorie/kleur/maat/seizoen noteren.
+  Terugvinden doe je met zoeken (naam, merk, kleur én tags) plus filters op
+  categorie, kleur, seizoen, gelegenheid en weertype, met bovenaan een band die
+  de kleuren van je kast laat zien.
 - 🗂️ **Categorieën** – polo, t-shirt, trui, vest, hoodie, broek, shorts, schoenen… (vrij aan te vullen).
 - 💞 **Combineren** – swipe per kledingstuk of het bij een ander past. Rechts = past,
   links = past niet, en **overslaan** als je er nog niet uit bent (dat paar komt
@@ -69,6 +72,11 @@ welke stukken bij elkaar passen — via een **Tinder-achtige swipe**.
   plus de technische logregels van de server.
 - 👥 **Accounts** – jij én je partner een eigen login. Een **beheerder** kan bij
   elke kast, en heeft daarnaast ook gewoon z'n eigen kast.
+- 🖥️ **Eén app, twee vormen** – op een telefoon vijf knoppen onder je duim en de
+  rest onder "Meer"; op een breed scherm staat diezelfde balk rechtop als een
+  rail met **elk scherm erin**, gegroepeerd. De filters doen hetzelfde: op een
+  monitor staan ze op één rij, op een telefoon vouwen ze op achter één knop die
+  zegt hoeveel er aan staan — zodat je kleding niet onder je filters verdwijnt.
 - 📱 **PWA & offline** – installeerbaar op je telefoon (Toevoegen aan beginscherm).
   Zonder verbinding blijf je ingelogd, zie je je kast en je outfits zoals ze het
   laatst geladen waren, en kun je gewoon doorswipen: je oordelen worden verstuurd
@@ -173,8 +181,9 @@ Voor het **weer** (zie [Vandaag](#vandaag-outfits-op-basis-van-weer-gelegenheid-
 | `WARDROBE_WEATHER_ENABLED` | `true` | Of de server de verwachting mag ophalen. Uit? Dan stelt iedereen het weer zelf handmatig in. |
 | `WARDROBE_WEATHER_API_URL` | Open-Meteo | Waar de verwachting vandaan komt. Geen account of sleutel nodig. |
 | `WARDROBE_GEOCODING_API_URL` | Open-Meteo | Waar op plaatsnaam gezocht wordt. |
-| `WARDROBE_POSTCODE_API_URL` | Zippopotam | Waar op postcode gezocht wordt. |
-| `WARDROBE_WEATHER_COUNTRY` | `nl` | In welk land een kale postcode (`5421`) verondersteld wordt te liggen. |
+| `WARDROBE_PDOK_API_URL` | PDOK Locatieserver | Waar op **Nederlandse** postcode gezocht wordt. |
+| `WARDROBE_POSTCODE_API_URL` | Zippopotam | Waar op postcode gezocht wordt in **andere** landen. |
+| `WARDROBE_WEATHER_COUNTRY` | `nl` | In welk land een kale postcode (`5421`) verondersteld wordt te liggen. Bepaalt welke van de twee diensten hierboven wordt gebruikt. |
 | `WARDROBE_WEATHER_CACHE_MINUTES` | `15` | Hoe lang een opgehaalde verwachting hergebruikt wordt. |
 
 Voor de **optionele AI-laag** (standaard uit). De eerste vier kan een beheerder
@@ -466,7 +475,7 @@ backend/            FastAPI-app (Python)
   app/
     main.py         de app zelf: middleware, healthcheck, serveert de gebouwde frontend
     models.py       User, Wardrobe, WardrobeMember, Item, Match, Outfit, WearLog,
-                    DayPlan, Trip, StyleProfile, UserPreference (SQLAlchemy)
+                    DayPlan, Trip, StyleProfile, UserPreference, AiUsage (SQLAlchemy)
     access.py       kast-toegang & rollen (eigenaar/beheerder/bewerker/kijker)
     routers/        auth, oidc, users, wardrobes, items, matches, catalog,
                     color_rules, imports, invitations, admin_log, outfits,
@@ -474,9 +483,13 @@ backend/            FastAPI-app (Python)
     weather.py      echte weersverwachting + plaats/postcode opzoeken (zonder sleutel)
     recommendations.py  "je zou dit aan kunnen trekken": weer + gelegenheid wegen
     autofill.py     tags raden en looks samenstellen voor een kast zonder beide
+    interpret.py    één getypte zin ("zaterdag naar een festival") → filters
     ai.py           de optionele AI-laag: alleen waar de regels niets zeggen
+    ai_pricing.py   de gepubliceerde tarieven, om verbruik in centen te schatten
+    ai_usage.py     bijhouden wat die laag heeft gekost, en dat kunnen optellen
     app_settings.py instellingen die een beheerder in de app omzet (incl. AI)
-    tags.py         de tagkolommen (gelegenheid, weer, stijl) en hun woordenlijsten
+    tags.py         de tagkolommen (gelegenheid, weer, stijl) en hun woordenlijsten,
+                    plus welke luchten bij welke temperatuur horen
     outfit_store.py opgeslagen looks lezen en schrijven, plus het draaglogboek
     preferences.py  persoonlijke instellingen: thema, locatie, draaglogboek, stijl-DNA
     migrations.py   genummerde schemastappen (één keer) + seeds (elke start)
@@ -497,10 +510,11 @@ frontend/           React + Vite (TypeScript)
                     StyleGuide, More, Settings, AdminLog
   src/wardrobe.tsx  kast-context (welke kast is actief + je rol)
   src/theme.tsx     kleurstelling en persoonlijke instellingen van de ingelogde gebruiker
+  src/colors.ts     kleurwoorden ("cognac") → een kleur om mee te tekenen
   src/components/   SwipeCard, ItemForm, BottomNav, WardrobeSwitcher, SuggestionList,
                     JudgedPairList, PartnerGrid, InvitationLinks, QrCode,
-                    OutfitStrip, WeatherCard, TagPicker, PersonalSettings,
-                    AutofillCard
+                    OutfitStrip, LookMosaic, WeatherCard, TagPicker, FilterBar,
+                    Modal, PersonalSettings, AutofillCard
   src/qr.ts         QR-codes voor uitnodigingslinks (geen externe bibliotheek)
 Dockerfile          multi-stage build (frontend → python runtime)
 docker-compose.yml  container + datavolume
@@ -1218,8 +1232,16 @@ kunt corrigeren.
 ### Waar het weer vandaan komt
 
 De app haalt de verwachting op bij **Open-Meteo** en zoekt plaatsnamen daar ook
-op; voor **postcodes** gebruikt 'ie **Zippopotam**. Geen van beide vraagt een
-account of een API-sleutel, en beide zijn open source.
+op. Voor **Nederlandse postcodes** gaat 'ie naar de **Locatieserver van PDOK**,
+de open adressendienst van het Kadaster; voor postcodes in andere landen naar
+**Zippopotam**. Geen van drieën vraagt een account of een API-sleutel.
+
+Twee diensten voor één vraag, omdat er geen enkele is die beide kan: Open-Meteo
+zoekt helemaal niet op postcode, en Zippopotam draait op de postcodegegevens van
+GeoNames — die vrijwel de hele wereld dekken, maar Nederland juist niet. Dat was
+lang stil kapot: `5421 AB` gaf een 404, de app viel netjes terug op de
+naamzoeker, en die maakt van vier cijfers niets. Je eigen postcode intypen gaf
+dus geen resultaat en ook geen foutmelding.
 
 Twee dingen zijn bewust zo gedaan:
 
@@ -1259,22 +1281,47 @@ opzet:
 Wat daarop verder gebouwd is:
 
 - **Weekplanner** – een look per dag, met de verwachting ernaast (tot een week
-  vooruit). Kies je een look die voor ander weer getagd is, dan zegt de app dat
-  erbij. De planning is **persoonlijk**: in een gedeelde kast plant iedereen
-  zijn eigen week.
+  vooruit). Kiezen doe je uit een raster met **foto's** van je looks, niet uit
+  een lijst met namen: wat je dinsdag aantrekt kies je omdat je het ziet. Kies
+  je een look die voor ander weer getagd is, dan zegt de app dat erbij. De
+  planning is **persoonlijk**: in een gedeelde kast plant iedereen zijn eigen
+  week.
 - **Ontdekken** – zelfde motor als Vandaag, maar dan met de filters in jouw
-  hand: gelegenheid, seizoen, weer. Voor bladeren in wat je kast *zou kunnen*,
-  niet voor de beslissing van over tien minuten. Bevalt er een? Bewaar 'm als
-  look.
+  hand. Drie manieren om binnen te komen, omdat mensen met verschillende vragen
+  aankomen:
+  - **In één zin**: *"Zaterdag met vriendinnen naar een wijnfestival buiten in
+    Gemert"*. De server leest daar gelegenheid, seizoen en weer uit —
+    woordherkenning, **geen taalmodel**, dus het werkt ook in een installatie
+    zonder internet. Wat 'ie eruit haalde staat er altijd bij ("gelezen als:
+    Feest, op *festival*") en komt in de keuzelijsten te staan, zodat je het met
+    één tik corrigeert in plaats van je zin te herformuleren.
+  - **Met de keuzelijsten**: gelegenheid, seizoen, weer.
+  - **Rond één kledingstuk**: "ik wil dit vandaag aan, en nu?" — dan komen er
+    alleen outfits terug waar dat stuk echt in zit.
+
+  Het antwoord houdt twee dingen uit elkaar: de **looks die je al hebt** die
+  hierbij passen, en **voorstellen** die de app nu bedenkt en die pas bestaan
+  als je ze bewaart.
 - **Reistas** – kies welke looks meegaan; de paklijst is **afgeleid** van die
   looks in plaats van apart opgeslagen. Daardoor kan 'ie nooit verouderen als je
   een look wijzigt, en telt een spijkerbroek die in drie looks zit precies één
   keer (met "3 looks" erachter, zodat je ziet waaróm 'ie mee moet).
-- **Inzichten** – aantallen, je kleurenpalet, wat in geen enkele look zit, en —
-  als je een draaglogboek bijhoudt — wat je het meest draagt. Onderaan de
-  **opruimlijst**: wat je al lang niet droeg. Zonder draaglogboek is dat een
-  inschatting op basis van hoe lang iets al in je kast zit, en dat zegt het
-  scherm er dan ook eerlijk bij.
+- **Inzichten** – aantallen, je kleurenpalet (als een band met de echte
+  kleuren, niet als een lijstje woorden), wat in geen enkele look zit, en — als
+  je een draaglogboek bijhoudt — wat je het meest draagt. De twee lijsten
+  onderaan tonen **foto's**: zowel de **opruimlijst** (wat je al lang niet
+  droeg) als "nog in geen enkele look" gaan over kleding waar je iets over moet
+  besluiten, en dat doe je niet op een naam. Zonder draaglogboek is de
+  opruimlijst een inschatting op basis van hoe lang iets al in je kast zit, en
+  dat zegt het scherm er dan ook eerlijk bij.
+- **Stijl-DNA** – twee helften, en ze verschillen van aard. Bovenin wat de app
+  **meeweegt**: jouw kleuren (met de kleur erbij, niet alleen het woord), jouw
+  stijlwoorden, waar je je meestal voor kleedt. Onderin **naslag voor jezelf**:
+  stijlidentiteit, kleurseizoen, je eigen woorden voor het geheel, de halslijnen
+  en silhouetten die je staan, stofkeuzes, en één zin om aan te denken. Dat
+  onderste deel leest de app nooit — er is geen lijst met halslijnen waarmee
+  'ie jou zou kunnen tegenspreken — maar het is wél wat je wilt opzoeken als je
+  in een winkel staat.
 - **Stijlgids** – wat bij welke kleur in *jouw* kast past, rechtstreeks
   afgelezen uit de kleurregels van deze installatie (die een beheerder kan
   aanpassen) plus wat er daadwerkelijk in de kast hangt. Advies dat je kunt
@@ -1294,7 +1341,11 @@ Onder **Looks** staat daarom **"Je kast laten aanvullen"**, met twee knoppen:
   categorie, dan telt het seizoen mee.
 - **Looks samenstellen** – bouwt looks uit wat er hangt, met dezelfde scoring als
   de rest van de app: de kleurregels van deze installatie, seizoensoverlap, en
-  nooit een paar dat iemand heeft afgekeurd.
+  nooit een paar dat iemand heeft afgekeurd. Je maakt ze in batches (5, 10, 20
+  of 40 tegelijk), maar het getal dat erbij staat is het **totaal dat er nog te
+  maken valt** — twee verschillende vragen, en zolang ze met hetzelfde getal
+  werden beantwoord stond er bij elke kast "er zijn er nog 20 te maken", voor
+  altijd, omdat er altijd minstens zoveel overbleven.
 
 Vier dingen die het **niet** doet, want dat is hier het belangrijkste:
 
@@ -1308,8 +1359,18 @@ Vier dingen die het **niet** doet, want dat is hier het belangrijkste:
   en niet van de broek. Een verkeerde tag is erger dan geen tag, want een leeg
   veld sluit nooit iets uit en een verkeerde wél.
 - **Een look claimt niets wat z'n kleren niet claimen.** De tags van een look
-  zijn de *doorsnede* van wat de stukken erin zeggen: een look is pas voor de
-  regen als niks erin daar bezwaar tegen heeft.
+  zijn de *doorsnede* van wat de stukken erin zeggen.
+
+Bij het weer zit daar één nuance in, en die is er met opzet: **temperatuur en
+lucht zijn niet hetzelfde soort weer.** Of een outfit bij "Koud", "Mild",
+"Warm" of "Heet" past, bepaalt de kleding zelf — een winterjas blijft fout op
+een hete dag. Of het regent, sneeuwt, waait of bewolkt is, bepaalt de kleding
+*niet*: daar gaat een jas overheen. Een trui met een spijkerbroek die het over
+"Koud" eens zijn, is dus ook een look voor regen, sneeuw, wind en bewolkt weer —
+en zonder die regel viel 'ie in de weekplanner af op precies de dag dat je 'm
+aantrekt. Wat er bij welke temperatuur hoort staat in `app/tags.py`
+(`SKY_BY_TEMPERATURE`); sneeuw hoort niet bij "Warm", en "Heet" is geen bewolkte
+middag.
 
 Voordat er iets wordt weggeschreven zie je hoeveel stuks het raakt en een paar
 voorbeelden. Alles is daarna gewoon aan te passen: een tag op de pagina van het
@@ -1379,6 +1440,23 @@ Je betaalt per gebruik, rechtstreeks aan Anthropic, met je eigen sleutel. Eén
 druk op de knop is één verzoek. Het model is instelbaar: de standaard is het
 slimste (en duurste), maar dit is invulwerk en geen redeneerwerk — een goedkoper
 model volstaat hier prima.
+
+En omdat dit het enige in de app is dat geld kost, houdt 'ie bij hoeveel. Onder
+**Instellingen → AI → Verbruik** staat hoeveel verzoeken er zijn gedaan, hoeveel
+tokens er heen en terug gingen, en wat dat ongeveer kostte — in totaal en over
+de laatste dertig dagen, met een uitsplitsing per knop (tags, looks) en per
+model. Drie dingen daarover:
+
+- **De aantallen en de tokens zijn exact.** Die staan in het antwoord van de
+  dienst zelf, en er wordt geteld zodra een verzoek de deur uit is — ook als het
+  antwoord daarna onbruikbaar blijkt, want verstuurd is verstuurd.
+- **Het bedrag is een schatting.** Het is onze eigen rekensom op de
+  gepubliceerde tarieven (`app/ai_pricing.py`, met de datum erbij in het
+  scherm), niet je factuur. Die staat bij Anthropic. Kent de tabel een model
+  niet, dan telt dat verzoek wél mee maar het bedrag niet, en het scherm zegt
+  dat het totaal dan een ondergrens is.
+- **Er staat geen kleding in.** Een regel is een teller: soort verzoek, model,
+  tokens, tijdstip. Wissen kan met één knop en raakt verder niets.
 
 **Wat er de deur uit gaat**, en alleen als je de knop mét AI gebruikt: naam,
 categorie, kleur, maat en seizoen van de betrokken kledingstukken. **Geen
