@@ -16,4 +16,4 @@ openpyxl==3.1.5
 # De optionele AI-laag (app/ai.py). Alleen gebruikt als een beheerder
 # WARDROBE_AI_ENABLED aanzet; het pakket zelf is klein en heeft geen
 # zware afhankelijkheden.
-anthropic==1.7.0
+anthropic==1.8.0
