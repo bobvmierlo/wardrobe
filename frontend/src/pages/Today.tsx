@@ -10,6 +10,7 @@ import { useWardrobe } from "../wardrobe";
 import type { Occasion, Recommendation, RecommendationPage } from "../types";
 
 const TODAY = () => new Date().toISOString().slice(0, 10);
+const TODAY_NL = () => new Date().toLocaleDateString("nl-NL");
 
 /** "Vandaag": what the weather is doing, and what you could put on because
  *  of it. The one screen that answers the question the app exists for. */
@@ -51,7 +52,7 @@ export default function Today() {
     if (!currentId) return;
     try {
       const outfit = await api.createOutfit(currentId, {
-        name: rec.outfit_name ?? `Voorstel van ${new Date().toLocaleDateString("nl-NL")}`,
+        name: rec.outfit_name ?? `Voorstel van ${TODAY_NL()}`,
         item_ids: rec.items.map((i) => i.id),
         // Tag it with what it was recommended *for*: that is what makes it
         // come back next time the weather looks like this.

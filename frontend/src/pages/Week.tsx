@@ -9,6 +9,8 @@ import { weatherIcon } from "../components/WeatherCard";
 import { useWardrobe } from "../wardrobe";
 import type { Outfit, Week as WeekData } from "../types";
 
+const TODAY = () => new Date().toISOString().slice(0, 10);
+
 const DAY_NAMES = ["Maandag", "Dinsdag", "Woensdag", "Donderdag", "Vrijdag", "Zaterdag", "Zondag"];
 
 function shift(iso: string, days: number): string {
@@ -70,7 +72,7 @@ export default function Week() {
     }
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = TODAY();
   const pickingDay = picking ? week?.days.find((d) => d.day === picking) : undefined;
   const needle = q.trim().toLowerCase();
   const choices = needle

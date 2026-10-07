@@ -17,6 +17,8 @@ import {
   type Reading,
 } from "../types";
 
+const todayNl = () => new Date().toLocaleDateString("nl-NL");
+
 /** "Ontdekken": build outfits to order.
  *
  * Unlike "Vandaag" this ignores the forecast and your wear log — it is for
@@ -109,7 +111,7 @@ export default function Discover() {
     if (!currentId) return;
     try {
       await api.createOutfit(currentId, {
-        name: `${occasion || season || "Look"} ${new Date().toLocaleDateString("nl-NL")}`,
+        name: `${occasion || season || "Look"} ${todayNl()}`,
         item_ids: suggestion.items.map((i) => i.id),
         occasions: occasion ? [occasion] : [],
         seasons: season ? [season] : [],
