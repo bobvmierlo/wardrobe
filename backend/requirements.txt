@@ -1,8 +1,8 @@
-fastapi==0.143.0
+fastapi==0.156.4
 uvicorn[standard]==0.54.0
-sqlalchemy==2.1.4
+sqlalchemy==2.1.5
 pydantic==2.14.1
-pydantic-settings==2.15.0
+pydantic-settings==2.16.1
 python-multipart==0.0.32
 # Server-to-server calls to the identity provider (discovery, token exchange,
 # userinfo). Also what FastAPI's TestClient uses.
@@ -11,9 +11,9 @@ bcrypt==5.0.0
 # The [crypto] extra pulls in `cryptography`, needed to verify the RS256/ES256
 # signatures an identity provider signs its ID tokens with.
 pyjwt[crypto]==2.15.1
-pillow==12.3.0
+pillow==13.0.0
 openpyxl==3.1.5
 # De optionele AI-laag (app/ai.py). Alleen gebruikt als een beheerder
 # WARDROBE_AI_ENABLED aanzet; het pakket zelf is klein en heeft geen
 # zware afhankelijkheden.
-anthropic==1.13.0
+anthropic==1.17.0
